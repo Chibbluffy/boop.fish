@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect, useRef } from "react";
 
 const SPRITE_URL = "/assets/class-sprite.png";
 // Sprite is 100x1600, two 50x50 columns (left=white, right=gold), 31 rows matching class order
@@ -32,8 +32,25 @@ function sectorPath(cx: number, cy: number, r1: number, r2: number, startAngle: 
 export default function ClassRoller() {
   const [angle, setAngle] = useState(0);
   const [spinning, setSpinning] = useState(false);
+  const [justLanded, setJustLanded] = useState(false);
+  const wasSpinning = useRef(false);
 
   const slice = 360 / CLASSES.length;
+
+  // Which class is under the pointer right now
+  const normalizedAngle = ((angle % 360) + 360) % 360;
+  const topAngle = (360 - normalizedAngle) % 360;
+  const pointedClass = CLASSES[Math.floor(topAngle / slice) % CLASSES.length];
+
+  // Flash "just landed" for 1.5 s when spin stops
+  useEffect(() => {
+    if (wasSpinning.current && !spinning) {
+      setJustLanded(true);
+      const t = setTimeout(() => setJustLanded(false), 1500);
+      return () => clearTimeout(t);
+    }
+    wasSpinning.current = spinning;
+  }, [spinning]);
 
   function spin() {
     if (spinning) return;
@@ -48,7 +65,15 @@ export default function ClassRoller() {
   return (
     <div className="flex flex-col items-center bg-slate-950 p-8 min-h-screen text-white">
       <h2 className="text-3xl font-bold mb-2">Class Roller</h2>
-      <p className="text-slate-400 mb-8">Who will you play today?</p>
+      <p className={`mb-8 text-lg font-bold tracking-wide transition-all duration-300 ${
+        spinning
+          ? "text-slate-500"
+          : justLanded
+          ? "text-amber-400 scale-125"
+          : "text-slate-300"
+      }`}>
+        {spinning ? "Spinning…" : pointedClass}
+      </p>
 
       <div className="relative">
         {/* Pointer Arrow */}

@@ -30,7 +30,7 @@ export default function CalendarPage() {
     fetch("/api/calendar")
       .then(r => r.json())
       .then((data: Array<{ id: string; event_date: string; title: string; description?: string }>) => {
-        setEvents(data.map(e => ({ id: e.id, date: e.event_date, title: e.title, description: e.description })));
+        setEvents(data.map(e => ({ id: e.id, date: String(e.event_date).slice(0, 10), title: e.title, description: e.description })));
       })
       .catch(() => {});
   }, []);
@@ -45,7 +45,7 @@ export default function CalendarPage() {
     });
     if (!res.ok) return;
     const ev = await res.json();
-    setEvents(prev => [...prev, { id: ev.id, date: ev.event_date, title: ev.title, description: ev.description }]
+    setEvents(prev => [...prev, { id: ev.id, date: String(ev.event_date).slice(0, 10), title: ev.title, description: ev.description }]
       .sort((a, b) => a.date.localeCompare(b.date)));
     setNewTitle("");
     setNewDesc("");
