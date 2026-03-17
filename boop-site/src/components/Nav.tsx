@@ -54,6 +54,7 @@ function ProfileDropdown({ user, onClose }: { user: AuthUser; onClose: () => voi
   const [email,     setEmail]    = useState(user.email ?? "");
   const [timezone,  setTimezone] = useState(user.timezone ?? "");
   const [cls,       setCls]      = useState(user.bdo_class ?? "");
+  const [altCls,    setAltCls]   = useState(user.alt_class ?? "");
   const [ap,        setAp]       = useState(user.gear_ap  != null ? String(user.gear_ap)  : "");
   const [aap,       setAap]      = useState(user.gear_aap != null ? String(user.gear_aap) : "");
   const [dp,        setDp]       = useState(user.gear_dp  != null ? String(user.gear_dp)  : "");
@@ -72,6 +73,7 @@ function ProfileDropdown({ user, onClose }: { user: AuthUser; onClose: () => voi
         email:    email.trim() || null,
         timezone: timezone || null,
         bdo_class: cls || null,
+        alt_class: altCls || null,
         gear_ap:  ap  ? parseInt(ap)  : null,
         gear_aap: aap ? parseInt(aap) : null,
         gear_dp:  dp  ? parseInt(dp)  : null,
@@ -129,11 +131,19 @@ function ProfileDropdown({ user, onClose }: { user: AuthUser; onClose: () => voi
           </select>
         </div>
 
-        <div>
-          <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest block mb-1">Class</label>
-          <ClassSelect value={cls} onChange={setCls}
-            className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white placeholder-slate-600 focus:outline-none focus:border-violet-500 transition-colors"
-          />
+        <div className="grid grid-cols-2 gap-2">
+          <div>
+            <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest block mb-1">Class</label>
+            <ClassSelect value={cls} onChange={setCls}
+              className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white placeholder-slate-600 focus:outline-none focus:border-violet-500 transition-colors"
+            />
+          </div>
+          <div>
+            <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest block mb-1">Alt / Tagged</label>
+            <ClassSelect value={altCls} onChange={setAltCls}
+              className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white placeholder-slate-600 focus:outline-none focus:border-violet-500 transition-colors"
+            />
+          </div>
         </div>
 
         <div>

@@ -55,7 +55,7 @@ const server = serve({
         const [user] = await sql`
           INSERT INTO users (username, password_hash, family_name, discord_name, timezone, role)
           VALUES (${username}, ${password_hash}, ${family_name ?? null}, ${discord_name ?? null}, ${timezone}, 'pending')
-          RETURNING id, username, email, role, character_name, family_name, discord_name, ribbit_count, bdo_class, gear_ap, gear_aap, gear_dp, timezone
+          RETURNING id, username, email, role, character_name, family_name, discord_name, ribbit_count, bdo_class, alt_class, gear_ap, gear_aap, gear_dp, timezone
         `;
         const token = await createSession(user.id);
         return json({ token, user }, 201);
@@ -68,7 +68,7 @@ const server = serve({
         if (!username || !password) return err("username and password are required");
 
         const [user] = await sql`
-          SELECT id, username, email, password_hash, role, character_name, family_name, discord_name, ribbit_count, bdo_class, gear_ap, gear_aap, gear_dp, timezone
+          SELECT id, username, email, password_hash, role, character_name, family_name, discord_name, ribbit_count, bdo_class, alt_class, gear_ap, gear_aap, gear_dp, timezone
           FROM users WHERE username = ${username}
         `;
         if (!user) return err("Invalid username or password", 401);
@@ -159,7 +159,7 @@ const server = serve({
         const user = await authenticate(req);
         if (!user) return err("Unauthorized", 401);
 
-        const { family_name, email: newEmail, timezone, bdo_class, gear_ap, gear_aap, gear_dp } = await req.json();
+        const { family_name, email: newEmail, timezone, bdo_class, alt_class, gear_ap, gear_aap, gear_dp } = await req.json();
 
         const parsedAp  = gear_ap  != null ? parseInt(gear_ap)  : null;
         const parsedAap = gear_aap != null ? parseInt(gear_aap) : null;
@@ -177,12 +177,13 @@ const server = serve({
             email          = ${newEmail ?? null},
             timezone       = ${timezone ?? null},
             bdo_class      = ${bdo_class ?? null},
+            alt_class      = ${alt_class ?? null},
             gear_ap        = ${parsedAp},
             gear_aap       = ${parsedAap},
             gear_dp        = ${parsedDp}
           WHERE id = ${user.id}
           RETURNING id, username, email, role, character_name, family_name, discord_name, ribbit_count,
-                    bdo_class, gear_ap, gear_aap, gear_dp, timezone
+                    bdo_class, alt_class, gear_ap, gear_aap, gear_dp, timezone
         `;
 
         // Keep shrine signup in sync if one exists
@@ -409,7 +410,7 @@ const server = serve({
         const user = await authenticate(req);
         if (!user || user.role === "pending") return err("Forbidden", 403);
         const rows = await sql`
-          SELECT username, family_name, discord_name, bdo_class,
+          SELECT username, family_name, discord_name, bdo_class, alt_class,
                  gear_ap, gear_aap, gear_dp,
                  GREATEST(COALESCE(gear_ap, 0), COALESCE(gear_aap, 0)) + COALESCE(gear_dp, 0) AS gs,
                  timezone, ribbit_count, play_status, guild_rank, role
@@ -474,7 +475,7 @@ const server = serve({
           LIMIT 10
         `;
         const gear = await sql`
-          SELECT username, family_name, bdo_class, gear_ap, gear_aap, gear_dp,
+          SELECT username, family_name, bdo_class, alt_class, gear_ap, gear_aap, gear_dp,
             GREATEST(COALESCE(gear_ap, 0), COALESCE(gear_aap, 0)) + COALESCE(gear_dp, 0) AS gs
           FROM users
           WHERE role != 'pending'
