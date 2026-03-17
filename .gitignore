@@ -25,3 +25,7 @@ logs/
 # User uploaded files — keep directory stubs via .gitkeep, ignore actual uploads
 uploads/nodewar/*
 !uploads/nodewar/.gitkeep
+uploads/shame/*
+!uploads/shame/.gitkeep
+uploads/awards/*
+!uploads/awards/.gitkeep

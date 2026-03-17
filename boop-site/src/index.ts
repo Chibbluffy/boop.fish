@@ -1,5 +1,6 @@
 import { serve } from "bun";
 import { join } from "path";
+import { unlink } from "fs/promises";
 import index from "./index.html";
 
 import sql from "./lib/db";
@@ -272,7 +273,7 @@ const server = serve({
     "/api/wall": {
       async GET(_req) {
         const rows = await sql`
-          SELECT w.id, w.title, w.description, w.created_at,
+          SELECT w.id, w.title, w.description, w.image_path, w.created_at,
                  u.username AS author
           FROM wall_of_shame w
           LEFT JOIN users u ON u.id = w.submitted_by
@@ -284,12 +285,26 @@ const server = serve({
         const user = await authenticate(req);
         // Any logged-in non-pending member can submit
         if (!user || user.role === "pending") return err("Forbidden", 403);
-        const { title, description } = await req.json();
+
+        const form = await req.formData();
+        const title       = form.get("title") as string | null;
+        const description = form.get("description") as string | null;
+        const imageFile   = form.get("image") as File | null;
+
         if (!title?.trim()) return err("title is required");
+
+        let image_path: string | null = null;
+        if (imageFile && imageFile.size > 0) {
+          const ext      = imageFile.name.split(".").pop() ?? "png";
+          const filename = `${crypto.randomUUID()}.${ext}`;
+          await Bun.write(join(UPLOAD_DIR, "shame", filename), imageFile);
+          image_path = `/uploads/shame/${filename}`;
+        }
+
         const [row] = await sql`
-          INSERT INTO wall_of_shame (title, description, submitted_by)
-          VALUES (${title.trim()}, ${description ?? null}, ${user.id})
-          RETURNING id, title, description, created_at
+          INSERT INTO wall_of_shame (title, description, image_path, submitted_by)
+          VALUES (${title.trim()}, ${description ?? null}, ${image_path}, ${user.id})
+          RETURNING id, title, description, image_path, created_at
         `;
         return json(row, 201);
       },
@@ -299,7 +314,12 @@ const server = serve({
       async DELETE(req) {
         const user = await authenticate(req);
         if (!requireRole(user, "officer")) return err("Forbidden", 403);
+        const [row] = await sql`SELECT image_path FROM wall_of_shame WHERE id = ${req.params.id}`;
         await sql`DELETE FROM wall_of_shame WHERE id = ${req.params.id}`;
+        if (row?.image_path) {
+          const filePath = join(UPLOAD_DIR, row.image_path.replace("/uploads/", ""));
+          await unlink(filePath).catch(() => {});
+        }
         return json({ ok: true });
       },
     },
@@ -491,7 +511,7 @@ const server = serve({
     "/api/awards": {
       async GET(_req) {
         const awards = await sql`
-          SELECT id, award_type, display_name, user_id, reason, award_date, created_at
+          SELECT id, award_type, display_name, user_id, reason, image_path, award_date, created_at
           FROM employee_awards
           ORDER BY award_date DESC
         `;
@@ -502,12 +522,27 @@ const server = serve({
         const user = await authenticate(req);
         if (!requireRole(user, "officer")) return err("Forbidden", 403);
 
-        const { award_type, display_name, user_id, reason, award_date } = await req.json();
+        const form = await req.formData();
+        const award_type   = form.get("award_type")   as string | null;
+        const display_name = form.get("display_name") as string | null;
+        const user_id      = form.get("user_id")      as string | null;
+        const reason       = form.get("reason")       as string | null;
+        const award_date   = form.get("award_date")   as string | null;
+        const imageFile    = form.get("image")        as File | null;
+
         if (!award_type || !display_name || !award_date) return err("award_type, display_name, and award_date are required");
 
+        let image_path: string | null = null;
+        if (imageFile && imageFile.size > 0) {
+          const ext      = imageFile.name.split(".").pop() ?? "png";
+          const filename = `${crypto.randomUUID()}.${ext}`;
+          await Bun.write(join(UPLOAD_DIR, "awards", filename), imageFile);
+          image_path = `/uploads/awards/${filename}`;
+        }
+
         const [award] = await sql`
-          INSERT INTO employee_awards (award_type, display_name, user_id, reason, award_date, awarded_by)
-          VALUES (${award_type}, ${display_name}, ${user_id ?? null}, ${reason ?? null}, ${award_date}, ${user!.id})
+          INSERT INTO employee_awards (award_type, display_name, user_id, reason, image_path, award_date, awarded_by)
+          VALUES (${award_type}, ${display_name}, ${user_id ?? null}, ${reason ?? null}, ${image_path}, ${award_date}, ${user!.id})
           RETURNING *
         `;
         return json(award, 201);

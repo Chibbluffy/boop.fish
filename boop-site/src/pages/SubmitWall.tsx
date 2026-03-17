@@ -1,13 +1,16 @@
-import React, { useState } from "react";
+import React, { useState, useRef } from "react";
 import { useAuth } from "../lib/auth";
 
 export default function SubmitWall() {
   const user = useAuth();
-  const [title, setTitle]     = useState("");
-  const [desc, setDesc]       = useState("");
-  const [saving, setSaving]   = useState(false);
-  const [done, setDone]       = useState(false);
-  const [error, setError]     = useState<string | null>(null);
+  const [title, setTitle]   = useState("");
+  const [desc, setDesc]     = useState("");
+  const [image, setImage]   = useState<File | null>(null);
+  const [preview, setPreview] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [done, setDone]     = useState(false);
+  const [error, setError]   = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Access gate — must be logged in and not pending
   if (!user || user.role === "pending") {
@@ -36,7 +39,7 @@ export default function SubmitWall() {
             <a href="#/wall" className="px-5 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-white font-bold text-sm transition-colors">
               View Wall of Shame
             </a>
-            <button onClick={() => { setDone(false); setTitle(""); setDesc(""); }}
+            <button onClick={() => { setDone(false); setTitle(""); setDesc(""); pickImage(null); }}
               className="px-5 py-2.5 rounded-xl bg-red-600/20 hover:bg-red-600/30 border border-red-500/30 text-red-400 font-bold text-sm transition-colors">
               Submit Another
             </button>
@@ -46,15 +49,25 @@ export default function SubmitWall() {
     );
   }
 
+  function pickImage(file: File | null) {
+    setImage(file);
+    if (preview) URL.revokeObjectURL(preview);
+    setPreview(file ? URL.createObjectURL(file) : null);
+  }
+
   async function submit() {
     if (!title.trim()) return;
     setSaving(true);
     setError(null);
     const token = localStorage.getItem("boop_session");
+    const form = new FormData();
+    form.set("title", title.trim());
+    if (desc.trim()) form.set("description", desc.trim());
+    if (image) form.set("image", image);
     const res = await fetch("/api/wall", {
       method: "POST",
-      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-      body: JSON.stringify({ title: title.trim(), description: desc.trim() || undefined }),
+      headers: { Authorization: `Bearer ${token}` },
+      body: form,
     });
     if (res.ok) {
       setDone(true);
@@ -100,6 +113,36 @@ export default function SubmitWall() {
               placeholder="Context, evidence, receipts..."
               rows={4}
               className={`${inp} resize-none`}
+            />
+          </div>
+
+          {/* Image */}
+          <div>
+            <label className="text-xs text-slate-400 uppercase tracking-widest font-semibold block mb-1.5">
+              Evidence <span className="text-slate-600 normal-case font-normal">(optional image)</span>
+            </label>
+            {preview ? (
+              <div className="relative w-full rounded-xl overflow-hidden border border-slate-700">
+                <img src={preview} alt="" className="w-full max-h-56 object-cover" />
+                <button
+                  onClick={() => pickImage(null)}
+                  className="absolute top-2 right-2 w-7 h-7 flex items-center justify-center rounded-full bg-slate-900/80 text-white hover:bg-red-600/80 transition-colors text-xs"
+                >✕</button>
+              </div>
+            ) : (
+              <button
+                onClick={() => fileInputRef.current?.click()}
+                className="w-full py-3 rounded-xl border border-dashed border-slate-700 hover:border-red-500/40 text-slate-500 hover:text-slate-300 text-sm transition-colors"
+              >
+                Click to attach image
+              </button>
+            )}
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/*"
+              className="hidden"
+              onChange={e => pickImage(e.target.files?.[0] ?? null)}
             />
           </div>
 
