@@ -25,6 +25,7 @@ export default function Members() {
   const [updating, setUpdating] = useState<string | null>(null);
   const [resetting, setResetting] = useState<string | null>(null);
   const [resettingAll, setResettingAll] = useState(false);
+  const [deleting, setDeleting] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -83,6 +84,20 @@ export default function Members() {
     setResetting(null);
   }
 
+  async function deleteAccount(memberId: string, username: string) {
+    if (!confirm(`Delete account "${username}"? This cannot be undone.`)) return;
+    setDeleting(memberId);
+    const token = localStorage.getItem("boop_session");
+    const res = await fetch(`/api/members/${memberId}`, {
+      method: "DELETE",
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (res.ok) {
+      setMembers(prev => prev.filter(m => m.id !== memberId));
+    }
+    setDeleting(null);
+  }
+
   if (!user || (user.role !== "officer" && user.role !== "admin")) {
     return (
       <div className="min-h-screen bg-slate-950 flex items-center justify-center">
@@ -138,13 +153,14 @@ export default function Members() {
         ) : (
           <div className="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden">
             {/* Header row */}
-            <div className="grid grid-cols-[auto_1fr_1fr_auto_auto_auto] gap-4 px-5 py-3 border-b border-slate-800 text-xs font-semibold text-slate-500 uppercase tracking-widest">
+            <div className="grid grid-cols-[auto_1fr_1fr_auto_auto_auto_auto] gap-4 px-5 py-3 border-b border-slate-800 text-xs font-semibold text-slate-500 uppercase tracking-widest">
               <span className="w-8" />
               <span>Username</span>
               <span>Character</span>
               <span>Joined</span>
               <span title="Ribbit count — activity marker">🐸</span>
               <span>Role</span>
+              <span />
             </div>
 
             {members.map((m, i) => {
@@ -154,7 +170,7 @@ export default function Members() {
               return (
                 <div
                   key={m.id}
-                  className={`grid grid-cols-[auto_1fr_1fr_auto_auto_auto] gap-4 items-center px-5 py-3.5 ${
+                  className={`grid grid-cols-[auto_1fr_1fr_auto_auto_auto_auto] gap-4 items-center px-5 py-3.5 ${
                     i < members.length - 1 ? "border-b border-slate-800/60" : ""
                   } hover:bg-slate-800/30 transition-colors`}
                 >
@@ -219,6 +235,20 @@ export default function Members() {
                       <span className={`text-xs font-bold px-2 py-1 rounded-lg border ${ROLE_STYLE[m.role]}`}>
                         {m.role}
                       </span>
+                    )}
+                  </div>
+
+                  {/* Delete (admin only, not self) */}
+                  <div className="shrink-0">
+                    {user.role === "admin" && !isMe && (
+                      <button
+                        onClick={() => deleteAccount(m.id, m.username)}
+                        disabled={deleting === m.id}
+                        title="Delete account"
+                        className="text-slate-700 hover:text-red-400 disabled:opacity-30 disabled:cursor-not-allowed transition-colors text-sm"
+                      >
+                        🗑
+                      </button>
                     )}
                   </div>
                 </div>
