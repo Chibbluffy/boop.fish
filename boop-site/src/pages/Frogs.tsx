@@ -159,14 +159,26 @@ export default function Frogs() {
         {/* Milestone messages */}
         {ribbited >= 10 && (
           <p className="mt-8 text-center text-slate-600 text-sm">
-            {ribbited >= 600
-              ? "You have ribbited ten times the frogs. You are the frog. 👑"
+            {ribbited >= 500
+              ? "Maximum frog power unlocked. +5 payout tier. You are a legend. 🐸👑"
+              : ribbited >= 450
+              ? "Almost there. The frogs are watching. 🐸🐸🐸🐸"
+              : ribbited >= 400
+              ? "Four tiers of frog. Truly unhinged. 🐸🐸🐸🐸"
+              : ribbited >= 350
+              ? "The pond bends to your will. +3 and climbing. 🌿"
               : ribbited >= 300
-              ? "Frog ascension imminent. 🌌"
+              ? "Three frog tiers earned. Frog ascension imminent. 🌌"
+              : ribbited >= 250
+              ? "Halfway to max frog power. Keep going. 🐸🐸"
+              : ribbited >= 200
+              ? "Two payout tiers of pure frog dedication. 🐸🐸"
+              : ribbited >= 150
+              ? "Frog economy going strong. +1 tier and counting. 📈"
               : ribbited >= 100
-              ? "There is no cure for this. 🐸🐸🐸"
-              : ribbited >= 60
-              ? "You ribbited every frog at least once. You maniac. 🏆"
+              ? "100 ribbits. That's a full bonus tier. There is no cure. 🐸🐸🐸"
+              : ribbited >= 50
+              ? "Halfway to your first frog tier bonus. Keep ribbiting. 🐸"
               : ribbited >= 30
               ? "You're really into frogs, huh? 🐸"
               : "ribbit ribbit ribbit..."}
