@@ -1,14 +1,16 @@
 import React, { useEffect, useState } from "react";
 import { useAuth, isOfficerOrAdmin, AuthUser } from "../lib/auth";
 import ShrineSection from "./ShrineSection";
+import { TIMEZONES } from "../lib/timezones";
 
-type SectionId = "members" | "announcements" | "wall" | "shrine";
+type SectionId = "members" | "roster" | "announcements" | "wall" | "shrine";
 
 const SIDEBAR = [
   {
     group: "Roster",
     items: [
-      { id: "members" as SectionId, label: "Members", icon: "👥", desc: "Roles & ribbits" },
+      { id: "members" as SectionId, label: "Members",  icon: "👥", desc: "Roles & ribbits" },
+      { id: "roster"  as SectionId, label: "Roster",   icon: "📋", desc: "Guild roster" },
     ],
   },
   {
@@ -147,7 +149,7 @@ function MembersSection({ me }: { me: AuthUser }) {
           <div className={`grid gap-4 px-5 py-3 border-b border-slate-800 text-xs font-semibold text-slate-500 uppercase tracking-widest ${isAdmin ? "grid-cols-[2rem_1fr_1fr_8rem_4.5rem_7rem_4rem]" : "grid-cols-[2rem_1fr_1fr_8rem_4.5rem_7rem]"}`}>
             <span />
             <span>Username</span>
-            <span>Character</span>
+            <span>Family Name</span>
             <span>Joined</span>
             <span title="Ribbit count">🐸</span>
             <span>Role</span>
@@ -175,7 +177,7 @@ function MembersSection({ me }: { me: AuthUser }) {
                   {m.email && <p className="text-xs text-slate-600 truncate">{m.email}</p>}
                 </div>
 
-                <p className="text-sm text-slate-400 truncate">{m.character_name ?? "—"}</p>
+                <p className="text-sm text-slate-400 truncate">{(m as any).family_name ?? "—"}</p>
 
                 <p className="text-xs text-slate-600 whitespace-nowrap">
                   {new Date(m.created_at).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}
@@ -404,11 +406,316 @@ function WallSection() {
   );
 }
 
+// ── Roster section ────────────────────────────────────────────────────────────
+
+const GUILD_RANKS = ["GM", "Advisor", "Staff", "Secretary", "Officer", "CN/QM", "Member"];
+const PLAY_STATUSES = ["Active PvP", "Active PvE", "Semi-Active", "AFK", "Inactive"];
+
+const STATUS_STYLE: Record<string, string> = {
+  "Active PvP":  "bg-red-500/20 text-red-400 border-red-500/30",
+  "Active PvE":  "bg-green-500/20 text-green-400 border-green-500/30",
+  "Semi-Active": "bg-amber-500/20 text-amber-400 border-amber-500/30",
+  "AFK":         "bg-slate-600/30 text-slate-400 border-slate-600/50",
+  "Inactive":    "bg-slate-800/60 text-slate-600 border-slate-700/50",
+};
+
+const RANK_STYLE: Record<string, string> = {
+  "GM":        "bg-red-500/20 text-red-300 border-red-500/30",
+  "Advisor":   "bg-orange-500/20 text-orange-300 border-orange-500/30",
+  "Staff":     "bg-blue-500/20 text-blue-300 border-blue-500/30",
+  "Secretary": "bg-violet-500/20 text-violet-300 border-violet-500/30",
+  "Officer":   "bg-amber-500/20 text-amber-300 border-amber-500/30",
+  "CN/QM":     "bg-cyan-500/20 text-cyan-300 border-cyan-500/30",
+  "Member":    "bg-slate-700/40 text-slate-400 border-slate-700/60",
+};
+
+type RosterMember = {
+  id: string;
+  username: string;
+  family_name: string | null;
+  discord_name: string | null;
+  guild_rank: string | null;
+  play_status: string | null;
+  timezone: string | null;
+  roster_notes: string | null;
+  role: string;
+};
+
+function tzLabel(value: string | null) {
+  if (!value) return "—";
+  return TIMEZONES.find(t => t.value === value)?.label.split(" — ")[0] ?? value;
+}
+
+function RosterSection() {
+  const [members, setMembers] = useState<RosterMember[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [search, setSearch]   = useState("");
+  const [filterStatus, setFilterStatus] = useState("");
+  const [filterRank, setFilterRank]     = useState("");
+  const [sortKey, setSortKey] = useState<keyof RosterMember>("username");
+  const [sortDir, setSortDir] = useState<1 | -1>(1);
+
+  // Inline field saving state
+  const [savingField, setSavingField] = useState<string | null>(null); // "id:field"
+
+  // Notes/details modal
+  const [noteModal, setNoteModal] = useState<RosterMember | null>(null);
+  const [mFamName,  setMFamName]  = useState("");
+  const [mDiscord,  setMDiscord]  = useState("");
+  const [mNotes,    setMNotes]    = useState("");
+  const [mSaving,   setMSaving]   = useState(false);
+
+  useEffect(() => {
+    fetch("/api/roster", { headers: authH() })
+      .then(r => r.json())
+      .then(d => { setMembers(d); setLoading(false); })
+      .catch(() => setLoading(false));
+  }, []);
+
+  async function patchField(id: string, field: string, value: string | null) {
+    setSavingField(`${id}:${field}`);
+    const res = await fetch(`/api/roster/${id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json", ...authH() },
+      body: JSON.stringify({ [field]: value }),
+    });
+    if (res.ok) {
+      const updated = await res.json();
+      setMembers(prev => prev.map(m => m.id === id ? { ...m, ...updated } : m));
+    }
+    setSavingField(null);
+  }
+
+  function openNoteModal(m: RosterMember) {
+    setNoteModal(m);
+    setMFamName(m.family_name ?? "");
+    setMDiscord(m.discord_name ?? "");
+    setMNotes(m.roster_notes ?? "");
+  }
+
+  async function saveNoteModal() {
+    if (!noteModal) return;
+    setMSaving(true);
+    const res = await fetch(`/api/roster/${noteModal.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json", ...authH() },
+      body: JSON.stringify({
+        family_name:  mFamName.trim()  || null,
+        discord_name: mDiscord.trim()  || null,
+        roster_notes: mNotes.trim()    || null,
+      }),
+    });
+    if (res.ok) {
+      const updated = await res.json();
+      setMembers(prev => prev.map(m => m.id === noteModal.id ? { ...m, ...updated } : m));
+      setNoteModal(null);
+    }
+    setMSaving(false);
+  }
+
+  function toggleSort(key: keyof RosterMember) {
+    if (sortKey === key) setSortDir(d => d === 1 ? -1 : 1);
+    else { setSortKey(key); setSortDir(1); }
+  }
+
+  const filtered = members
+    .filter(m => {
+      const q = search.toLowerCase();
+      if (q && !m.username.toLowerCase().includes(q) &&
+               !(m.family_name?.toLowerCase().includes(q)) &&
+               !(m.discord_name?.toLowerCase().includes(q))) return false;
+      if (filterStatus && m.play_status !== filterStatus) return false;
+      if (filterRank   && m.guild_rank  !== filterRank)   return false;
+      return true;
+    })
+    .sort((a, b) => {
+      const av = (a[sortKey] ?? "") as string;
+      const bv = (b[sortKey] ?? "") as string;
+      return av.localeCompare(bv) * sortDir;
+    });
+
+  const SortBtn = ({ k, label }: { k: keyof RosterMember; label: string }) => (
+    <button onClick={() => toggleSort(k)}
+      className={`flex items-center gap-1 uppercase tracking-widest hover:text-white transition-colors ${sortKey === k ? "text-violet-400" : "text-slate-500"}`}>
+      {label}
+      <span className="text-[10px]">{sortKey === k ? (sortDir === 1 ? "↑" : "↓") : ""}</span>
+    </button>
+  );
+
+  const inp = "w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-white placeholder-slate-600 focus:outline-none focus:border-violet-500 transition-colors text-sm";
+
+  return (
+    <div>
+      <div className="flex items-start justify-between mb-4">
+        <div>
+          <h2 className="text-2xl font-black text-white">Roster</h2>
+          <p className="text-slate-500 text-sm mt-0.5">Guild roster — ranks, status, and notes.</p>
+        </div>
+        <span className="text-xs text-slate-600 mt-2">{filtered.length} / {members.length} members</span>
+      </div>
+
+      {/* Filters */}
+      <div className="flex flex-wrap gap-2 mb-4">
+        <input
+          value={search} onChange={e => setSearch(e.target.value)}
+          placeholder="Search name or Discord…"
+          className="flex-1 min-w-[180px] bg-slate-900 border border-slate-800 rounded-lg px-3 py-2 text-sm text-white placeholder-slate-600 focus:outline-none focus:border-violet-500 transition-colors"
+        />
+        <select value={filterStatus} onChange={e => setFilterStatus(e.target.value)}
+          className="bg-slate-900 border border-slate-800 rounded-lg px-3 py-2 text-sm text-slate-300 focus:outline-none focus:border-violet-500 transition-colors">
+          <option value="">All statuses</option>
+          {PLAY_STATUSES.map(s => <option key={s} value={s}>{s}</option>)}
+        </select>
+        <select value={filterRank} onChange={e => setFilterRank(e.target.value)}
+          className="bg-slate-900 border border-slate-800 rounded-lg px-3 py-2 text-sm text-slate-300 focus:outline-none focus:border-violet-500 transition-colors">
+          <option value="">All ranks</option>
+          {GUILD_RANKS.map(r => <option key={r} value={r}>{r}</option>)}
+        </select>
+      </div>
+
+      {loading ? (
+        <p className="text-slate-500 text-center py-16">Loading…</p>
+      ) : (
+        <div className="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden">
+          {/* Header */}
+          <div className="grid grid-cols-[1fr_1fr_1fr_7rem_8rem_6rem_1fr_1.5rem] gap-3 px-4 py-2.5 border-b border-slate-800 text-[10px] font-semibold">
+            <SortBtn k="username"    label="Username" />
+            <SortBtn k="family_name" label="Fam Name" />
+            <SortBtn k="discord_name"label="Discord" />
+            <SortBtn k="guild_rank"  label="Rank" />
+            <SortBtn k="play_status" label="Status" />
+            <SortBtn k="timezone"    label="Timezone" />
+            <span className="text-slate-500 uppercase tracking-widest">Notes</span>
+            <span />
+          </div>
+
+          {/* Rows */}
+          <div className="overflow-y-auto max-h-[calc(100vh-320px)]">
+            {filtered.length === 0 ? (
+              <p className="text-slate-600 text-center py-12 text-sm">No members match your filters.</p>
+            ) : filtered.map((m, i) => {
+              const rankStyle   = RANK_STYLE[m.guild_rank   ?? ""] ?? RANK_STYLE["Member"];
+              const statusStyle = STATUS_STYLE[m.play_status ?? ""] ?? STATUS_STYLE["Inactive"];
+              const isSavingRank   = savingField === `${m.id}:guild_rank`;
+              const isSavingStatus = savingField === `${m.id}:play_status`;
+              return (
+                <div key={m.id}
+                  className={`grid grid-cols-[1fr_1fr_1fr_7rem_8rem_6rem_1fr_1.5rem] gap-3 items-center px-4 py-2.5 hover:bg-slate-800/30 transition-colors text-sm ${i < filtered.length - 1 ? "border-b border-slate-800/50" : ""}`}
+                >
+                  <p className="font-semibold text-white truncate">{m.username}</p>
+                  <p className="text-slate-400 text-xs truncate">{m.family_name || <span className="text-slate-700">—</span>}</p>
+                  <p className="text-slate-400 text-xs truncate">{m.discord_name || <span className="text-slate-700">—</span>}</p>
+
+                  {/* Rank — inline dropdown */}
+                  <select
+                    value={m.guild_rank ?? "Member"}
+                    disabled={isSavingRank}
+                    onChange={e => patchField(m.id, "guild_rank", e.target.value)}
+                    className={`text-[10px] font-bold px-1.5 py-1 rounded-full border bg-transparent cursor-pointer appearance-none text-center transition-opacity disabled:opacity-40 ${rankStyle}`}
+                  >
+                    {GUILD_RANKS.map(r => <option key={r} value={r} className="bg-slate-900 text-white">{r}</option>)}
+                  </select>
+
+                  {/* Status — inline dropdown */}
+                  <select
+                    value={m.play_status ?? "Active PvE"}
+                    disabled={isSavingStatus}
+                    onChange={e => patchField(m.id, "play_status", e.target.value)}
+                    className={`text-[10px] font-bold px-1.5 py-1 rounded-full border bg-transparent cursor-pointer appearance-none text-center transition-opacity disabled:opacity-40 ${statusStyle}`}
+                  >
+                    {PLAY_STATUSES.map(s => <option key={s} value={s} className="bg-slate-900 text-white">{s}</option>)}
+                  </select>
+
+                  <p className="text-slate-500 text-xs truncate">{tzLabel(m.timezone)}</p>
+
+                  {/* Notes — truncated, full text on hover */}
+                  <p
+                    title={m.roster_notes ?? undefined}
+                    className="text-slate-500 text-xs truncate cursor-default"
+                  >
+                    {m.roster_notes || <span className="text-slate-700">—</span>}
+                  </p>
+
+                  {/* Pencil — opens notes/details modal */}
+                  <button
+                    onClick={() => openNoteModal(m)}
+                    title="Edit details & notes"
+                    className="text-slate-600 hover:text-violet-400 transition-colors text-sm leading-none"
+                  >
+                    ✎
+                  </button>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* Notes / details modal */}
+      {noteModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4" onClick={() => setNoteModal(null)}>
+          <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" />
+          <div className="relative bg-slate-900 border border-slate-700 rounded-2xl p-6 max-w-sm w-full shadow-2xl" onClick={e => e.stopPropagation()}>
+            <h3 className="text-base font-black text-white mb-4">{noteModal.username}</h3>
+
+            <div className="flex flex-col gap-3">
+              <div>
+                <label className="text-[10px] text-slate-400 uppercase tracking-widest font-semibold block mb-1">Family Name</label>
+                <input value={mFamName} onChange={e => setMFamName(e.target.value)} placeholder="BDO family name" className={inp} />
+              </div>
+              <div>
+                <label className="text-[10px] text-slate-400 uppercase tracking-widest font-semibold block mb-1">Discord</label>
+                <input value={mDiscord} onChange={e => setMDiscord(e.target.value)} placeholder="Discord username" className={inp} />
+              </div>
+              <div>
+                <label className="text-[10px] text-slate-400 uppercase tracking-widest font-semibold block mb-1">Notes</label>
+                <textarea value={mNotes} onChange={e => setMNotes(e.target.value)} rows={3}
+                  placeholder="Officer notes, comments…"
+                  className={`${inp} resize-none`} />
+              </div>
+            </div>
+
+            <div className="flex gap-2 mt-4">
+              <button onClick={saveNoteModal} disabled={mSaving}
+                className="flex-1 py-2 rounded-xl bg-violet-600 hover:bg-violet-500 disabled:opacity-30 text-white font-bold text-sm transition-colors">
+                {mSaving ? "Saving…" : "Save"}
+              </button>
+              <button onClick={() => setNoteModal(null)}
+                className="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 font-semibold text-sm transition-colors">
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── Main Settings page ────────────────────────────────────────────────────────
+
+const VALID_SECTIONS: SectionId[] = ["members", "roster", "announcements", "wall", "shrine"];
+
+function getSectionFromHash(): SectionId {
+  const sub = location.hash.replace(/^#\/?/, "").split("/")[1] ?? "";
+  return VALID_SECTIONS.includes(sub as SectionId) ? (sub as SectionId) : "members";
+}
 
 export default function Settings() {
   const user = useAuth();
-  const [section, setSection] = useState<SectionId>("members");
+  const [section, setSection] = useState<SectionId>(getSectionFromHash);
+
+  // Keep section in sync with back/forward navigation within #/manage/*
+  useEffect(() => {
+    const onHash = () => setSection(getSectionFromHash());
+    window.addEventListener("hashchange", onHash);
+    return () => window.removeEventListener("hashchange", onHash);
+  }, []);
+
+  function navigate(id: SectionId) {
+    history.replaceState(null, "", `#/manage/${id}`);
+    setSection(id);
+  }
 
   if (!user || !isOfficerOrAdmin(user)) {
     return (
@@ -439,7 +746,7 @@ export default function Settings() {
             {group.items.map(item => (
               <button
                 key={item.id}
-                onClick={() => setSection(item.id)}
+                onClick={() => navigate(item.id)}
                 className={`w-full text-left flex items-center gap-3 px-4 py-2.5 transition-colors ${
                   section === item.id
                     ? "bg-slate-800/80 text-white border-r-2 border-violet-500"
@@ -460,6 +767,7 @@ export default function Settings() {
       {/* ── Content ── */}
       <div className="flex-1 min-w-0 px-8 py-8 max-w-4xl">
         {section === "members"       && <MembersSection me={user} />}
+        {section === "roster"        && <RosterSection />}
         {section === "announcements" && <AnnouncementsSection />}
         {section === "wall"          && <WallSection />}
         {section === "shrine"        && <ShrineSection />}

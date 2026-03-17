@@ -43,8 +43,9 @@ const server = serve({
 
     "/api/auth/register": {
       async POST(req) {
-        const { username, password, email, character_name } = await req.json();
+        const { username, password, family_name, discord_name, timezone } = await req.json();
         if (!username || !password) return err("username and password are required");
+        if (!timezone) return err("timezone is required");
         if (password.length < 8) return err("Password must be at least 8 characters");
 
         const exists = await sql`SELECT id FROM users WHERE username = ${username}`;
@@ -52,9 +53,9 @@ const server = serve({
 
         const password_hash = await hashPassword(password);
         const [user] = await sql`
-          INSERT INTO users (username, email, password_hash, character_name, role)
-          VALUES (${username}, ${email ?? null}, ${password_hash}, ${character_name ?? null}, 'pending')
-          RETURNING id, username, email, role, character_name, ribbit_count, bdo_class, gear_ap, gear_aap, gear_dp
+          INSERT INTO users (username, password_hash, family_name, discord_name, timezone, role)
+          VALUES (${username}, ${password_hash}, ${family_name ?? null}, ${discord_name ?? null}, ${timezone}, 'pending')
+          RETURNING id, username, email, role, character_name, family_name, discord_name, ribbit_count, bdo_class, gear_ap, gear_aap, gear_dp, timezone
         `;
         const token = await createSession(user.id);
         return json({ token, user }, 201);
@@ -67,7 +68,7 @@ const server = serve({
         if (!username || !password) return err("username and password are required");
 
         const [user] = await sql`
-          SELECT id, username, email, password_hash, role, character_name, ribbit_count, bdo_class, gear_ap, gear_aap, gear_dp
+          SELECT id, username, email, password_hash, role, character_name, family_name, discord_name, ribbit_count, bdo_class, gear_ap, gear_aap, gear_dp, timezone
           FROM users WHERE username = ${username}
         `;
         if (!user) return err("Invalid username or password", 401);
@@ -158,7 +159,7 @@ const server = serve({
         const user = await authenticate(req);
         if (!user) return err("Unauthorized", 401);
 
-        const { character_name, email: newEmail, bdo_class, gear_ap, gear_aap, gear_dp } = await req.json();
+        const { family_name, email: newEmail, bdo_class, gear_ap, gear_aap, gear_dp } = await req.json();
 
         const parsedAp  = gear_ap  != null ? parseInt(gear_ap)  : null;
         const parsedAap = gear_aap != null ? parseInt(gear_aap) : null;
@@ -172,15 +173,15 @@ const server = serve({
 
         const [updated] = await sql`
           UPDATE users SET
-            character_name = ${character_name ?? null},
+            family_name    = ${family_name ?? null},
             email          = ${newEmail ?? null},
             bdo_class      = ${bdo_class ?? null},
             gear_ap        = ${parsedAp},
             gear_aap       = ${parsedAap},
             gear_dp        = ${parsedDp}
           WHERE id = ${user.id}
-          RETURNING id, username, email, role, character_name, ribbit_count,
-                    bdo_class, gear_ap, gear_aap, gear_dp
+          RETURNING id, username, email, role, character_name, family_name, discord_name, ribbit_count,
+                    bdo_class, gear_ap, gear_aap, gear_dp, timezone
         `;
 
         // Keep shrine signup in sync if one exists
@@ -397,6 +398,89 @@ const server = serve({
           RETURNING id, username, role
         `;
         return json(updated);
+      },
+    },
+
+    // ── Guild directory (member-visible) ─────────────────────────────────────
+
+    "/api/guild-members": {
+      async GET(req) {
+        const user = await authenticate(req);
+        if (!user || user.role === "pending") return err("Forbidden", 403);
+        const rows = await sql`
+          SELECT username, family_name, discord_name, bdo_class,
+                 gear_ap, gear_aap, gear_dp,
+                 GREATEST(COALESCE(gear_ap, 0), COALESCE(gear_aap, 0)) + COALESCE(gear_dp, 0) AS gs,
+                 timezone, ribbit_count, play_status, guild_rank, role
+          FROM users
+          WHERE role != 'pending'
+          ORDER BY
+            CASE role WHEN 'admin' THEN 0 WHEN 'officer' THEN 1 ELSE 2 END,
+            username ASC
+        `;
+        return json(rows);
+      },
+    },
+
+    // ── Roster ───────────────────────────────────────────────────────────────
+
+    "/api/roster": {
+      async GET(req) {
+        const user = await authenticate(req);
+        if (!requireRole(user, "officer")) return err("Forbidden", 403);
+        const rows = await sql`
+          SELECT id, username, family_name, discord_name, guild_rank, play_status, timezone, roster_notes, role, created_at
+          FROM users
+          ORDER BY
+            CASE role WHEN 'admin' THEN 0 WHEN 'officer' THEN 1 ELSE 2 END,
+            username ASC
+        `;
+        return json(rows);
+      },
+    },
+
+    "/api/roster/:id": {
+      async PATCH(req) {
+        const user = await authenticate(req);
+        if (!requireRole(user, "officer")) return err("Forbidden", 403);
+        const { family_name, discord_name, guild_rank, play_status, roster_notes } = await req.json();
+        const [updated] = await sql`
+          UPDATE users SET
+            family_name   = COALESCE(${family_name  ?? null}, family_name),
+            discord_name  = COALESCE(${discord_name ?? null}, discord_name),
+            guild_rank    = COALESCE(${guild_rank   ?? null}, guild_rank),
+            play_status   = COALESCE(${play_status  ?? null}, play_status),
+            roster_notes  = ${roster_notes ?? null}
+          WHERE id = ${req.params.id}
+          RETURNING id, family_name, discord_name, guild_rank, play_status, roster_notes
+        `;
+        if (!updated) return err("User not found", 404);
+        return json(updated);
+      },
+    },
+
+    // ── Leaderboard ──────────────────────────────────────────────────────────
+
+    "/api/leaderboard": {
+      async GET(req) {
+        const user = await authenticate(req);
+        if (!user || user.role === "pending") return err("Forbidden", 403);
+        const ribbits = await sql`
+          SELECT username, family_name, ribbit_count
+          FROM users
+          WHERE role != 'pending' AND ribbit_count > 0
+          ORDER BY ribbit_count DESC
+          LIMIT 10
+        `;
+        const gear = await sql`
+          SELECT username, family_name, bdo_class, gear_ap, gear_aap, gear_dp,
+            GREATEST(COALESCE(gear_ap, 0), COALESCE(gear_aap, 0)) + COALESCE(gear_dp, 0) AS gs
+          FROM users
+          WHERE role != 'pending'
+            AND (gear_ap IS NOT NULL OR gear_aap IS NOT NULL OR gear_dp IS NOT NULL)
+          ORDER BY gs DESC
+        `;
+        return json({ ribbits, gear });
       },
     },
 
