@@ -14,9 +14,12 @@ type PayoutMember = {
   last_changed_by: string | null;
 };
 
-const RIBBIT_BONUS_THRESHOLD = 300;
+function ribbitBonus(ribbits: number): number {
+  return Math.min(5, Math.floor(ribbits / 100));
+}
+
 function effectiveTier(m: PayoutMember): number {
-  return Math.min(10, m.payout_tier + (m.ribbit_count >= RIBBIT_BONUS_THRESHOLD ? 1 : 0));
+  return Math.min(10, m.payout_tier + ribbitBonus(m.ribbit_count));
 }
 
 type HistoryEntry = {
@@ -348,7 +351,7 @@ export default function PayoutTracker() {
                   >−</button>
 
                   <span
-                    title={effectiveTier(m) > m.payout_tier ? `Base T${m.payout_tier} +1 frog bonus (${m.ribbit_count} ribbits)` : undefined}
+                    title={effectiveTier(m) > m.payout_tier ? `Base T${m.payout_tier} +${ribbitBonus(m.ribbit_count)} frog bonus (${m.ribbit_count} ribbits)` : undefined}
                     className={`text-xs font-black px-2 py-1 rounded-lg border min-w-[2.5rem] text-center transition-all ${tierBg(effectiveTier(m))} ${isSaving ? "opacity-50" : ""}`}
                   >
                     {tierLabel(effectiveTier(m))}
