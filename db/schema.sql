@@ -73,10 +73,13 @@ CREATE TABLE IF NOT EXISTS employee_awards (
   display_name VARCHAR(100) NOT NULL,
   user_id      UUID       REFERENCES users(id) ON DELETE SET NULL,
   reason       TEXT,
+  image_path   TEXT,
   award_date   DATE       NOT NULL,
   awarded_by   UUID       REFERENCES users(id) ON DELETE SET NULL,
   created_at   TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+-- Migration for existing installs:
+-- ALTER TABLE employee_awards ADD COLUMN IF NOT EXISTS image_path TEXT;
 CREATE INDEX IF NOT EXISTS idx_employee_awards_date ON employee_awards(award_date);
 CREATE INDEX IF NOT EXISTS idx_employee_awards_type ON employee_awards(award_type);
 
@@ -119,9 +122,12 @@ CREATE TABLE IF NOT EXISTS wall_of_shame (
   id           UUID         PRIMARY KEY DEFAULT gen_random_uuid(),
   title        VARCHAR(255) NOT NULL,
   description  TEXT,
+  image_path   TEXT,
   submitted_by UUID         REFERENCES users(id) ON DELETE SET NULL,
   created_at   TIMESTAMPTZ  NOT NULL DEFAULT NOW()
 );
+-- Migration for existing installs:
+-- ALTER TABLE wall_of_shame ADD COLUMN IF NOT EXISTS image_path TEXT;
 
 -- ============================================================
 -- ANNOUNCEMENTS  (homepage guild announcements)

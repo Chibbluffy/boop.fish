@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useRef } from "react";
 import { useAuth, isOfficerOrAdmin } from "../lib/auth";
 
 type Award = {
@@ -6,37 +6,71 @@ type Award = {
   award_type: "day" | "month";
   display_name: string;
   reason: string | null;
+  image_path: string | null;
   award_date: string;
 };
 
-function AwardCard({ award, label, isOfficer }: { award: Award | null; label: string; isOfficer: boolean }) {
-  return award ? (
-    <div className="relative rounded-2xl border border-amber-500/20 bg-gradient-to-br from-amber-950/30 via-slate-900 to-slate-900 p-8 overflow-hidden">
-      <div className="absolute -top-12 -right-12 w-48 h-48 bg-amber-500/10 rounded-full blur-3xl pointer-events-none" />
-      <div className="absolute -bottom-8 -left-8 w-32 h-32 bg-amber-600/8 rounded-full blur-2xl pointer-events-none" />
+function AwardCard({ award, label }: { award: Award | null; label: string }) {
+  const [lightbox, setLightbox] = useState(false);
 
-      <div className="flex items-center gap-2 mb-6">
-        <span className="text-2xl">⭐</span>
-        <span className="text-xs font-black uppercase tracking-widest text-amber-400/80">
-          Employee of the {label}
-        </span>
+  return award ? (
+    <>
+      <div className="relative rounded-2xl border border-amber-500/20 bg-gradient-to-br from-amber-950/30 via-slate-900 to-slate-900 p-8 overflow-hidden flex flex-col items-center text-center">
+        <div className="absolute -top-12 -right-12 w-48 h-48 bg-amber-500/10 rounded-full blur-3xl pointer-events-none" />
+        <div className="absolute -bottom-8 -left-8 w-32 h-32 bg-amber-600/8 rounded-full blur-2xl pointer-events-none" />
+
+        {/* Label */}
+        <div className="flex items-center gap-2 mb-5">
+          <span className="text-2xl">⭐</span>
+          <span className="text-xs font-black uppercase tracking-widest text-amber-400/80">
+            Employee of the {label}
+          </span>
+        </div>
+
+        {/* Image */}
+        {award.image_path && (
+          <button
+            onClick={() => setLightbox(true)}
+            className="mb-5 w-28 h-28 rounded-2xl overflow-hidden border border-amber-500/20 hover:border-amber-400/40 transition-colors shrink-0"
+          >
+            <img src={award.image_path} alt="" className="w-full h-full object-cover" />
+          </button>
+        )}
+
+        <h3 className="text-4xl font-black text-white leading-tight mb-4">{award.display_name}</h3>
+
+        {award.reason && (
+          <p className="text-slate-300 leading-relaxed mb-6 italic">"{award.reason}"</p>
+        )}
+
+        <p className="text-xs text-slate-600 uppercase tracking-widest font-semibold">
+          Awarded {fmt(award.award_date)}
+        </p>
       </div>
 
-      <h3 className="text-4xl font-black text-white leading-tight mb-4">{award.display_name}</h3>
-
-      {award.reason && (
-        <p className="text-slate-300 leading-relaxed mb-6 italic">"{award.reason}"</p>
+      {/* Lightbox */}
+      {lightbox && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm"
+          onClick={() => setLightbox(false)}
+        >
+          <img
+            src={award.image_path!}
+            alt=""
+            className="max-w-full max-h-full rounded-2xl shadow-2xl"
+            onClick={e => e.stopPropagation()}
+          />
+          <button
+            onClick={() => setLightbox(false)}
+            className="absolute top-4 right-4 w-9 h-9 flex items-center justify-center rounded-full bg-slate-800/80 text-white hover:bg-slate-700 transition-colors"
+          >✕</button>
+        </div>
       )}
-
-      <p className="text-xs text-slate-600 uppercase tracking-widest font-semibold">
-        Awarded {fmt(award.award_date)}
-      </p>
-    </div>
+    </>
   ) : (
     <div className="rounded-2xl border border-slate-800 bg-slate-900/40 p-12 text-center flex flex-col items-center justify-center gap-2">
       <p className="text-3xl">⭐</p>
       <p className="text-slate-500 font-semibold text-sm">No employee of the {label.toLowerCase()} set.</p>
-      {isOfficer && <p className="text-slate-600 text-xs">Use Update to recognize someone.</p>}
     </div>
   );
 }
@@ -61,8 +95,11 @@ export default function Employee() {
   const [name, setName] = useState("");
   const [reason, setReason] = useState("");
   const [type, setType] = useState<"day" | "month">("month");
+  const [image, setImage] = useState<File | null>(null);
+  const [preview, setPreview] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     fetch("/api/awards")
@@ -75,27 +112,41 @@ export default function Employee() {
       .catch(() => setLoading(false));
   }, []);
 
+  function pickImage(file: File | null) {
+    setImage(file);
+    if (preview) URL.revokeObjectURL(preview);
+    setPreview(file ? URL.createObjectURL(file) : null);
+  }
+
+  function closeEdit() {
+    setShowEdit(false);
+    setName("");
+    setReason("");
+    pickImage(null);
+    setError(null);
+  }
+
   async function save() {
     if (!name.trim()) return setError("Name is required.");
     setSaving(true);
     setError(null);
+    const form = new FormData();
+    form.set("award_type",   type);
+    form.set("display_name", name.trim());
+    form.set("reason",       reason.trim());
+    form.set("award_date",   new Date().toISOString().slice(0, 10));
+    if (image) form.set("image", image);
+
     const res = await fetch("/api/awards", {
       method: "POST",
-      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-      body: JSON.stringify({
-        award_type: type,
-        display_name: name.trim(),
-        reason: reason.trim() || null,
-        award_date: new Date().toISOString().slice(0, 10),
-      }),
+      headers: { Authorization: `Bearer ${token}` },
+      body: form,
     });
     if (res.ok) {
       const award: Award = await res.json();
       if (award.award_type === "day") setLatestDay(award);
       else setLatestMonth(award);
-      setShowEdit(false);
-      setName("");
-      setReason("");
+      closeEdit();
     } else {
       const data = await res.json();
       setError(data.error ?? "Something went wrong.");
@@ -123,20 +174,20 @@ export default function Employee() {
           )}
         </div>
 
-        {/* Award card */}
+        {/* Award cards */}
         {loading ? (
           <p className="text-slate-600 text-center py-20">Loading...</p>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            <AwardCard award={latestMonth} label="Month" isOfficer={isOfficer} />
-            <AwardCard award={latestDay}   label="Day"   isOfficer={isOfficer} />
+            <AwardCard award={latestMonth} label="Month" />
+            <AwardCard award={latestDay}   label="Day"   />
           </div>
         )}
       </div>
 
       {/* ── Edit modal ── */}
       {showEdit && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4" onClick={() => setShowEdit(false)}>
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4" onClick={closeEdit}>
           <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" />
           <div className="relative bg-slate-900 border border-slate-700 rounded-2xl p-6 max-w-md w-full shadow-2xl" onClick={e => e.stopPropagation()}>
             <h3 className="text-xl font-black text-white mb-5">Set Star Employee</h3>
@@ -177,6 +228,36 @@ export default function Employee() {
                 />
               </div>
 
+              {/* Image picker */}
+              <div>
+                <label className="text-xs text-slate-400 uppercase tracking-widest font-semibold block mb-1.5">
+                  Photo <span className="normal-case text-slate-600 font-normal">(optional)</span>
+                </label>
+                {preview ? (
+                  <div className="relative w-full rounded-xl overflow-hidden border border-slate-700">
+                    <img src={preview} alt="" className="w-full max-h-48 object-cover" />
+                    <button
+                      onClick={() => pickImage(null)}
+                      className="absolute top-2 right-2 w-7 h-7 flex items-center justify-center rounded-full bg-slate-900/80 text-white hover:bg-red-600/80 transition-colors text-xs"
+                    >✕</button>
+                  </div>
+                ) : (
+                  <button
+                    onClick={() => fileInputRef.current?.click()}
+                    className="w-full py-3 rounded-xl border border-dashed border-slate-700 hover:border-amber-500/40 text-slate-500 hover:text-slate-300 text-sm transition-colors"
+                  >
+                    Click to attach photo
+                  </button>
+                )}
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept="image/*"
+                  className="hidden"
+                  onChange={e => pickImage(e.target.files?.[0] ?? null)}
+                />
+              </div>
+
               {error && (
                 <p className="text-sm text-red-400 bg-red-500/10 border border-red-500/20 rounded-lg px-3 py-2">{error}</p>
               )}
@@ -190,7 +271,7 @@ export default function Employee() {
               >
                 {saving ? "Saving..." : "⭐ Award"}
               </button>
-              <button onClick={() => setShowEdit(false)}
+              <button onClick={closeEdit}
                 className="px-5 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 font-semibold text-sm transition-colors">
                 Cancel
               </button>
