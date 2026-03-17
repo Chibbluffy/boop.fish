@@ -18,9 +18,11 @@ const NAV_GROUPS = [
     label: "Guild Activities",
     memberOnly: true, // hidden for guests and pending
     items: [
-      { label: "Calendar",      href: "#/calendar", route: "calendar" },
-      { label: "Nodewar",       href: "#/nodewar",  route: "nodewar" },
-      { label: "Black Shrine",  href: "#/shrine",   route: "shrine" },
+      { label: "Calendar",         href: "#/calendar",           route: "calendar" },
+      { label: "Nodewar",          href: "#/nodewar",            route: "nodewar" },
+      { label: "Black Shrine",     href: "#/shrine",             route: "shrine" },
+      { label: "Guild Directory",  href: "#/guild-directory",    route: "guild-directory" },
+      { label: "Gear Leaderboard", href: "#/gear-leaderboard",   route: "gear-leaderboard" },
     ],
   },
   {
@@ -28,10 +30,11 @@ const NAV_GROUPS = [
     label: "Misc",
     memberOnly: false,
     items: [
-      { label: "Frogs",                   href: "#/frogs",        route: "frogs" },
-      { label: "Employee of the Month",   href: "#/employee",     route: "employee" },
-      { label: "Wall of Shame",           href: "#/wall",         route: "wall" },
-      { label: "Submit to Wall of Shame", href: "#/submit-wall",  route: "submit-wall" },
+      { label: "Frogs",                   href: "#/frogs",               route: "frogs" },
+      { label: "Employee of the Month",   href: "#/employee",            route: "employee" },
+      { label: "Wall of Shame",           href: "#/wall",                route: "wall" },
+      { label: "Submit to Wall of Shame", href: "#/submit-wall",         route: "submit-wall" },
+      { label: "Ribbit Leaderboard",      href: "#/ribbit-leaderboard",  route: "ribbit-leaderboard" },
     ],
   },
 ] as const;
@@ -46,7 +49,7 @@ const ROLE_STYLE: Record<string, string> = {
 // ── Profile edit dropdown ─────────────────────────────────────────────────────
 
 function ProfileDropdown({ user, onClose }: { user: AuthUser; onClose: () => void }) {
-  const [charName, setCharName] = useState(user.character_name ?? "");
+  const [famName, setFamName]   = useState(user.family_name ?? "");
   const [email, setEmail]       = useState(user.email ?? "");
   const [cls, setCls]           = useState(user.bdo_class ?? "");
   const [ap, setAp]             = useState(user.gear_ap  != null ? String(user.gear_ap)  : "");
@@ -63,7 +66,7 @@ function ProfileDropdown({ user, onClose }: { user: AuthUser; onClose: () => voi
       method: "PATCH",
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${token()}` },
       body: JSON.stringify({
-        character_name: charName.trim() || null,
+        family_name: famName.trim() || null,
         email:    email.trim() || null,
         bdo_class: cls || null,
         gear_ap:  ap  ? parseInt(ap)  : null,
@@ -104,8 +107,8 @@ function ProfileDropdown({ user, onClose }: { user: AuthUser; onClose: () => voi
       {/* Edit form */}
       <div className="px-4 pt-3 flex flex-col gap-2.5">
         <div>
-          <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest block mb-1">Character Name</label>
-          <input value={charName} onChange={e => setCharName(e.target.value)} placeholder="In-game name" className={inp} />
+          <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest block mb-1">Family Name</label>
+          <input value={famName} onChange={e => setFamName(e.target.value)} placeholder="BDO family name" className={inp} />
         </div>
 
         <div>
@@ -179,7 +182,7 @@ export default function Nav({ route }: NavProps) {
   // Close any open dropdown on route change
   useEffect(() => { setOpenGroup(null); }, [route]);
 
-  const hasGear = user && (user.bdo_class || user.gear_ap != null || user.gear_aap != null || user.gear_dp != null);
+  const hasGear = user && (user.family_name || user.bdo_class || user.gear_ap != null || user.gear_aap != null || user.gear_dp != null);
 
   return (
     <>
@@ -289,8 +292,11 @@ export default function Nav({ route }: NavProps) {
                   </div>
                   {hasGear ? (
                     <div className="flex items-center gap-1.5 mt-0.5">
+                      {user.family_name && (
+                        <span className="text-[10px] text-violet-400 font-semibold leading-none">{user.family_name}</span>
+                      )}
                       {user.bdo_class && (
-                        <span className="text-[10px] text-violet-400 font-semibold leading-none">{user.bdo_class}</span>
+                        <span className="text-[10px] text-slate-500 font-semibold leading-none">{user.bdo_class}</span>
                       )}
                       {(user.gear_ap != null || user.gear_aap != null || user.gear_dp != null) && (
                         <span className="text-[10px] text-slate-500 font-mono leading-none">
@@ -299,7 +305,7 @@ export default function Nav({ route }: NavProps) {
                       )}
                     </div>
                   ) : (
-                    <p className="text-[10px] text-slate-600 leading-none mt-0.5">Set up gear profile</p>
+                    <p className="text-[10px] text-slate-600 leading-none mt-0.5">Set up your profile</p>
                   )}
                 </div>
                 <svg className={`w-3 h-3 text-slate-600 transition-transform shrink-0 ${openGroup === "profile" ? "rotate-180" : ""}`} viewBox="0 0 10 6" fill="none">

@@ -27,9 +27,23 @@ CREATE TABLE IF NOT EXISTS users (
   gear_ap       INTEGER,                        -- saved AP
   gear_aap      INTEGER,                        -- saved Awakening AP
   gear_dp       INTEGER,                        -- saved DP
+  -- Roster fields
+  timezone      VARCHAR(60),                    -- IANA timezone, set at registration
+  family_name   VARCHAR(100),                   -- BDO family name
+  discord_name  VARCHAR(100),                   -- Discord username
+  guild_rank    VARCHAR(50)  DEFAULT 'Member',  -- in-guild rank (GM/Officer/Staff/etc.)
+  play_status   VARCHAR(30)  DEFAULT 'Active',  -- PvP/PvE/AFK/etc.
+  roster_notes  TEXT,                           -- officer-managed notes
   created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at    TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+-- Migrations for existing installs:
+-- ALTER TABLE users ADD COLUMN IF NOT EXISTS timezone     VARCHAR(60);
+-- ALTER TABLE users ADD COLUMN IF NOT EXISTS family_name  VARCHAR(100);
+-- ALTER TABLE users ADD COLUMN IF NOT EXISTS discord_name VARCHAR(100);
+-- ALTER TABLE users ADD COLUMN IF NOT EXISTS guild_rank   VARCHAR(50) DEFAULT 'Member';
+-- ALTER TABLE users ADD COLUMN IF NOT EXISTS play_status  VARCHAR(30) DEFAULT 'Active';
+-- ALTER TABLE users ADD COLUMN IF NOT EXISTS roster_notes TEXT;
 
 -- ============================================================
 -- SESSIONS  (server-side, fully revocable)

@@ -9,11 +9,14 @@ export type AuthUser = {
   email: string | null;
   role: "pending" | "member" | "officer" | "admin";
   character_name: string | null;
+  family_name: string | null;
+  discord_name: string | null;
   ribbit_count: number;
   bdo_class: string | null;
   gear_ap: number | null;
   gear_aap: number | null;
   gear_dp: number | null;
+  timezone: string | null;
 };
 
 const TOKEN_KEY = "boop_session";
