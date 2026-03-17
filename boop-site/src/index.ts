@@ -159,7 +159,7 @@ const server = serve({
         const user = await authenticate(req);
         if (!user) return err("Unauthorized", 401);
 
-        const { family_name, email: newEmail, bdo_class, gear_ap, gear_aap, gear_dp } = await req.json();
+        const { family_name, email: newEmail, timezone, bdo_class, gear_ap, gear_aap, gear_dp } = await req.json();
 
         const parsedAp  = gear_ap  != null ? parseInt(gear_ap)  : null;
         const parsedAap = gear_aap != null ? parseInt(gear_aap) : null;
@@ -175,6 +175,7 @@ const server = serve({
           UPDATE users SET
             family_name    = ${family_name ?? null},
             email          = ${newEmail ?? null},
+            timezone       = ${timezone ?? null},
             bdo_class      = ${bdo_class ?? null},
             gear_ap        = ${parsedAp},
             gear_aap       = ${parsedAap},
