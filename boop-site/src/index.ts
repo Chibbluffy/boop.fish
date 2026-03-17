@@ -335,7 +335,7 @@ const server = serve({
         if (!requireRole(user, "officer")) return err("Forbidden", 403);
 
         const members = await sql`
-          SELECT id, username, email, role, character_name, ribbit_count, created_at
+          SELECT id, username, email, role, character_name, family_name, ribbit_count, created_at
           FROM users
           ORDER BY
             CASE role WHEN 'admin' THEN 0 WHEN 'officer' THEN 1 ELSE 2 END,
