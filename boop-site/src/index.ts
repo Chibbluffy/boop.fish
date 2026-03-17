@@ -364,6 +364,18 @@ const server = serve({
       },
     },
 
+    "/api/members/:id": {
+      async DELETE(req) {
+        const actor = await authenticate(req);
+        if (actor?.role !== "admin") return err("Forbidden", 403);
+        if (req.params.id === actor.id) return err("Cannot delete your own account", 400);
+        const [target] = await sql`SELECT id FROM users WHERE id = ${req.params.id}`;
+        if (!target) return err("User not found", 404);
+        await sql`DELETE FROM users WHERE id = ${req.params.id}`;
+        return json({ ok: true });
+      },
+    },
+
     "/api/members/:id/role": {
       async PATCH(req) {
         const actor = await authenticate(req);
