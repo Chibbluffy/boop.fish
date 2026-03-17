@@ -2,6 +2,7 @@ import React, { useEffect, useState } from "react";
 import { useAuth, clearSession, isOfficerOrAdmin, updateUser } from "../lib/auth";
 import type { AuthUser } from "../lib/auth";
 import ClassSelect from "./ClassSelect";
+import { TIMEZONES } from "../lib/timezones";
 
 const NAV_GROUPS = [
   {
@@ -49,14 +50,15 @@ const ROLE_STYLE: Record<string, string> = {
 // ── Profile edit dropdown ─────────────────────────────────────────────────────
 
 function ProfileDropdown({ user, onClose }: { user: AuthUser; onClose: () => void }) {
-  const [famName, setFamName]   = useState(user.family_name ?? "");
-  const [email, setEmail]       = useState(user.email ?? "");
-  const [cls, setCls]           = useState(user.bdo_class ?? "");
-  const [ap, setAp]             = useState(user.gear_ap  != null ? String(user.gear_ap)  : "");
-  const [aap, setAap]           = useState(user.gear_aap != null ? String(user.gear_aap) : "");
-  const [dp, setDp]             = useState(user.gear_dp  != null ? String(user.gear_dp)  : "");
-  const [saving, setSaving]     = useState(false);
-  const [saved, setSaved]       = useState(false);
+  const [famName,   setFamName]  = useState(user.family_name ?? "");
+  const [email,     setEmail]    = useState(user.email ?? "");
+  const [timezone,  setTimezone] = useState(user.timezone ?? "");
+  const [cls,       setCls]      = useState(user.bdo_class ?? "");
+  const [ap,        setAp]       = useState(user.gear_ap  != null ? String(user.gear_ap)  : "");
+  const [aap,       setAap]      = useState(user.gear_aap != null ? String(user.gear_aap) : "");
+  const [dp,        setDp]       = useState(user.gear_dp  != null ? String(user.gear_dp)  : "");
+  const [saving,    setSaving]   = useState(false);
+  const [saved,     setSaved]    = useState(false);
 
   const token = () => localStorage.getItem("boop_session") ?? "";
 
@@ -68,6 +70,7 @@ function ProfileDropdown({ user, onClose }: { user: AuthUser; onClose: () => voi
       body: JSON.stringify({
         family_name: famName.trim() || null,
         email:    email.trim() || null,
+        timezone: timezone || null,
         bdo_class: cls || null,
         gear_ap:  ap  ? parseInt(ap)  : null,
         gear_aap: aap ? parseInt(aap) : null,
@@ -114,6 +117,16 @@ function ProfileDropdown({ user, onClose }: { user: AuthUser; onClose: () => voi
         <div>
           <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest block mb-1">Email</label>
           <input type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="you@example.com" className={inp} />
+        </div>
+
+        <div>
+          <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest block mb-1">Timezone</label>
+          <select value={timezone} onChange={e => setTimezone(e.target.value)} className={inp}>
+            <option value="">— not set —</option>
+            {TIMEZONES.map(tz => (
+              <option key={tz.value} value={tz.value}>{tz.label}</option>
+            ))}
+          </select>
         </div>
 
         <div>
