@@ -18,8 +18,11 @@ import Nodewar from "./pages/Nodewar";
 import Settings from "./pages/Settings";
 import SubmitWall from "./pages/SubmitWall";
 import BlackShrine from "./pages/BlackShrine";
+import RibbitLeaderboard from "./pages/RibbitLeaderboard";
+import GearLeaderboard from "./pages/GearLeaderboard";
+import GuildDirectory from "./pages/GuildDirectory";
 
-type Route = "home" | "class-roller" | "shuffler" | "employee" | "frogs" | "wall" | "submit-wall" | "calendar" | "nodewar" | "shrine" | "auth" | "manage";
+type Route = "home" | "class-roller" | "shuffler" | "employee" | "frogs" | "wall" | "submit-wall" | "calendar" | "nodewar" | "shrine" | "auth" | "manage" | "ribbit-leaderboard" | "gear-leaderboard" | "guild-directory";
 
 function parseHash(): Route {
   const h = location.hash.replace(/^#\/?/, "").split("/")[0];
@@ -45,7 +48,10 @@ function parseHash(): Route {
     case "members":  // legacy redirect
       return "manage";
     case "submit-wall": return "submit-wall";
-    case "shrine":      return "shrine";
+    case "shrine":             return "shrine";
+    case "ribbit-leaderboard": return "ribbit-leaderboard";
+    case "gear-leaderboard":   return "gear-leaderboard";
+    case "guild-directory":    return "guild-directory";
     default:
       return "home";
   }
@@ -101,7 +107,10 @@ export function App() {
         {route === "nodewar" && <Nodewar />}
         {route === "manage"      && <Settings />}
         {route === "submit-wall" && <SubmitWall />}
-        {route === "shrine"      && <BlackShrine key={user?.id ?? "guest"} />}
+        {route === "shrine"             && <BlackShrine key={user?.id ?? "guest"} />}
+        {route === "ribbit-leaderboard" && <RibbitLeaderboard />}
+        {route === "gear-leaderboard"   && <GearLeaderboard />}
+        {route === "guild-directory"    && <GuildDirectory />}
       </main>
     </div>
   );

@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { useAuth, saveSession, clearSession } from "../lib/auth";
+import { TIMEZONES } from "../lib/timezones";
 
 type Mode = "login" | "register" | "forgot" | "reset";
 
@@ -15,7 +16,9 @@ export default function Auth() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [confirm, setConfirm] = useState("");
-  const [charName, setCharName] = useState("");
+  const [famName, setFamName] = useState("");
+  const [discordName, setDiscordName] = useState("");
+  const [timezone, setTimezone] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [info, setInfo] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -34,12 +37,14 @@ export default function Auth() {
     if (!username.trim() || !password) return setError("Fill in all fields.");
     if (mode === "register" && password !== confirm) return setError("Passwords do not match.");
     if (mode === "register" && password.length < 8) return setError("Password must be at least 8 characters.");
+    if (mode === "register" && !timezone) return setError("Please select your timezone.");
 
     setLoading(true);
     try {
       const body: Record<string, string> = { username, password };
-      if (mode === "register" && charName.trim()) body.character_name = charName.trim();
-      if (mode === "register" && email.trim()) body.email = email.trim();
+      if (mode === "register" && famName.trim()) body.family_name = famName.trim();
+      if (mode === "register" && discordName.trim()) body.discord_name = discordName.trim();
+      if (mode === "register") body.timezone = timezone;
 
       const res = await fetch(mode === "login" ? "/api/auth/login" : "/api/auth/register", {
         method: "POST",
@@ -119,7 +124,7 @@ export default function Auth() {
               {user.username[0].toUpperCase()}
             </div>
             <p className="text-lg font-black text-white">{user.username}</p>
-            {user.character_name && <p className="text-sm text-slate-400">{user.character_name}</p>}
+            {user.family_name && <p className="text-sm text-slate-400">{user.family_name}</p>}
             <span className={`text-xs font-bold px-2 py-0.5 rounded-full uppercase tracking-widest ${
               user.role === "admin"   ? "bg-red-500/20 text-red-400 border border-red-500/30" :
               user.role === "officer" ? "bg-amber-500/20 text-amber-400 border border-amber-500/30" :
@@ -183,11 +188,23 @@ export default function Auth() {
             <Field label="Username">
               <TextInput value={username} onChange={setUsername} placeholder="your_username" onEnter={submitLoginRegister} />
             </Field>
-            <Field label="Character Name" optional>
-              <TextInput value={charName} onChange={setCharName} placeholder="In-game name" onEnter={submitLoginRegister} />
+            <Field label="Family Name" optional>
+              <TextInput value={famName} onChange={setFamName} placeholder="BDO family name" onEnter={submitLoginRegister} />
             </Field>
-            <Field label="Email" optional>
-              <TextInput type="email" value={email} onChange={setEmail} placeholder="you@example.com" onEnter={submitLoginRegister} />
+            <Field label="Discord" optional>
+              <TextInput value={discordName} onChange={setDiscordName} placeholder="your discord username" onEnter={submitLoginRegister} />
+            </Field>
+            <Field label="Timezone">
+              <select
+                value={timezone}
+                onChange={e => setTimezone(e.target.value)}
+                className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2.5 text-white focus:outline-none focus:border-violet-500 transition-colors"
+              >
+                <option value="" disabled>Select your timezone…</option>
+                {TIMEZONES.map(tz => (
+                  <option key={tz.value} value={tz.value}>{tz.label}</option>
+                ))}
+              </select>
             </Field>
             <Field label="Password">
               <TextInput type="password" value={password} onChange={setPassword} placeholder="8+ characters" onEnter={submitLoginRegister} />
