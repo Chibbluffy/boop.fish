@@ -46,6 +46,8 @@ CREATE TABLE IF NOT EXISTS users (
 -- ALTER TABLE users ADD COLUMN IF NOT EXISTS play_status  VARCHAR(30) DEFAULT 'Active';
 -- ALTER TABLE users ADD COLUMN IF NOT EXISTS roster_notes TEXT;
 -- ALTER TABLE users ADD COLUMN IF NOT EXISTS alt_class    VARCHAR(50);
+-- ALTER TABLE calendar_events ADD COLUMN IF NOT EXISTS event_time     TIME;
+-- ALTER TABLE calendar_events ADD COLUMN IF NOT EXISTS event_timezone VARCHAR(60);
 
 -- ============================================================
 -- SESSIONS  (server-side, fully revocable)
@@ -72,6 +74,8 @@ CREATE TABLE IF NOT EXISTS calendar_events (
   title       VARCHAR(255) NOT NULL,
   description TEXT,
   event_date  DATE        NOT NULL,
+  event_time  TIME,                            -- optional; NULL = all day
+  event_timezone VARCHAR(60),                  -- IANA tz of creator; used for display conversion
   created_by  UUID        REFERENCES users(id) ON DELETE SET NULL,
   created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()

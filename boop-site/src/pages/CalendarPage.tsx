@@ -1,7 +1,15 @@
 import React, { useEffect, useState } from "react";
 import { useAuth, isOfficerOrAdmin } from "../lib/auth";
+import { TIMEZONES } from "../lib/timezones";
 
-type EventItem = { id: string; date: string; title: string; description?: string };
+type EventItem = {
+  id: string;
+  date: string;          // "YYYY-MM-DD"
+  title: string;
+  description?: string;
+  event_time?: string;   // "HH:MM" in event_timezone, optional
+  event_timezone?: string; // IANA tz of creator
+};
 
 const MONTHS = ["January","February","March","April","May","June","July","August","September","October","November","December"];
 const DAY_HEADERS = ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
@@ -11,26 +19,89 @@ function dateStr(year: number, month: number, day: number) {
   return `${year}-${pad(month + 1)}-${pad(day)}`;
 }
 
+/**
+ * Convert a wall-clock time in one IANA timezone to a UTC Date.
+ * Works by probing the offset and adjusting.
+ */
+function toUTC(dateStr: string, timeStr: string, tz: string): Date {
+  const [h, m] = timeStr.split(":").map(Number);
+  const probe = new Date(`${dateStr}T${timeStr}:00Z`);
+  const inTz = new Intl.DateTimeFormat("en-GB", {
+    timeZone: tz, hour: "2-digit", minute: "2-digit", hour12: false,
+  }).format(probe);
+  const [th, tm] = inTz.split(":").map(n => parseInt(n) % 24);
+  const diffMs = ((h - th) * 60 + (m - tm)) * 60 * 1000;
+  return new Date(probe.getTime() + diffMs);
+}
+
+/** Format a UTC Date in a given IANA timezone, e.g. "8:00 PM" */
+function fmtTime(utc: Date, tz: string): string {
+  return new Intl.DateTimeFormat("en-US", {
+    timeZone: tz, hour: "numeric", minute: "2-digit", hour12: true,
+  }).format(utc);
+}
+
+/** Short timezone label, e.g. "ET" from "Eastern (ET, UTC-5/-4)" */
+function tzShort(tz: string | undefined): string {
+  if (!tz) return "";
+  const entry = TIMEZONES.find(t => t.value === tz);
+  const m = entry?.label.match(/\(([^,)]+)/);
+  return m ? m[1] : tz;
+}
+
+/**
+ * Returns the display time string for an event in the viewer's timezone.
+ * If viewer has no timezone, falls back to the event's own timezone.
+ */
+function displayTime(ev: EventItem, viewerTz: string | null): { time: string; tz: string; converted: boolean } | null {
+  if (!ev.event_time || !ev.event_timezone) return null;
+  const fromTz = ev.event_timezone;
+  const toTz   = viewerTz || fromTz;
+  try {
+    const utc = toUTC(ev.date, ev.event_time, fromTz);
+    const time = fmtTime(utc, toTz);
+    return { time, tz: tzShort(toTz), converted: toTz !== fromTz };
+  } catch {
+    return { time: ev.event_time, tz: tzShort(fromTz), converted: false };
+  }
+}
+
 export default function CalendarPage() {
-  const authUser = useAuth();
+  const authUser  = useAuth();
   const isOfficer = isOfficerOrAdmin(authUser);
+  const viewerTz  = authUser?.timezone ?? null;
 
   const [events, setEvents] = useState<EventItem[]>([]);
   const now = new Date();
-  const [cursor, setCursor] = useState({ year: now.getFullYear(), month: now.getMonth() });
-  const [view, setView] = useState<"calendar" | "list">("calendar");
+  const [cursor, setCursor]   = useState({ year: now.getFullYear(), month: now.getMonth() });
+  const [view, setView]       = useState<"calendar" | "list">("calendar");
   const [selected, setSelected] = useState<EventItem | null>(null);
-  const [showAdd, setShowAdd] = useState(false);
-  const [newDate, setNewDate] = useState(now.toISOString().slice(0, 10));
-  const [newTitle, setNewTitle] = useState("");
-  const [newDesc, setNewDesc] = useState("");
+  const [showAdd, setShowAdd]   = useState(false);
 
-  // Load events from API
+  // New event form
+  const [newDate,  setNewDate]  = useState(now.toISOString().slice(0, 10));
+  const [newTitle, setNewTitle] = useState("");
+  const [newDesc,  setNewDesc]  = useState("");
+  const [newTime,  setNewTime]  = useState("");
+  const [newTz,    setNewTz]    = useState(authUser?.timezone ?? "");
+
+  // Keep newTz in sync if user logs in mid-session
+  useEffect(() => {
+    if (authUser?.timezone && !newTz) setNewTz(authUser.timezone);
+  }, [authUser?.timezone]);
+
   useEffect(() => {
     fetch("/api/calendar")
       .then(r => r.json())
-      .then((data: Array<{ id: string; event_date: string; title: string; description?: string }>) => {
-        setEvents(data.map(e => ({ id: e.id, date: String(e.event_date).slice(0, 10), title: e.title, description: e.description })));
+      .then((data: Array<{ id: string; event_date: string; title: string; description?: string; event_time?: string; event_timezone?: string }>) => {
+        setEvents(data.map(e => ({
+          id: e.id,
+          date: String(e.event_date).slice(0, 10),
+          title: e.title,
+          description: e.description,
+          event_time: e.event_time?.slice(0, 5) ?? undefined,
+          event_timezone: e.event_timezone ?? undefined,
+        })));
       })
       .catch(() => {});
   }, []);
@@ -38,30 +109,40 @@ export default function CalendarPage() {
   async function addEvent() {
     if (!newTitle.trim()) return;
     const token = localStorage.getItem("boop_session");
+    const body: Record<string, string | undefined> = {
+      title: newTitle.trim(),
+      description: newDesc.trim() || undefined,
+      event_date: newDate,
+    };
+    if (newTime) {
+      body.event_time     = newTime;
+      body.event_timezone = newTz || undefined;
+    }
     const res = await fetch("/api/calendar", {
       method: "POST",
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-      body: JSON.stringify({ title: newTitle.trim(), description: newDesc.trim() || undefined, event_date: newDate }),
+      body: JSON.stringify(body),
     });
     if (!res.ok) return;
     const ev = await res.json();
-    setEvents(prev => [...prev, { id: ev.id, date: String(ev.event_date).slice(0, 10), title: ev.title, description: ev.description }]
-      .sort((a, b) => a.date.localeCompare(b.date)));
-    setNewTitle("");
-    setNewDesc("");
+    setEvents(prev => [...prev, {
+      id: ev.id,
+      date: String(ev.event_date).slice(0, 10),
+      title: ev.title,
+      description: ev.description,
+      event_time: ev.event_time?.slice(0, 5) ?? undefined,
+      event_timezone: ev.event_timezone ?? undefined,
+    }].sort((a, b) => a.date.localeCompare(b.date)));
+    setNewTitle(""); setNewDesc(""); setNewTime("");
     setShowAdd(false);
   }
 
   async function deleteEvent(id: string) {
     const token = localStorage.getItem("boop_session");
-    await fetch(`/api/calendar/${id}`, {
-      method: "DELETE",
-      headers: { Authorization: `Bearer ${token}` },
-    });
+    await fetch(`/api/calendar/${id}`, { method: "DELETE", headers: { Authorization: `Bearer ${token}` } });
     setEvents(prev => prev.filter(e => e.id !== id));
     if (selected?.id === id) setSelected(null);
   }
-
 
   function prevMonth() {
     setCursor(c => { const d = new Date(c.year, c.month - 1); return { year: d.getFullYear(), month: d.getMonth() }; });
@@ -70,19 +151,19 @@ export default function CalendarPage() {
     setCursor(c => { const d = new Date(c.year, c.month + 1); return { year: d.getFullYear(), month: d.getMonth() }; });
   }
 
-  // Build calendar grid cells
   const { year, month } = cursor;
   const firstWeekday = new Date(year, month, 1).getDay();
-  const daysInMonth = new Date(year, month + 1, 0).getDate();
+  const daysInMonth  = new Date(year, month + 1, 0).getDate();
   const cells: (number | null)[] = [...Array(firstWeekday).fill(null), ...Array.from({ length: daysInMonth }, (_, i) => i + 1)];
   while (cells.length % 7 !== 0) cells.push(null);
 
   const eventsByDate: Record<string, EventItem[]> = {};
   for (const ev of events) (eventsByDate[ev.date] ??= []).push(ev);
 
-  const todayStr = now.toISOString().slice(0, 10);
-
+  const todayStr    = now.toISOString().slice(0, 10);
   const sortedEvents = [...events].sort((a, b) => a.date.localeCompare(b.date));
+
+  const inp = "w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2.5 text-white placeholder-slate-600 focus:outline-none focus:border-violet-500 transition-colors";
 
   return (
     <div className="min-h-screen bg-slate-950 px-6 py-10">
@@ -91,29 +172,20 @@ export default function CalendarPage() {
         {/* Header */}
         <div className="flex flex-wrap items-center justify-between gap-4 mb-8">
           <h2 className="text-4xl font-black tracking-tight text-white">Guild Calendar</h2>
-
           <div className="flex items-center gap-2">
-            {/* View toggle */}
             <div className="flex bg-slate-900 border border-slate-800 rounded-lg p-0.5">
-              <button
-                onClick={() => setView("calendar")}
-                className={`px-3 py-1.5 rounded-md text-sm font-semibold transition-colors ${view === "calendar" ? "bg-slate-700 text-white" : "text-slate-500 hover:text-white"}`}
-              >
+              <button onClick={() => setView("calendar")}
+                className={`px-3 py-1.5 rounded-md text-sm font-semibold transition-colors ${view === "calendar" ? "bg-slate-700 text-white" : "text-slate-500 hover:text-white"}`}>
                 📅 Calendar
               </button>
-              <button
-                onClick={() => setView("list")}
-                className={`px-3 py-1.5 rounded-md text-sm font-semibold transition-colors ${view === "list" ? "bg-slate-700 text-white" : "text-slate-500 hover:text-white"}`}
-              >
+              <button onClick={() => setView("list")}
+                className={`px-3 py-1.5 rounded-md text-sm font-semibold transition-colors ${view === "list" ? "bg-slate-700 text-white" : "text-slate-500 hover:text-white"}`}>
                 📋 List
               </button>
             </div>
-
             {isOfficer && (
-              <button
-                onClick={() => setShowAdd(true)}
-                className="px-4 py-2 rounded-lg bg-violet-600 hover:bg-violet-500 text-white text-sm font-semibold transition-colors"
-              >
+              <button onClick={() => setShowAdd(true)}
+                className="px-4 py-2 rounded-lg bg-violet-600 hover:bg-violet-500 text-white text-sm font-semibold transition-colors">
                 + Add Event
               </button>
             )}
@@ -123,55 +195,45 @@ export default function CalendarPage() {
         {/* ── CALENDAR VIEW ── */}
         {view === "calendar" && (
           <>
-            {/* Month navigation */}
             <div className="flex items-center justify-between mb-4">
               <button onClick={prevMonth} className="w-9 h-9 flex items-center justify-center rounded-lg hover:bg-slate-800 text-slate-400 hover:text-white transition-colors text-xl">‹</button>
               <h3 className="text-xl font-bold text-white">{MONTHS[month]} {year}</h3>
               <button onClick={nextMonth} className="w-9 h-9 flex items-center justify-center rounded-lg hover:bg-slate-800 text-slate-400 hover:text-white transition-colors text-xl">›</button>
             </div>
 
-            {/* Day-of-week headers */}
             <div className="grid grid-cols-7 mb-1">
               {DAY_HEADERS.map(d => (
                 <div key={d} className="text-center text-xs font-semibold text-slate-600 uppercase tracking-widest py-2">{d}</div>
               ))}
             </div>
 
-            {/* Calendar grid */}
             <div className="grid grid-cols-7 gap-1">
               {cells.map((day, i) => {
                 if (!day) return <div key={`e-${i}`} />;
                 const ds = dateStr(year, month, day);
                 const dayEvents = eventsByDate[ds] ?? [];
-                const isToday = ds === todayStr;
-
+                const isToday   = ds === todayStr;
                 return (
-                  <div
-                    key={ds}
-                    className={`min-h-[80px] p-2 rounded-xl border transition-colors
-                      ${isToday
-                        ? "border-violet-500/50 bg-violet-950/30"
-                        : "border-slate-800/50 bg-slate-900/30 hover:bg-slate-900/60"
-                      }`}
+                  <div key={ds}
+                    className={`min-h-[80px] p-2 rounded-xl border transition-colors ${
+                      isToday ? "border-violet-500/50 bg-violet-950/30" : "border-slate-800/50 bg-slate-900/30 hover:bg-slate-900/60"
+                    }`}
                   >
-                    <span className={`text-xs font-bold ${isToday ? "text-violet-400" : "text-slate-500"}`}>
-                      {day}
-                    </span>
+                    <span className={`text-xs font-bold ${isToday ? "text-violet-400" : "text-slate-500"}`}>{day}</span>
                     <div className="mt-1 flex flex-col gap-0.5">
-                      {dayEvents.slice(0, 2).map(ev => (
-                        <button
-                          key={ev.id}
-                          onClick={() => setSelected(ev)}
-                          className="text-left text-[10px] font-semibold px-1.5 py-0.5 rounded-md bg-violet-600/70 hover:bg-violet-500 text-white truncate w-full transition-colors"
-                        >
-                          {ev.title}
-                        </button>
-                      ))}
+                      {dayEvents.slice(0, 2).map(ev => {
+                        const dt = displayTime(ev, viewerTz);
+                        return (
+                          <button key={ev.id} onClick={() => setSelected(ev)}
+                            className="text-left text-[10px] font-semibold px-1.5 py-0.5 rounded-md bg-violet-600/70 hover:bg-violet-500 text-white truncate w-full transition-colors"
+                          >
+                            {dt && <span className="opacity-75 mr-1">{dt.time}</span>}{ev.title}
+                          </button>
+                        );
+                      })}
                       {dayEvents.length > 2 && (
-                        <button
-                          onClick={() => setSelected(dayEvents[2])}
-                          className="text-[9px] text-slate-500 hover:text-slate-300 text-left pl-1 transition-colors"
-                        >
+                        <button onClick={() => setSelected(dayEvents[2])}
+                          className="text-[9px] text-slate-500 hover:text-slate-300 text-left pl-1 transition-colors">
                           +{dayEvents.length - 2} more
                         </button>
                       )}
@@ -192,130 +254,167 @@ export default function CalendarPage() {
                 <p className="font-semibold">No events yet</p>
                 <p className="text-sm mt-1">Hit "+ Add Event" to get started.</p>
               </div>
-            ) : (
-              sortedEvents.map(ev => {
-                const d = new Date(ev.date);
-                const isPast = ev.date < todayStr;
-                return (
-                  <div
-                    key={ev.id}
-                    className={`flex items-start gap-4 p-4 rounded-xl border transition-colors ${isPast ? "border-slate-800/40 bg-slate-900/20 opacity-60" : "border-slate-800 bg-slate-900/50 hover:bg-slate-900"}`}
-                  >
-                    {/* Date block */}
-                    <div className="shrink-0 w-14 text-center rounded-lg bg-slate-800 py-2 px-1">
-                      <p className="text-[10px] font-bold text-violet-400 uppercase tracking-wide">
-                        {d.toLocaleDateString("en-US", { month: "short" })}
+            ) : sortedEvents.map(ev => {
+              const d    = new Date(ev.date + "T12:00:00Z");
+              const isPast = ev.date < todayStr;
+              const dt   = displayTime(ev, viewerTz);
+              return (
+                <div key={ev.id}
+                  className={`flex items-start gap-4 p-4 rounded-xl border transition-colors ${isPast ? "border-slate-800/40 bg-slate-900/20 opacity-60" : "border-slate-800 bg-slate-900/50 hover:bg-slate-900"}`}
+                >
+                  <div className="shrink-0 w-14 text-center rounded-lg bg-slate-800 py-2 px-1">
+                    <p className="text-[10px] font-bold text-violet-400 uppercase tracking-wide">
+                      {d.toLocaleDateString("en-US", { month: "short", timeZone: "UTC" })}
+                    </p>
+                    <p className="text-2xl font-black text-white leading-none">
+                      {d.toLocaleDateString("en-US", { day: "numeric", timeZone: "UTC" })}
+                    </p>
+                    <p className="text-[10px] text-slate-500">
+                      {d.toLocaleDateString("en-US", { year: "numeric", timeZone: "UTC" })}
+                    </p>
+                  </div>
+
+                  <div className="flex-1 min-w-0 pt-1">
+                    <p className="font-bold text-white">{ev.title}</p>
+                    {dt && (
+                      <p className="text-xs text-violet-300 mt-0.5 font-semibold">
+                        🕐 {dt.time} {dt.tz}
+                        {dt.converted && ev.event_timezone && (
+                          <span className="text-slate-600 font-normal ml-1.5">
+                            (originally {fmtTime(toUTC(ev.date, ev.event_time!, ev.event_timezone), ev.event_timezone)} {tzShort(ev.event_timezone)})
+                          </span>
+                        )}
                       </p>
-                      <p className="text-2xl font-black text-white leading-none">{d.getDate()}</p>
-                      <p className="text-[10px] text-slate-500">{d.getFullYear()}</p>
-                    </div>
-
-                    {/* Content */}
-                    <div className="flex-1 min-w-0 pt-1">
-                      <p className="font-bold text-white">{ev.title}</p>
-                      {ev.description && (
-                        <p className="text-sm text-slate-400 mt-1 leading-relaxed">{ev.description}</p>
-                      )}
-                    </div>
-
-                    {isOfficer && (
-                      <button
-                        onClick={() => deleteEvent(ev.id)}
-                        className="shrink-0 mt-1 text-slate-700 hover:text-red-400 transition-colors px-1"
-                        title="Delete"
-                      >✕</button>
+                    )}
+                    {!dt && <p className="text-xs text-slate-600 mt-0.5">All day</p>}
+                    {ev.description && (
+                      <p className="text-sm text-slate-400 mt-1 leading-relaxed">{ev.description}</p>
                     )}
                   </div>
-                );
-              })
-            )}
+
+                  {isOfficer && (
+                    <button onClick={() => deleteEvent(ev.id)}
+                      className="shrink-0 mt-1 text-slate-700 hover:text-red-400 transition-colors px-1" title="Delete">✕</button>
+                  )}
+                </div>
+              );
+            })}
           </div>
         )}
       </div>
 
       {/* ── EVENT DETAIL MODAL ── */}
-      {selected && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4" onClick={() => setSelected(null)}>
-          <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" />
-          <div className="relative bg-slate-900 border border-slate-700 rounded-2xl p-6 max-w-md w-full shadow-2xl" onClick={e => e.stopPropagation()}>
-            <div className="flex items-start justify-between mb-4">
-              <div>
-                <p className="text-xs text-violet-400 font-bold uppercase tracking-widest mb-1">{selected.date}</p>
-                <h3 className="text-xl font-black text-white">{selected.title}</h3>
+      {selected && (() => {
+        const dt = displayTime(selected, viewerTz);
+        return (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4" onClick={() => setSelected(null)}>
+            <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" />
+            <div className="relative bg-slate-900 border border-slate-700 rounded-2xl p-6 max-w-md w-full shadow-2xl" onClick={e => e.stopPropagation()}>
+              <div className="flex items-start justify-between mb-4">
+                <div>
+                  <p className="text-xs text-violet-400 font-bold uppercase tracking-widest mb-0.5">{selected.date}</p>
+                  {dt ? (
+                    <p className="text-sm font-semibold text-violet-300 mb-1">
+                      🕐 {dt.time} {dt.tz}
+                      {dt.converted && selected.event_timezone && (
+                        <span className="text-slate-500 font-normal ml-1.5 text-xs">
+                          · {fmtTime(toUTC(selected.date, selected.event_time!, selected.event_timezone), selected.event_timezone)} {tzShort(selected.event_timezone)} originally
+                        </span>
+                      )}
+                    </p>
+                  ) : (
+                    <p className="text-xs text-slate-600 mb-1">All day</p>
+                  )}
+                  <h3 className="text-xl font-black text-white">{selected.title}</h3>
+                </div>
+                <button onClick={() => setSelected(null)} className="text-slate-500 hover:text-white transition-colors text-xl leading-none ml-4">✕</button>
               </div>
-              <button onClick={() => setSelected(null)} className="text-slate-500 hover:text-white transition-colors text-xl leading-none ml-4">✕</button>
+
+              {selected.description
+                ? <p className="text-slate-300 text-sm leading-relaxed">{selected.description}</p>
+                : <p className="text-slate-600 text-sm italic">No description provided.</p>
+              }
+
+              {isOfficer && (
+                <button onClick={() => deleteEvent(selected.id)}
+                  className="mt-5 text-xs text-red-500/70 hover:text-red-400 transition-colors">
+                  Delete this event
+                </button>
+              )}
             </div>
-
-            {selected.description
-              ? <p className="text-slate-300 text-sm leading-relaxed">{selected.description}</p>
-              : <p className="text-slate-600 text-sm italic">No description provided.</p>
-            }
-
-            {isOfficer && (
-              <button
-                onClick={() => deleteEvent(selected.id)}
-                className="mt-5 text-xs text-red-500/70 hover:text-red-400 transition-colors"
-              >
-                Delete this event
-              </button>
-            )}
           </div>
-        </div>
-      )}
+        );
+      })()}
 
       {/* ── ADD EVENT MODAL ── */}
       {isOfficer && showAdd && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4" onClick={() => setShowAdd(false)}>
           <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" />
-          <div className="relative bg-slate-900 border border-slate-700 rounded-2xl p-6 max-w-md w-full shadow-2xl" onClick={e => e.stopPropagation()}>
+          <div className="relative bg-slate-900 border border-slate-700 rounded-2xl p-6 max-w-md w-full shadow-2xl overflow-y-auto max-h-[90vh]" onClick={e => e.stopPropagation()}>
             <h3 className="text-xl font-black text-white mb-5">New Event</h3>
 
             <div className="flex flex-col gap-4">
               <div>
                 <label className="text-xs text-slate-400 uppercase tracking-widest font-semibold block mb-1.5">Date</label>
-                <input
-                  type="date"
-                  value={newDate}
-                  onChange={e => setNewDate(e.target.value)}
-                  className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2.5 text-white focus:outline-none focus:border-violet-500 transition-colors"
-                />
+                <input type="date" value={newDate} onChange={e => setNewDate(e.target.value)} className={inp} />
               </div>
+
+              {/* Time row */}
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-xs text-slate-400 uppercase tracking-widest font-semibold block mb-1.5">
+                    Time <span className="normal-case text-slate-600 font-normal">(optional)</span>
+                  </label>
+                  <input
+                    type="time"
+                    value={newTime}
+                    onChange={e => setNewTime(e.target.value)}
+                    className={inp}
+                  />
+                </div>
+                <div>
+                  <label className="text-xs text-slate-400 uppercase tracking-widest font-semibold block mb-1.5">Timezone</label>
+                  <select
+                    value={newTz}
+                    onChange={e => setNewTz(e.target.value)}
+                    disabled={!newTime}
+                    className={`${inp} disabled:opacity-30`}
+                  >
+                    <option value="">— select —</option>
+                    {TIMEZONES.map(tz => (
+                      <option key={tz.value} value={tz.value}>{tz.label}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              {newTime && !newTz && (
+                <p className="text-xs text-amber-400/80 -mt-2">Select a timezone so members can see the correct time.</p>
+              )}
+
               <div>
                 <label className="text-xs text-slate-400 uppercase tracking-widest font-semibold block mb-1.5">Title</label>
-                <input
-                  value={newTitle}
-                  onChange={e => setNewTitle(e.target.value)}
+                <input value={newTitle} onChange={e => setNewTitle(e.target.value)}
                   onKeyDown={e => e.key === "Enter" && addEvent()}
-                  placeholder="Event name"
-                  className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2.5 text-white placeholder-slate-600 focus:outline-none focus:border-violet-500 transition-colors"
-                />
+                  placeholder="Event name" className={inp} />
               </div>
               <div>
                 <label className="text-xs text-slate-400 uppercase tracking-widest font-semibold block mb-1.5">
                   Description <span className="normal-case text-slate-600 font-normal">(optional)</span>
                 </label>
-                <textarea
-                  value={newDesc}
-                  onChange={e => setNewDesc(e.target.value)}
-                  placeholder="Details, links, notes..."
-                  rows={3}
-                  className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2.5 text-white placeholder-slate-600 focus:outline-none focus:border-violet-500 transition-colors resize-none"
-                />
+                <textarea value={newDesc} onChange={e => setNewDesc(e.target.value)}
+                  placeholder="Details, links, notes..." rows={3}
+                  className={`${inp} resize-none`} />
               </div>
             </div>
 
             <div className="flex gap-2 mt-6">
-              <button
-                onClick={addEvent}
-                disabled={!newTitle.trim()}
-                className="flex-1 py-2.5 rounded-lg bg-violet-600 hover:bg-violet-500 disabled:opacity-30 disabled:cursor-not-allowed text-white font-bold text-sm transition-colors"
-              >
+              <button onClick={addEvent} disabled={!newTitle.trim()}
+                className="flex-1 py-2.5 rounded-lg bg-violet-600 hover:bg-violet-500 disabled:opacity-30 disabled:cursor-not-allowed text-white font-bold text-sm transition-colors">
                 Add Event
               </button>
-              <button
-                onClick={() => setShowAdd(false)}
-                className="px-5 py-2.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 font-semibold text-sm transition-colors"
-              >
+              <button onClick={() => setShowAdd(false)}
+                className="px-5 py-2.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 font-semibold text-sm transition-colors">
                 Cancel
               </button>
             </div>

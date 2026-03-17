@@ -491,9 +491,10 @@ const server = serve({
     "/api/calendar": {
       async GET(_req) {
         const events = await sql`
-          SELECT id, title, description, event_date::text, created_at
+          SELECT id, title, description, event_date::text,
+                 event_time::text, event_timezone, created_at
           FROM calendar_events
-          ORDER BY event_date ASC
+          ORDER BY event_date ASC, event_time ASC NULLS LAST
         `;
         return json(events);
       },
@@ -502,13 +503,17 @@ const server = serve({
         const user = await authenticate(req);
         if (!requireRole(user, "officer")) return err("Forbidden", 403);
 
-        const { title, description, event_date } = await req.json();
+        const { title, description, event_date, event_time, event_timezone } = await req.json();
         if (!title || !event_date) return err("title and event_date are required");
 
         const [event] = await sql`
-          INSERT INTO calendar_events (title, description, event_date, created_by)
-          VALUES (${title}, ${description ?? null}, ${event_date}, ${user!.id})
-          RETURNING id, title, description, event_date, created_at
+          INSERT INTO calendar_events (title, description, event_date, event_time, event_timezone, created_by)
+          VALUES (
+            ${title}, ${description ?? null}, ${event_date},
+            ${event_time ?? null}, ${event_timezone ?? null},
+            ${user!.id}
+          )
+          RETURNING id, title, description, event_date::text, event_time::text, event_timezone, created_at
         `;
         return json(event, 201);
       },
