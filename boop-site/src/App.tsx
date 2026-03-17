@@ -21,8 +21,9 @@ import BlackShrine from "./pages/BlackShrine";
 import RibbitLeaderboard from "./pages/RibbitLeaderboard";
 import GearLeaderboard from "./pages/GearLeaderboard";
 import GuildDirectory from "./pages/GuildDirectory";
+import PayoutTracker from "./pages/PayoutTracker";
 
-type Route = "home" | "class-roller" | "shuffler" | "employee" | "frogs" | "wall" | "submit-wall" | "calendar" | "nodewar" | "shrine" | "auth" | "manage" | "ribbit-leaderboard" | "gear-leaderboard" | "guild-directory";
+type Route = "home" | "class-roller" | "shuffler" | "employee" | "frogs" | "wall" | "submit-wall" | "calendar" | "nodewar" | "shrine" | "auth" | "manage" | "ribbit-leaderboard" | "gear-leaderboard" | "guild-directory" | "payout-tracker";
 
 function parseHash(): Route {
   const h = location.hash.replace(/^#\/?/, "").split("/")[0];
@@ -52,6 +53,7 @@ function parseHash(): Route {
     case "ribbit-leaderboard": return "ribbit-leaderboard";
     case "gear-leaderboard":   return "gear-leaderboard";
     case "guild-directory":    return "guild-directory";
+    case "payout-tracker":     return "payout-tracker";
     default:
       return "home";
   }
@@ -111,6 +113,7 @@ export function App() {
         {route === "ribbit-leaderboard" && <RibbitLeaderboard />}
         {route === "gear-leaderboard"   && <GearLeaderboard />}
         {route === "guild-directory"    && <GuildDirectory />}
+        {route === "payout-tracker"     && <PayoutTracker />}
       </main>
     </div>
   );

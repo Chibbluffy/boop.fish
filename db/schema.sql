@@ -35,6 +35,7 @@ CREATE TABLE IF NOT EXISTS users (
   guild_rank    VARCHAR(50)  DEFAULT 'Member',  -- in-guild rank (GM/Officer/Staff/etc.)
   play_status   VARCHAR(30)  DEFAULT 'Active',  -- PvP/PvE/AFK/etc.
   roster_notes  TEXT,                           -- officer-managed notes
+  payout_tier   INTEGER     NOT NULL DEFAULT 1, -- guild payout tier (1-10)
   created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at    TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
@@ -48,6 +49,7 @@ CREATE TABLE IF NOT EXISTS users (
 -- ALTER TABLE users ADD COLUMN IF NOT EXISTS alt_class    VARCHAR(50);
 -- ALTER TABLE calendar_events ADD COLUMN IF NOT EXISTS event_time     TIME;
 -- ALTER TABLE calendar_events ADD COLUMN IF NOT EXISTS event_timezone VARCHAR(60);
+-- ALTER TABLE users ADD COLUMN IF NOT EXISTS payout_tier  INTEGER NOT NULL DEFAULT 1;
 
 -- ============================================================
 -- SESSIONS  (server-side, fully revocable)
@@ -244,6 +246,21 @@ CREATE TABLE IF NOT EXISTS shrine_team_members (
 );
 CREATE INDEX IF NOT EXISTS idx_shrine_team_members_team   ON shrine_team_members(team_id);
 CREATE INDEX IF NOT EXISTS idx_shrine_team_members_signup ON shrine_team_members(signup_id);
+
+-- ============================================================
+-- PAYOUT HISTORY  (audit log for tier changes)
+-- ============================================================
+CREATE TABLE IF NOT EXISTS payout_history (
+  id          UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id     UUID        NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  changed_by  UUID        REFERENCES users(id) ON DELETE SET NULL,
+  old_tier    INTEGER     NOT NULL,
+  new_tier    INTEGER     NOT NULL,
+  reason      TEXT,
+  created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_payout_history_user ON payout_history(user_id);
+CREATE INDEX IF NOT EXISTS idx_payout_history_date ON payout_history(created_at DESC);
 
 -- ============================================================
 -- GRANTS  (run as superuser; replace 'boop' with your app user)

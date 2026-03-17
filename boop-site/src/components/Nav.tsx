@@ -10,8 +10,9 @@ const NAV_GROUPS = [
     label: "Tools",
     memberOnly: false,
     items: [
-      { label: "Class Roller", href: "#/class-roller", route: "class-roller" },
-      { label: "Shuffler",     href: "#/shuffler",     route: "shuffler" },
+      { label: "Class Roller",    href: "#/class-roller",    route: "class-roller",    officerOnly: false },
+      { label: "Shuffler",        href: "#/shuffler",        route: "shuffler",        officerOnly: false },
+      { label: "Payout Tracker",  href: "#/payout-tracker",  route: "payout-tracker",  officerOnly: true  },
     ],
   },
   {
@@ -255,7 +256,7 @@ export default function Nav({ route }: NavProps) {
 
                 {isOpen && (
                   <div className="absolute top-full left-0 mt-1.5 w-44 bg-slate-900 border border-slate-700/60 rounded-xl shadow-2xl py-1.5 z-50">
-                    {group.items.map(item => (
+                    {group.items.filter(item => !item.officerOnly || isOfficerOrAdmin(user)).map(item => (
                       <a
                         key={item.href}
                         href={item.href}
