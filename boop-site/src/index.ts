@@ -26,6 +26,19 @@ function err(message: string, status = 400) {
   return Response.json({ error: message }, { status });
 }
 
+const ALLOWED_IMAGE_EXTS = new Set(["jpg", "jpeg", "png", "gif", "webp"]);
+
+function safeImageExt(filename: string): string | null {
+  const ext = filename.split(".").pop()?.toLowerCase() ?? "";
+  return ALLOWED_IMAGE_EXTS.has(ext) ? ext : null;
+}
+
+// Prevent path traversal: resolve the joined path and ensure it stays under the base dir
+function safeJoin(base: string, ...parts: string[]): string | null {
+  const resolved = join(base, ...parts);
+  return resolved.startsWith(base + "/") || resolved === base ? resolved : null;
+}
+
 // ── Server ───────────────────────────────────────────────────────────────────
 
 const server = serve({
@@ -33,7 +46,8 @@ const server = serve({
     // Serve uploaded files (images, etc.)
     "/uploads/*": async req => {
       const url = new URL(req.url);
-      const filePath = join(UPLOAD_DIR, url.pathname.replace("/uploads/", ""));
+      const filePath = safeJoin(UPLOAD_DIR, url.pathname.replace("/uploads/", ""));
+      if (!filePath) return new Response("Not found", { status: 404 });
       const file = Bun.file(filePath);
       if (!(await file.exists())) return new Response("Not found", { status: 404 });
       return new Response(file);
@@ -164,6 +178,9 @@ const server = serve({
         const parsedAp  = gear_ap  != null ? parseInt(gear_ap)  : null;
         const parsedAap = gear_aap != null ? parseInt(gear_aap) : null;
         const parsedDp  = gear_dp  != null ? parseInt(gear_dp)  : null;
+        if ((parsedAp  != null && isNaN(parsedAp))  ||
+            (parsedAap != null && isNaN(parsedAap)) ||
+            (parsedDp  != null && isNaN(parsedDp)))  return err("gear values must be numbers");
 
         // Check email uniqueness if changing it
         if (newEmail && newEmail !== user.email) {
@@ -209,6 +226,8 @@ const server = serve({
 
         const { delta } = await req.json();
         if (typeof delta !== "number" || delta <= 0 || !Number.isInteger(delta)) return err("delta must be a positive integer");
+        // Cap delta to prevent API abuse — legitimate 15-second sync bursts are well under this
+        if (delta > 500) return err("delta too large", 400);
 
         const [updated] = await sql`
           UPDATE users SET ribbit_count = ribbit_count + ${delta}
@@ -298,7 +317,8 @@ const server = serve({
 
         let image_path: string | null = null;
         if (imageFile && imageFile.size > 0) {
-          const ext      = imageFile.name.split(".").pop() ?? "png";
+          const ext = safeImageExt(imageFile.name);
+          if (!ext) return err("Only image files are allowed (jpg, jpeg, png, gif, webp)");
           const filename = `${crypto.randomUUID()}.${ext}`;
           await Bun.write(join(UPLOAD_DIR, "shame", filename), imageFile);
           image_path = `/uploads/shame/${filename}`;
@@ -667,7 +687,8 @@ const server = serve({
         // Save each image file
         for (const file of imageFiles) {
           if (!file || file.size === 0) continue;
-          const ext = file.name.split(".").pop() ?? "png";
+          const ext = safeImageExt(file.name);
+          if (!ext) continue; // skip non-image files silently
           const filename = `${crypto.randomUUID()}.${ext}`;
           await Bun.write(join(UPLOAD_DIR, "nodewar", filename), file);
           const image_path = `/uploads/nodewar/${filename}`;
@@ -709,7 +730,8 @@ const server = serve({
 
         let image_path: string | null = null;
         if (imageFile && imageFile.size > 0) {
-          const ext      = imageFile.name.split(".").pop() ?? "png";
+          const ext = safeImageExt(imageFile.name);
+          if (!ext) return err("Only image files are allowed (jpg, jpeg, png, gif, webp)");
           const filename = `${crypto.randomUUID()}.${ext}`;
           await Bun.write(join(UPLOAD_DIR, "awards", filename), imageFile);
           image_path = `/uploads/awards/${filename}`;
@@ -959,5 +981,9 @@ if (adminUsername && adminPassword) {
     console.log(`✅ Bootstrap admin created: ${adminUsername}`);
   }
 }
+
+// ── Cleanup expired sessions and reset tokens on startup ─────────────────────
+await sql`DELETE FROM sessions              WHERE expires_at < NOW()`;
+await sql`DELETE FROM password_reset_tokens WHERE expires_at < NOW()`;
 
 console.log(`🚀 Server running at ${server.url}`);
