@@ -461,6 +461,78 @@ const server = serve({
       },
     },
 
+    // ── Payout tracker ───────────────────────────────────────────────────────
+
+    "/api/payout": {
+      async GET(req) {
+        const user = await authenticate(req);
+        if (!requireRole(user, "officer")) return err("Forbidden", 403);
+        const members = await sql`
+          SELECT u.id, u.username, u.family_name, u.payout_tier,
+                 ph.old_tier    AS last_old_tier,
+                 ph.new_tier    AS last_new_tier,
+                 ph.reason      AS last_reason,
+                 ph.created_at  AS last_changed_at,
+                 cu.username    AS last_changed_by
+          FROM users u
+          LEFT JOIN LATERAL (
+            SELECT * FROM payout_history WHERE user_id = u.id ORDER BY created_at DESC LIMIT 1
+          ) ph ON true
+          LEFT JOIN users cu ON ph.changed_by = cu.id
+          WHERE u.role != 'pending'
+          ORDER BY u.payout_tier DESC, u.username ASC
+        `;
+        return json(members);
+      },
+
+      async PATCH(req) {
+        const user = await authenticate(req);
+        if (!requireRole(user, "officer")) return err("Forbidden", 403);
+        const { user_ids, delta, set_tier, reason } = await req.json();
+        if (!Array.isArray(user_ids) || !user_ids.length) return err("user_ids required");
+
+        const results: { id: string; payout_tier: number }[] = [];
+        for (const uid of user_ids) {
+          const [current] = await sql`SELECT payout_tier FROM users WHERE id = ${uid} AND role != 'pending'`;
+          if (!current) continue;
+
+          let newTier: number;
+          if (set_tier != null) {
+            newTier = Math.max(1, Math.min(10, Number(set_tier)));
+          } else if (delta != null) {
+            newTier = Math.max(1, Math.min(10, current.payout_tier + Number(delta)));
+          } else continue;
+
+          if (newTier !== current.payout_tier) {
+            await sql`UPDATE users SET payout_tier = ${newTier} WHERE id = ${uid}`;
+            await sql`
+              INSERT INTO payout_history (user_id, changed_by, old_tier, new_tier, reason)
+              VALUES (${uid}, ${user!.id}, ${current.payout_tier}, ${newTier}, ${reason ?? null})
+            `;
+          }
+          results.push({ id: uid, payout_tier: newTier });
+        }
+        return json(results);
+      },
+    },
+
+    "/api/payout/history/:id": {
+      async GET(req) {
+        const user = await authenticate(req);
+        if (!requireRole(user, "officer")) return err("Forbidden", 403);
+        const history = await sql`
+          SELECT ph.id, ph.old_tier, ph.new_tier, ph.reason, ph.created_at,
+                 cu.username AS changed_by_name
+          FROM payout_history ph
+          LEFT JOIN users cu ON ph.changed_by = cu.id
+          WHERE ph.user_id = ${req.params.id}
+          ORDER BY ph.created_at DESC
+          LIMIT 50
+        `;
+        return json(history);
+      },
+    },
+
     // ── Leaderboard ──────────────────────────────────────────────────────────
 
     "/api/leaderboard": {
