@@ -1,0 +1,330 @@
+import React, { useEffect, useState } from "react";
+import { useAuth, clearSession, isOfficerOrAdmin, updateUser } from "../lib/auth";
+import type { AuthUser } from "../lib/auth";
+import ClassSelect from "./ClassSelect";
+
+const NAV_GROUPS = [
+  {
+    key: "tools",
+    label: "Tools",
+    memberOnly: false,
+    items: [
+      { label: "Class Roller", href: "#/class-roller", route: "class-roller" },
+      { label: "Shuffler",     href: "#/shuffler",     route: "shuffler" },
+    ],
+  },
+  {
+    key: "activities",
+    label: "Guild Activities",
+    memberOnly: true, // hidden for guests and pending
+    items: [
+      { label: "Calendar",      href: "#/calendar", route: "calendar" },
+      { label: "Nodewar",       href: "#/nodewar",  route: "nodewar" },
+      { label: "Black Shrine",  href: "#/shrine",   route: "shrine" },
+    ],
+  },
+  {
+    key: "misc",
+    label: "Misc",
+    memberOnly: false,
+    items: [
+      { label: "Frogs",                   href: "#/frogs",        route: "frogs" },
+      { label: "Employee of the Month",   href: "#/employee",     route: "employee" },
+      { label: "Wall of Shame",           href: "#/wall",         route: "wall" },
+      { label: "Submit to Wall of Shame", href: "#/submit-wall",  route: "submit-wall" },
+    ],
+  },
+] as const;
+
+const ROLE_STYLE: Record<string, string> = {
+  admin:   "bg-red-500/20 text-red-400 border border-red-500/30",
+  officer: "bg-amber-500/20 text-amber-400 border border-amber-500/30",
+  member:  "bg-slate-700/60 text-slate-400",
+  pending: "bg-slate-800/80 text-slate-500",
+};
+
+// ── Profile edit dropdown ─────────────────────────────────────────────────────
+
+function ProfileDropdown({ user, onClose }: { user: AuthUser; onClose: () => void }) {
+  const [charName, setCharName] = useState(user.character_name ?? "");
+  const [email, setEmail]       = useState(user.email ?? "");
+  const [cls, setCls]           = useState(user.bdo_class ?? "");
+  const [ap, setAp]             = useState(user.gear_ap  != null ? String(user.gear_ap)  : "");
+  const [aap, setAap]           = useState(user.gear_aap != null ? String(user.gear_aap) : "");
+  const [dp, setDp]             = useState(user.gear_dp  != null ? String(user.gear_dp)  : "");
+  const [saving, setSaving]     = useState(false);
+  const [saved, setSaved]       = useState(false);
+
+  const token = () => localStorage.getItem("boop_session") ?? "";
+
+  async function save() {
+    setSaving(true);
+    const res = await fetch("/api/auth/profile", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token()}` },
+      body: JSON.stringify({
+        character_name: charName.trim() || null,
+        email:    email.trim() || null,
+        bdo_class: cls || null,
+        gear_ap:  ap  ? parseInt(ap)  : null,
+        gear_aap: aap ? parseInt(aap) : null,
+        gear_dp:  dp  ? parseInt(dp)  : null,
+      }),
+    });
+    if (res.ok) {
+      const { user: updated } = await res.json();
+      updateUser(updated);
+      setSaved(true);
+      setTimeout(() => setSaved(false), 2000);
+    }
+    setSaving(false);
+  }
+
+  const inp = "w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white placeholder-slate-600 focus:outline-none focus:border-violet-500 transition-colors";
+  const numInp = `${inp} [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none`;
+
+  return (
+    <div className="absolute top-full right-0 mt-1.5 w-72 bg-slate-900 border border-slate-700/60 rounded-xl shadow-2xl z-50 py-3">
+
+      {/* Header */}
+      <div className="px-4 pb-3 border-b border-slate-800">
+        <div className="flex items-center gap-2.5">
+          <div className="w-8 h-8 rounded-full bg-violet-600/30 border border-violet-500/40 flex items-center justify-center text-sm font-black text-violet-300 shrink-0">
+            {user.username[0].toUpperCase()}
+          </div>
+          <div>
+            <p className="text-sm font-bold text-white leading-tight">{user.username}</p>
+            <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full uppercase tracking-wide ${ROLE_STYLE[user.role] ?? ROLE_STYLE.member}`}>
+              {user.role}
+            </span>
+          </div>
+        </div>
+      </div>
+
+      {/* Edit form */}
+      <div className="px-4 pt-3 flex flex-col gap-2.5">
+        <div>
+          <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest block mb-1">Character Name</label>
+          <input value={charName} onChange={e => setCharName(e.target.value)} placeholder="In-game name" className={inp} />
+        </div>
+
+        <div>
+          <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest block mb-1">Email</label>
+          <input type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="you@example.com" className={inp} />
+        </div>
+
+        <div>
+          <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest block mb-1">Class</label>
+          <ClassSelect value={cls} onChange={setCls}
+            className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white placeholder-slate-600 focus:outline-none focus:border-violet-500 transition-colors"
+          />
+        </div>
+
+        <div>
+          <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest block mb-1">Gear Score</label>
+          <div className="grid grid-cols-3 gap-2">
+            {(["AP", "AAP", "DP"] as const).map(label => {
+              const val = label === "AP" ? ap : label === "AAP" ? aap : dp;
+              const set = label === "AP" ? setAp : label === "AAP" ? setAap : setDp;
+              return (
+                <div key={label}>
+                  <p className="text-[9px] text-slate-600 mb-1 text-center">{label}</p>
+                  <input type="number" min={0} max={9999} value={val}
+                    onChange={e => set(e.target.value)}
+                    placeholder="—"
+                    className={numInp}
+                  />
+                </div>
+              );
+            })}
+          </div>
+        </div>
+
+        <button onClick={save} disabled={saving}
+          className={`w-full py-2 rounded-lg text-sm font-bold transition-colors mt-0.5 ${
+            saved ? "bg-green-600/20 text-green-400 border border-green-500/30" :
+            "bg-violet-600 hover:bg-violet-500 disabled:opacity-30 text-white"
+          }`}
+        >
+          {saving ? "Saving…" : saved ? "Saved ✓" : "Save"}
+        </button>
+      </div>
+
+      {/* Sign out */}
+      <div className="mt-3 pt-2 border-t border-slate-800 px-4">
+        <button
+          onClick={() => {
+            const t = token();
+            onClose();
+            clearSession();
+            if (t) fetch("/api/auth/logout", { method: "POST", headers: { Authorization: `Bearer ${t}` } }).catch(() => {});
+          }}
+          className="w-full text-left text-sm text-slate-500 hover:text-white transition-colors py-1"
+        >
+          Sign out
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// ── Nav ───────────────────────────────────────────────────────────────────────
+
+interface NavProps { route: string; }
+
+export default function Nav({ route }: NavProps) {
+  const user = useAuth();
+  const [openGroup, setOpenGroup] = useState<string | null>(null);
+
+  // Close any open dropdown on route change
+  useEffect(() => { setOpenGroup(null); }, [route]);
+
+  const hasGear = user && (user.bdo_class || user.gear_ap != null || user.gear_aap != null || user.gear_dp != null);
+
+  return (
+    <>
+      {/* Overlay to close dropdowns on outside click */}
+      {openGroup && (
+        <div className="fixed inset-0 z-40" onClick={() => setOpenGroup(null)} />
+      )}
+
+      <nav className="fixed top-0 left-0 right-0 z-50 h-14 bg-slate-950/80 backdrop-blur-md border-b border-slate-800/60">
+        <div className="max-w-7xl mx-auto h-full px-6 flex items-center gap-1">
+
+          {/* Logo */}
+          <a href="#/" className="shrink-0 font-black text-lg tracking-tight text-white mr-3">
+            boop<span className="text-violet-400">.fish</span>
+          </a>
+
+          {/* Home */}
+          <a href="#/"
+            className={`shrink-0 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors whitespace-nowrap ${
+              route === "home" ? "bg-slate-800 text-white" : "text-slate-400 hover:text-white hover:bg-slate-800/60"
+            }`}
+          >
+            Home
+          </a>
+
+          {/* Grouped dropdowns */}
+          {NAV_GROUPS.map(group => {
+            if (group.memberOnly && (!user || user.role === "pending")) return null;
+
+            const isGroupActive = group.items.some(i => i.route === route);
+            const isOpen = openGroup === group.key;
+            return (
+              <div key={group.key} className="relative">
+                <button
+                  onClick={() => setOpenGroup(isOpen ? null : group.key)}
+                  className={`flex items-center gap-1 shrink-0 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors whitespace-nowrap ${
+                    isGroupActive || isOpen
+                      ? "bg-slate-800 text-white"
+                      : "text-slate-400 hover:text-white hover:bg-slate-800/60"
+                  }`}
+                >
+                  {group.label}
+                  <svg className={`w-3 h-3 opacity-50 transition-transform ${isOpen ? "rotate-180" : ""}`} viewBox="0 0 10 6" fill="none">
+                    <path d="M1 1l4 4 4-4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+                  </svg>
+                </button>
+
+                {isOpen && (
+                  <div className="absolute top-full left-0 mt-1.5 w-44 bg-slate-900 border border-slate-700/60 rounded-xl shadow-2xl py-1.5 z-50">
+                    {group.items.map(item => (
+                      <a
+                        key={item.href}
+                        href={item.href}
+                        onClick={() => setOpenGroup(null)}
+                        className={`flex items-center px-3 py-2 text-sm transition-colors ${
+                          route === item.route
+                            ? "text-white bg-slate-800/80 font-semibold"
+                            : "text-slate-400 hover:text-white hover:bg-slate-800/50"
+                        }`}
+                      >
+                        {item.label}
+                      </a>
+                    ))}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+
+          {/* Manage — officers/admins only */}
+          {user && isOfficerOrAdmin(user) && (
+            <a href="#/manage"
+              className={`shrink-0 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors whitespace-nowrap ${
+                route === "manage"
+                  ? "bg-slate-800 text-white"
+                  : "text-amber-400/80 hover:text-amber-300 hover:bg-slate-800/60"
+              }`}
+            >
+              Manage
+            </a>
+          )}
+
+          {/* Spacer */}
+          <div className="flex-1" />
+
+          {/* Auth area */}
+          {user ? (
+            <div className="shrink-0 relative">
+              {/* Profile chip */}
+              <button
+                onClick={() => setOpenGroup(openGroup === "profile" ? null : "profile")}
+                className={`flex items-center gap-2.5 pl-2.5 pr-3 py-1.5 rounded-xl transition-colors ${
+                  openGroup === "profile" ? "bg-slate-800" : "hover:bg-slate-800/60"
+                }`}
+              >
+                <div className="w-7 h-7 rounded-full bg-violet-600/30 border border-violet-500/40 flex items-center justify-center text-xs font-black text-violet-300 shrink-0">
+                  {user.username[0].toUpperCase()}
+                </div>
+                <div className="text-left">
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-sm font-semibold text-slate-200 leading-tight">
+                      {user.username}
+                    </span>
+                    <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full uppercase tracking-wide ${ROLE_STYLE[user.role] ?? ROLE_STYLE.member}`}>
+                      {user.role}
+                    </span>
+                  </div>
+                  {hasGear ? (
+                    <div className="flex items-center gap-1.5 mt-0.5">
+                      {user.bdo_class && (
+                        <span className="text-[10px] text-violet-400 font-semibold leading-none">{user.bdo_class}</span>
+                      )}
+                      {(user.gear_ap != null || user.gear_aap != null || user.gear_dp != null) && (
+                        <span className="text-[10px] text-slate-500 font-mono leading-none">
+                          {user.gear_ap ?? "—"}/{user.gear_aap ?? "—"}/{user.gear_dp ?? "—"}
+                        </span>
+                      )}
+                    </div>
+                  ) : (
+                    <p className="text-[10px] text-slate-600 leading-none mt-0.5">Set up gear profile</p>
+                  )}
+                </div>
+                <svg className={`w-3 h-3 text-slate-600 transition-transform shrink-0 ${openGroup === "profile" ? "rotate-180" : ""}`} viewBox="0 0 10 6" fill="none">
+                  <path d="M1 1l4 4 4-4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+                </svg>
+              </button>
+
+              {/* Profile dropdown */}
+              {openGroup === "profile" && (
+                <ProfileDropdown user={user} onClose={() => setOpenGroup(null)} />
+              )}
+            </div>
+          ) : (
+            <a href="#/auth"
+              className={`shrink-0 px-4 py-1.5 rounded-lg text-sm font-semibold transition-all ${
+                route === "auth"
+                  ? "bg-violet-500 text-white"
+                  : "bg-violet-600/20 text-violet-300 border border-violet-500/30 hover:bg-violet-600/30 hover:text-violet-200"
+              }`}
+            >
+              Login
+            </a>
+          )}
+        </div>
+      </nav>
+    </>
+  );
+}

@@ -1,41 +1,753 @@
 import { serve } from "bun";
+import { join } from "path";
 import index from "./index.html";
+
+import sql from "./lib/db";
+import {
+  hashPassword,
+  verifyPassword,
+  createSession,
+  deleteSession,
+  authenticate,
+  requireRole,
+} from "./lib/auth-server";
+import { sendEmail, passwordResetEmail } from "./lib/email";
+
+const UPLOAD_DIR = join(import.meta.dir, "../../uploads");
+const CACHE_DIR  = join(import.meta.dir, "..", "cache");
+
+// ── Helpers ──────────────────────────────────────────────────────────────────
+
+function json(data: unknown, status = 200) {
+  return Response.json(data, { status });
+}
+function err(message: string, status = 400) {
+  return Response.json({ error: message }, { status });
+}
+
+// ── Server ───────────────────────────────────────────────────────────────────
 
 const server = serve({
   routes: {
-    // Serve index.html for all unmatched routes.
-    "/*": index,
+    // Serve uploaded files (images, etc.)
+    "/uploads/*": async req => {
+      const url = new URL(req.url);
+      const filePath = join(UPLOAD_DIR, url.pathname.replace("/uploads/", ""));
+      const file = Bun.file(filePath);
+      if (!(await file.exists())) return new Response("Not found", { status: 404 });
+      return new Response(file);
+    },
 
-    "/api/hello": {
-      async GET(req) {
-        return Response.json({
-          message: "Hello, world!",
-          method: "GET",
-        });
-      },
-      async PUT(req) {
-        return Response.json({
-          message: "Hello, world!",
-          method: "PUT",
-        });
+    // ── Auth ────────────────────────────────────────────────────────────────
+
+    "/api/auth/register": {
+      async POST(req) {
+        const { username, password, email, character_name } = await req.json();
+        if (!username || !password) return err("username and password are required");
+        if (password.length < 8) return err("Password must be at least 8 characters");
+
+        const exists = await sql`SELECT id FROM users WHERE username = ${username}`;
+        if (exists.length) return err("Username already taken", 409);
+
+        const password_hash = await hashPassword(password);
+        const [user] = await sql`
+          INSERT INTO users (username, email, password_hash, character_name, role)
+          VALUES (${username}, ${email ?? null}, ${password_hash}, ${character_name ?? null}, 'pending')
+          RETURNING id, username, email, role, character_name, ribbit_count, bdo_class, gear_ap, gear_aap, gear_dp
+        `;
+        const token = await createSession(user.id);
+        return json({ token, user }, 201);
       },
     },
 
-    "/api/hello/:name": async req => {
-      const name = req.params.name;
-      return Response.json({
-        message: `Hello, ${name}!`,
+    "/api/auth/login": {
+      async POST(req) {
+        const { username, password } = await req.json();
+        if (!username || !password) return err("username and password are required");
+
+        const [user] = await sql`
+          SELECT id, username, email, password_hash, role, character_name, ribbit_count, bdo_class, gear_ap, gear_aap, gear_dp
+          FROM users WHERE username = ${username}
+        `;
+        if (!user) return err("Invalid username or password", 401);
+
+        const ok = await verifyPassword(password, user.password_hash);
+        if (!ok) return err("Invalid username or password", 401);
+
+        const token = await createSession(user.id);
+        const { password_hash: _, ...safeUser } = user;
+        return json({ token, user: safeUser });
+      },
+    },
+
+    "/api/auth/logout": {
+      async POST(req) {
+        const auth = req.headers.get("Authorization");
+        const token = auth?.startsWith("Bearer ") ? auth.slice(7) : null;
+        if (token) await deleteSession(token);
+        return json({ ok: true });
+      },
+    },
+
+    "/api/auth/forgot-password": {
+      async POST(req) {
+        const { email } = await req.json();
+        if (!email) return err("email is required");
+
+        // Always return 200 — never reveal whether an email exists
+        const [user] = await sql`SELECT id, username FROM users WHERE email = ${email}`;
+        if (!user) return json({ ok: true });
+
+        // Invalidate any existing reset tokens for this user
+        await sql`DELETE FROM password_reset_tokens WHERE user_id = ${user.id}`;
+
+        // Generate token
+        const bytes = new Uint8Array(32);
+        crypto.getRandomValues(bytes);
+        const token = Array.from(bytes).map(b => b.toString(16).padStart(2, "0")).join("");
+        const expiresAt = new Date(Date.now() + 60 * 60 * 1000); // 1 hour
+
+        await sql`
+          INSERT INTO password_reset_tokens (user_id, token, expires_at)
+          VALUES (${user.id}, ${token}, ${expiresAt})
+        `;
+
+        const baseUrl = process.env.SITE_URL ?? "https://boop.fish";
+        const resetUrl = `${baseUrl}/#/auth?reset=${token}`;
+        const { subject, html, text } = passwordResetEmail(user.username, resetUrl);
+
+        await sendEmail({ to: email, subject, html, text });
+        return json({ ok: true });
+      },
+    },
+
+    "/api/auth/reset-password": {
+      async POST(req) {
+        const { token, password } = await req.json();
+        if (!token || !password) return err("token and password are required");
+        if (password.length < 8) return err("Password must be at least 8 characters");
+
+        const [row] = await sql`
+          SELECT user_id FROM password_reset_tokens
+          WHERE token = ${token} AND expires_at > NOW()
+        `;
+        if (!row) return err("Reset link is invalid or has expired", 400);
+
+        const password_hash = await hashPassword(password);
+        await sql`UPDATE users SET password_hash = ${password_hash} WHERE id = ${row.user_id}`;
+
+        // Single-use: delete the token and all sessions so other devices are logged out
+        await sql`DELETE FROM password_reset_tokens WHERE token = ${token}`;
+        await sql`DELETE FROM sessions WHERE user_id = ${row.user_id}`;
+
+        return json({ ok: true });
+      },
+    },
+
+    "/api/auth/me": {
+      async GET(req) {
+        const user = await authenticate(req);
+        if (!user) return err("Unauthorized", 401);
+        return json({ user });
+      },
+    },
+
+    "/api/auth/profile": {
+      async PATCH(req) {
+        const user = await authenticate(req);
+        if (!user) return err("Unauthorized", 401);
+
+        const { character_name, email: newEmail, bdo_class, gear_ap, gear_aap, gear_dp } = await req.json();
+
+        const parsedAp  = gear_ap  != null ? parseInt(gear_ap)  : null;
+        const parsedAap = gear_aap != null ? parseInt(gear_aap) : null;
+        const parsedDp  = gear_dp  != null ? parseInt(gear_dp)  : null;
+
+        // Check email uniqueness if changing it
+        if (newEmail && newEmail !== user.email) {
+          const taken = await sql`SELECT id FROM users WHERE email = ${newEmail} AND id != ${user.id}`;
+          if (taken.length) return err("That email is already in use.", 409);
+        }
+
+        const [updated] = await sql`
+          UPDATE users SET
+            character_name = ${character_name ?? null},
+            email          = ${newEmail ?? null},
+            bdo_class      = ${bdo_class ?? null},
+            gear_ap        = ${parsedAp},
+            gear_aap       = ${parsedAap},
+            gear_dp        = ${parsedDp}
+          WHERE id = ${user.id}
+          RETURNING id, username, email, role, character_name, ribbit_count,
+                    bdo_class, gear_ap, gear_aap, gear_dp
+        `;
+
+        // Keep shrine signup in sync if one exists
+        await sql`
+          UPDATE shrine_signups SET
+            bdo_class = ${bdo_class ?? null},
+            ap        = ${parsedAp},
+            aap       = ${parsedAap},
+            dp        = ${parsedDp}
+          WHERE user_id = ${user.id}
+        `;
+
+        return json({ user: updated });
+      },
+    },
+
+    // ── Ribbits ──────────────────────────────────────────────────────────────
+
+    "/api/ribbits": {
+      async POST(req) {
+        const user = await authenticate(req);
+        if (!user) return err("Unauthorized", 401);
+
+        const { delta } = await req.json();
+        if (typeof delta !== "number" || delta <= 0 || !Number.isInteger(delta)) return err("delta must be a positive integer");
+
+        const [updated] = await sql`
+          UPDATE users SET ribbit_count = ribbit_count + ${delta}
+          WHERE id = ${user.id}
+          RETURNING ribbit_count
+        `;
+        return json({ ribbit_count: updated.ribbit_count });
+      },
+    },
+
+    // ── Announcements ────────────────────────────────────────────────────────
+
+    "/api/announcements": {
+      async GET(_req) {
+        const rows = await sql`
+          SELECT a.id, a.title, a.body, a.pinned, a.created_at,
+                 u.username AS author
+          FROM announcements a
+          LEFT JOIN users u ON u.id = a.created_by
+          ORDER BY a.pinned DESC, a.created_at DESC
+        `;
+        return json(rows);
+      },
+      async POST(req) {
+        const user = await authenticate(req);
+        if (!requireRole(user, "officer")) return err("Forbidden", 403);
+        const { title, body, pinned } = await req.json();
+        if (!title?.trim()) return err("title is required");
+        const [row] = await sql`
+          INSERT INTO announcements (title, body, pinned, created_by)
+          VALUES (${title.trim()}, ${body ?? null}, ${pinned ?? false}, ${user!.id})
+          RETURNING id, title, body, pinned, created_at
+        `;
+        return json(row, 201);
+      },
+    },
+
+    "/api/announcements/:id": {
+      async DELETE(req) {
+        const user = await authenticate(req);
+        if (!requireRole(user, "officer")) return err("Forbidden", 403);
+        await sql`DELETE FROM announcements WHERE id = ${req.params.id}`;
+        return json({ ok: true });
+      },
+      async PATCH(req) {
+        const user = await authenticate(req);
+        if (!requireRole(user, "officer")) return err("Forbidden", 403);
+        const { title, body, pinned } = await req.json();
+        const [row] = await sql`
+          UPDATE announcements SET
+            title   = COALESCE(${title ?? null}, title),
+            body    = COALESCE(${body ?? null}, body),
+            pinned  = COALESCE(${pinned ?? null}, pinned),
+            updated_at = NOW()
+          WHERE id = ${req.params.id}
+          RETURNING id, title, body, pinned, created_at
+        `;
+        if (!row) return err("Not found", 404);
+        return json(row);
+      },
+    },
+
+    // ── Wall of Shame ─────────────────────────────────────────────────────────
+
+    "/api/wall": {
+      async GET(_req) {
+        const rows = await sql`
+          SELECT w.id, w.title, w.description, w.created_at,
+                 u.username AS author
+          FROM wall_of_shame w
+          LEFT JOIN users u ON u.id = w.submitted_by
+          ORDER BY w.created_at DESC
+        `;
+        return json(rows);
+      },
+      async POST(req) {
+        const user = await authenticate(req);
+        // Any logged-in non-pending member can submit
+        if (!user || user.role === "pending") return err("Forbidden", 403);
+        const { title, description } = await req.json();
+        if (!title?.trim()) return err("title is required");
+        const [row] = await sql`
+          INSERT INTO wall_of_shame (title, description, submitted_by)
+          VALUES (${title.trim()}, ${description ?? null}, ${user.id})
+          RETURNING id, title, description, created_at
+        `;
+        return json(row, 201);
+      },
+    },
+
+    "/api/wall/:id": {
+      async DELETE(req) {
+        const user = await authenticate(req);
+        if (!requireRole(user, "officer")) return err("Forbidden", 403);
+        await sql`DELETE FROM wall_of_shame WHERE id = ${req.params.id}`;
+        return json({ ok: true });
+      },
+    },
+
+    // ── Members ──────────────────────────────────────────────────────────────
+
+    "/api/members": {
+      async GET(req) {
+        const user = await authenticate(req);
+        if (!requireRole(user, "officer")) return err("Forbidden", 403);
+
+        const members = await sql`
+          SELECT id, username, email, role, character_name, ribbit_count, created_at
+          FROM users
+          ORDER BY
+            CASE role WHEN 'admin' THEN 0 WHEN 'officer' THEN 1 ELSE 2 END,
+            username ASC
+        `;
+        return json(members);
+      },
+    },
+
+    "/api/members/ribbits/reset-all": {
+      async POST(req) {
+        const actor = await authenticate(req);
+        if (!requireRole(actor, "officer")) return err("Forbidden", 403);
+        await sql`UPDATE users SET ribbit_count = 0`;
+        return json({ ok: true });
+      },
+    },
+
+    "/api/members/:id/ribbits/reset": {
+      async POST(req) {
+        const actor = await authenticate(req);
+        if (!requireRole(actor, "officer")) return err("Forbidden", 403);
+        const [updated] = await sql`
+          UPDATE users SET ribbit_count = 0 WHERE id = ${req.params.id}
+          RETURNING id, username, ribbit_count
+        `;
+        if (!updated) return err("User not found", 404);
+        return json(updated);
+      },
+    },
+
+    "/api/members/:id/role": {
+      async PATCH(req) {
+        const actor = await authenticate(req);
+        if (!requireRole(actor, "officer")) return err("Forbidden", 403);
+
+        const { role } = await req.json();
+        if (!["pending", "member", "officer", "admin"].includes(role)) return err("Invalid role");
+
+        // Only admins can assign the admin role
+        if (role === "admin" && actor!.role !== "admin") return err("Forbidden", 403);
+
+        // Officers can only manage pending/member accounts — only admins can touch officers/admins
+        const [target] = await sql`SELECT role FROM users WHERE id = ${req.params.id}`;
+        if (!target) return err("User not found", 404);
+        if (!["pending", "member"].includes(target.role) && actor!.role !== "admin") return err("Forbidden", 403);
+
+        const [updated] = await sql`
+          UPDATE users SET role = ${role} WHERE id = ${req.params.id}
+          RETURNING id, username, role
+        `;
+        return json(updated);
+      },
+    },
+
+    // ── Calendar ─────────────────────────────────────────────────────────────
+
+    "/api/calendar": {
+      async GET(_req) {
+        const events = await sql`
+          SELECT id, title, description, event_date, created_at
+          FROM calendar_events
+          ORDER BY event_date ASC
+        `;
+        return json(events);
+      },
+
+      async POST(req) {
+        const user = await authenticate(req);
+        if (!requireRole(user, "officer")) return err("Forbidden", 403);
+
+        const { title, description, event_date } = await req.json();
+        if (!title || !event_date) return err("title and event_date are required");
+
+        const [event] = await sql`
+          INSERT INTO calendar_events (title, description, event_date, created_by)
+          VALUES (${title}, ${description ?? null}, ${event_date}, ${user!.id})
+          RETURNING id, title, description, event_date, created_at
+        `;
+        return json(event, 201);
+      },
+    },
+
+    "/api/calendar/:id": {
+      async DELETE(req) {
+        const user = await authenticate(req);
+        if (!requireRole(user, "officer")) return err("Forbidden", 403);
+
+        await sql`DELETE FROM calendar_events WHERE id = ${req.params.id}`;
+        return json({ ok: true });
+      },
+    },
+
+    // ── Nodewar ──────────────────────────────────────────────────────────────
+
+    "/api/nodewar": {
+      async GET(req) {
+        // Members and above only
+        const user = await authenticate(req);
+        if (!user || user.role === "pending") return err("Forbidden", 403);
+
+        const entries = await sql`
+          SELECT
+            ne.id, ne.title, ne.node_name, ne.event_date, ne.result, ne.notes, ne.created_at,
+            COALESCE(
+              json_agg(ni.image_path ORDER BY ni.created_at)
+              FILTER (WHERE ni.id IS NOT NULL), '[]'
+            ) AS images
+          FROM nodewar_entries ne
+          LEFT JOIN nodewar_images ni ON ni.entry_id = ne.id
+          GROUP BY ne.id
+          ORDER BY ne.event_date DESC
+        `;
+        return json(entries);
+      },
+
+      async POST(req) {
+        const user = await authenticate(req);
+        if (!requireRole(user, "officer")) return err("Forbidden", 403);
+
+        const form = await req.formData();
+        const title      = form.get("title") as string | null;
+        const node_name  = form.get("node_name") as string | null;
+        const event_date = form.get("event_date") as string;
+        const result     = form.get("result") as string | null;
+        const notes      = form.get("notes") as string | null;
+        const imageFiles = form.getAll("images") as File[];
+
+        if (!event_date) return err("event_date is required");
+
+        // Reuse existing entry for this date if one exists, otherwise create
+        let entry;
+        const [existing] = await sql`
+          SELECT id FROM nodewar_entries WHERE event_date = ${event_date}
+        `;
+        if (existing) {
+          entry = existing;
+          // Update metadata if provided
+          if (title || node_name || result || notes) {
+            await sql`
+              UPDATE nodewar_entries SET
+                title      = COALESCE(${title ?? null}, title),
+                node_name  = COALESCE(${node_name ?? null}, node_name),
+                result     = COALESCE(${result ?? null}, result),
+                notes      = COALESCE(${notes ?? null}, notes)
+              WHERE id = ${entry.id}
+            `;
+          }
+        } else {
+          [entry] = await sql`
+            INSERT INTO nodewar_entries (title, node_name, event_date, result, notes, uploaded_by)
+            VALUES (${title ?? null}, ${node_name ?? null}, ${event_date}, ${result ?? null}, ${notes ?? null}, ${user!.id})
+            RETURNING id
+          `;
+        }
+
+        // Save each image file
+        for (const file of imageFiles) {
+          if (!file || file.size === 0) continue;
+          const ext = file.name.split(".").pop() ?? "png";
+          const filename = `${crypto.randomUUID()}.${ext}`;
+          await Bun.write(join(UPLOAD_DIR, "nodewar", filename), file);
+          const image_path = `/uploads/nodewar/${filename}`;
+          await sql`
+            INSERT INTO nodewar_images (entry_id, image_path)
+            VALUES (${entry.id}, ${image_path})
+          `;
+        }
+
+        return json({ ok: true, id: entry.id }, 201);
+      },
+    },
+
+    // ── Employee Awards ──────────────────────────────────────────────────────
+
+    "/api/awards": {
+      async GET(_req) {
+        const awards = await sql`
+          SELECT id, award_type, display_name, user_id, reason, award_date, created_at
+          FROM employee_awards
+          ORDER BY award_date DESC
+        `;
+        return json(awards);
+      },
+
+      async POST(req) {
+        const user = await authenticate(req);
+        if (!requireRole(user, "officer")) return err("Forbidden", 403);
+
+        const { award_type, display_name, user_id, reason, award_date } = await req.json();
+        if (!award_type || !display_name || !award_date) return err("award_type, display_name, and award_date are required");
+
+        const [award] = await sql`
+          INSERT INTO employee_awards (award_type, display_name, user_id, reason, award_date, awarded_by)
+          VALUES (${award_type}, ${display_name}, ${user_id ?? null}, ${reason ?? null}, ${award_date}, ${user!.id})
+          RETURNING *
+        `;
+        return json(award, 201);
+      },
+    },
+
+    // ── Black Shrine Sign-ups ─────────────────────────────────────────────────
+
+    "/api/shrine": {
+      async GET(req) {
+        const user = await authenticate(req);
+        if (!user || user.role === "pending") return err("Forbidden", 403);
+        const rows = await sql`
+          SELECT ss.id, ss.user_id, u.username, u.character_name,
+                 ss.bdo_class, ss.ap, ss.aap, ss.dp, ss.note, ss.signed_up_at
+          FROM shrine_signups ss
+          JOIN users u ON u.id = ss.user_id
+          ORDER BY ss.signed_up_at ASC
+        `;
+        return json(rows);
+      },
+      async POST(req) {
+        const user = await authenticate(req);
+        if (!user || user.role === "pending") return err("Forbidden", 403);
+        const { note, bdo_class, ap, aap, dp } = await req.json();
+
+        // Persist gear profile back to user record
+        await sql`
+          UPDATE users SET
+            bdo_class = COALESCE(${bdo_class ?? null}, bdo_class),
+            gear_ap   = COALESCE(${ap   ?? null}, gear_ap),
+            gear_aap  = COALESCE(${aap  ?? null}, gear_aap),
+            gear_dp   = COALESCE(${dp   ?? null}, gear_dp)
+          WHERE id = ${user.id}
+        `;
+
+        const [row] = await sql`
+          INSERT INTO shrine_signups (user_id, character_name, bdo_class, ap, aap, dp, note)
+          VALUES (
+            ${user.id}, ${user.character_name ?? null},
+            ${bdo_class ?? null}, ${ap ?? null}, ${aap ?? null}, ${dp ?? null},
+            ${note ?? null}
+          )
+          ON CONFLICT (user_id) DO UPDATE SET
+            bdo_class   = EXCLUDED.bdo_class,
+            ap          = EXCLUDED.ap,
+            aap         = EXCLUDED.aap,
+            dp          = EXCLUDED.dp,
+            note        = EXCLUDED.note,
+            signed_up_at = NOW()
+          RETURNING id
+        `;
+        return json(row, 201);
+      },
+    },
+
+    "/api/shrine/me": {
+      async DELETE(req) {
+        const user = await authenticate(req);
+        if (!user || user.role === "pending") return err("Forbidden", 403);
+        await sql`DELETE FROM shrine_signups WHERE user_id = ${user.id}`;
+        return json({ ok: true });
+      },
+    },
+
+    "/api/shrine/clear": {
+      async POST(req) {
+        const user = await authenticate(req);
+        if (!requireRole(user, "officer")) return err("Forbidden", 403);
+        await sql`DELETE FROM shrine_signups`;
+        return json({ ok: true });
+      },
+    },
+
+    "/api/shrine/teams": {
+      async GET(req) {
+        const user = await authenticate(req);
+        if (!user || user.role === "pending") return err("Forbidden", 403);
+        const rows = await sql`
+          SELECT
+            st.id, st.name, st.created_at,
+            COALESCE(
+              json_agg(
+                json_build_object(
+                  'signup_id',      stm.signup_id,
+                  'username',       u.username,
+                  'character_name', ss.character_name,
+                  'bdo_class',      ss.bdo_class,
+                  'ap',             ss.ap,
+                  'aap',            ss.aap,
+                  'dp',             ss.dp
+                ) ORDER BY stm.added_at
+              ) FILTER (WHERE stm.id IS NOT NULL),
+              '[]'::json
+            ) AS members
+          FROM shrine_teams st
+          LEFT JOIN shrine_team_members stm ON stm.team_id = st.id
+          LEFT JOIN shrine_signups ss       ON ss.id = stm.signup_id
+          LEFT JOIN users u                 ON u.id  = ss.user_id
+          GROUP BY st.id
+          ORDER BY st.created_at
+        `;
+        return json(rows);
+      },
+      async POST(req) {
+        const user = await authenticate(req);
+        if (!requireRole(user, "officer")) return err("Forbidden", 403);
+        const { name } = await req.json();
+        const [team] = await sql`
+          INSERT INTO shrine_teams (name)
+          VALUES (${name ?? "New Team"})
+          RETURNING id, name, created_at
+        `;
+        return json(team, 201);
+      },
+    },
+
+    "/api/shrine/teams/assignments": {
+      async PATCH(req) {
+        const user = await authenticate(req);
+        if (!requireRole(user, "officer")) return err("Forbidden", 403);
+        const { signup_id, team_id } = await req.json();
+        if (!signup_id) return err("signup_id is required");
+
+        // Remove from any current team first
+        await sql`DELETE FROM shrine_team_members WHERE signup_id = ${signup_id}`;
+
+        if (team_id) {
+          const countRes = await sql`
+            SELECT COUNT(*)::int AS count FROM shrine_team_members WHERE team_id = ${team_id}
+          `;
+          if ((countRes[0]?.count ?? 0) >= 5) return err("Team is full (max 5 players)", 400);
+          await sql`
+            INSERT INTO shrine_team_members (team_id, signup_id)
+            VALUES (${team_id}, ${signup_id})
+          `;
+        }
+        return json({ ok: true });
+      },
+    },
+
+    "/api/shrine/teams/:id": {
+      async PATCH(req) {
+        const user = await authenticate(req);
+        if (!requireRole(user, "officer")) return err("Forbidden", 403);
+        const { name } = await req.json();
+        if (!name?.trim()) return err("name is required");
+        const [team] = await sql`
+          UPDATE shrine_teams SET name = ${name.trim()} WHERE id = ${req.params.id}
+          RETURNING id, name
+        `;
+        if (!team) return err("Not found", 404);
+        return json(team);
+      },
+      async DELETE(req) {
+        const user = await authenticate(req);
+        if (!requireRole(user, "officer")) return err("Forbidden", 403);
+        await sql`DELETE FROM shrine_teams WHERE id = ${req.params.id}`;
+        return json({ ok: true });
+      },
+    },
+
+    "/api/shrine/:id": {
+      async DELETE(req) {
+        const user = await authenticate(req);
+        if (!requireRole(user, "officer")) return err("Forbidden", 403);
+        await sql`DELETE FROM shrine_signups WHERE id = ${req.params.id}`;
+        return json({ ok: true });
+      },
+    },
+
+    // Serve cached static assets
+    "/assets/class-sprite.png": async _req => {
+      const file = Bun.file(join(CACHE_DIR, "class-sprite.png"));
+      if (!(await file.exists())) return new Response("Not found", { status: 404 });
+      return new Response(file, {
+        headers: { "Content-Type": "image/png", "Cache-Control": "public, max-age=86400" },
       });
     },
+
+    // Fallback: serve the React app for all other routes
+    "/*": index,
   },
 
   development: process.env.NODE_ENV !== "production" && {
-    // Enable browser hot reloading in development
     hmr: true,
-
-    // Echo console logs from the browser to the server
     console: true,
   },
 });
+
+// Ensure upload directories exist
+await Bun.write(join(UPLOAD_DIR, "nodewar", ".gitkeep"), "");
+
+// ── Cache class sprite ────────────────────────────────────────────────────────
+async function syncClassSprite() {
+  const SPRITE_REMOTE = "https://s1.pearlcdn.com/NAEU/contents/img/portal/gameinfo/classes_symbol_spr.png";
+  const spritePath = join(CACHE_DIR, "class-sprite.png");
+  const etagPath   = join(CACHE_DIR, "class-sprite.etag");
+
+  await Bun.write(join(CACHE_DIR, ".gitkeep"), ""); // ensure dir exists
+
+  const headers: Record<string, string> = {};
+  const etagFile = Bun.file(etagPath);
+  if (await etagFile.exists()) {
+    const stored = (await etagFile.text()).trim();
+    if (stored) headers["If-None-Match"] = stored;
+  }
+
+  try {
+    const res = await fetch(SPRITE_REMOTE, { headers });
+    if (res.status === 304) {
+      console.log("✅ Class sprite is up to date");
+    } else if (res.ok) {
+      await Bun.write(spritePath, await res.arrayBuffer());
+      const etag = res.headers.get("etag") ?? "";
+      if (etag) await Bun.write(etagPath, etag);
+      console.log("✅ Class sprite downloaded/updated");
+    } else {
+      console.warn(`⚠️  Could not fetch class sprite: HTTP ${res.status}`);
+    }
+  } catch (e) {
+    console.warn("⚠️  Could not fetch class sprite:", e);
+  }
+}
+await syncClassSprite();
+
+// ── Bootstrap admin account ───────────────────────────────────────────────────
+const adminUsername = process.env.ADMIN_USERNAME?.trim();
+const adminPassword = process.env.ADMIN_PASSWORD?.trim();
+
+if (adminUsername && adminPassword) {
+  const existing = await sql`SELECT id FROM users WHERE username = ${adminUsername}`;
+  if (!existing.length) {
+    const password_hash = await hashPassword(adminPassword);
+    await sql`
+      INSERT INTO users (username, password_hash, role)
+      VALUES (${adminUsername}, ${password_hash}, 'admin')
+    `;
+    console.log(`✅ Bootstrap admin created: ${adminUsername}`);
+  }
+}
 
 console.log(`🚀 Server running at ${server.url}`);

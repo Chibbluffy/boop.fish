@@ -1,1 +1,27 @@
-node_modules/*
+node_modules/
+.notes
+
+# macOS
+.DS_Store
+
+# dotenv — never commit real secrets
+.env
+.env.local
+.env.*.local
+
+# Bun / build output
+out/
+dist/
+*.tsbuildinfo
+
+# Logs
+*.log
+logs/
+
+# IDE
+.idea/
+.vscode/
+
+# User uploaded files — keep directory stubs via .gitkeep, ignore actual uploads
+uploads/nodewar/*
+!uploads/nodewar/.gitkeep
