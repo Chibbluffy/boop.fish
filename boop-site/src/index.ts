@@ -468,7 +468,7 @@ const server = serve({
         const user = await authenticate(req);
         if (!requireRole(user, "officer")) return err("Forbidden", 403);
         const members = await sql`
-          SELECT u.id, u.username, u.family_name, u.payout_tier,
+          SELECT u.id, u.username, u.family_name, u.payout_tier, u.ribbit_count,
                  ph.old_tier    AS last_old_tier,
                  ph.new_tier    AS last_new_tier,
                  ph.reason      AS last_reason,

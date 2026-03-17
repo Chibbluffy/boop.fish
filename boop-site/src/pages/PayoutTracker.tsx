@@ -6,12 +6,18 @@ type PayoutMember = {
   username: string;
   family_name: string | null;
   payout_tier: number;
+  ribbit_count: number;
   last_old_tier: number | null;
   last_new_tier: number | null;
   last_reason: string | null;
   last_changed_at: string | null;
   last_changed_by: string | null;
 };
+
+const RIBBIT_BONUS_THRESHOLD = 300;
+function effectiveTier(m: PayoutMember): number {
+  return Math.min(10, m.payout_tier + (m.ribbit_count >= RIBBIT_BONUS_THRESHOLD ? 1 : 0));
+}
 
 type HistoryEntry = {
   id: string;
@@ -193,7 +199,7 @@ export default function PayoutTracker() {
 
   // ── Tier distribution summary ───────────────────────────────────────────────
 
-  const dist = members.reduce((acc, m) => { acc[m.payout_tier] = (acc[m.payout_tier] ?? 0) + 1; return acc; }, {} as Record<number, number>);
+  const dist = members.reduce((acc, m) => { const t = effectiveTier(m); acc[t] = (acc[t] ?? 0) + 1; return acc; }, {} as Record<number, number>);
 
   return (
     <div className="max-w-5xl mx-auto px-4 py-10">
@@ -341,8 +347,12 @@ export default function PayoutTracker() {
                     className="w-6 h-6 flex items-center justify-center rounded text-slate-500 hover:text-red-400 hover:bg-slate-800 disabled:opacity-20 disabled:cursor-not-allowed transition-colors text-sm font-bold"
                   >−</button>
 
-                  <span className={`text-xs font-black px-2 py-1 rounded-lg border min-w-[2.5rem] text-center transition-all ${tierBg(m.payout_tier)} ${isSaving ? "opacity-50" : ""}`}>
-                    {tierLabel(m.payout_tier)}
+                  <span
+                    title={effectiveTier(m) > m.payout_tier ? `Base T${m.payout_tier} +1 frog bonus (${m.ribbit_count} ribbits)` : undefined}
+                    className={`text-xs font-black px-2 py-1 rounded-lg border min-w-[2.5rem] text-center transition-all ${tierBg(effectiveTier(m))} ${isSaving ? "opacity-50" : ""}`}
+                  >
+                    {tierLabel(effectiveTier(m))}
+                    {effectiveTier(m) > m.payout_tier && <span className="ml-0.5 text-[9px]">🐸</span>}
                   </span>
 
                   <button
