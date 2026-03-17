@@ -66,8 +66,11 @@ Create a `.env` file (or set environment variables):
 
 ```
 DATABASE_URL=postgres://user:password@localhost:5432/yourdb
-SESSION_SECRET=some-random-secret
+ADMIN_USERNAME=youradminuser
+ADMIN_PASSWORD=youradminpassword
 ```
+
+`ADMIN_USERNAME` / `ADMIN_PASSWORD` seed an admin account on startup if it doesn't exist yet. `SITE_URL` can optionally be set (defaults to `https://boop.fish`).
 
 ### 3. Install and run
 
