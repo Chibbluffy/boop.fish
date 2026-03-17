@@ -1,21 +1,9 @@
-# bun-react-tailwind-shadcn-template
+# boop-site
 
-To install dependencies:
-
-```bash
-bun install
-```
-
-To start a development server:
+The web app for boop.fish. See the [root README](../README.md) for full project documentation.
 
 ```bash
-bun dev
+bun install   # install dependencies
+bun dev       # development server with hot reload
+bun start     # production server
 ```
-
-To run for production:
-
-```bash
-bun start
-```
-
-This project was created using `bun init` in bun v1.3.9. [Bun](https://bun.com) is a fast all-in-one JavaScript runtime.
