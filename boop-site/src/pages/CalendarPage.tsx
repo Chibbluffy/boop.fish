@@ -1,0 +1,327 @@
+import React, { useEffect, useState } from "react";
+import { useAuth, isOfficerOrAdmin } from "../lib/auth";
+
+type EventItem = { id: string; date: string; title: string; description?: string };
+
+const MONTHS = ["January","February","March","April","May","June","July","August","September","October","November","December"];
+const DAY_HEADERS = ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
+
+function pad(n: number) { return String(n).padStart(2, "0"); }
+function dateStr(year: number, month: number, day: number) {
+  return `${year}-${pad(month + 1)}-${pad(day)}`;
+}
+
+export default function CalendarPage() {
+  const authUser = useAuth();
+  const isOfficer = isOfficerOrAdmin(authUser);
+
+  const [events, setEvents] = useState<EventItem[]>([]);
+  const now = new Date();
+  const [cursor, setCursor] = useState({ year: now.getFullYear(), month: now.getMonth() });
+  const [view, setView] = useState<"calendar" | "list">("calendar");
+  const [selected, setSelected] = useState<EventItem | null>(null);
+  const [showAdd, setShowAdd] = useState(false);
+  const [newDate, setNewDate] = useState(now.toISOString().slice(0, 10));
+  const [newTitle, setNewTitle] = useState("");
+  const [newDesc, setNewDesc] = useState("");
+
+  // Load events from API
+  useEffect(() => {
+    fetch("/api/calendar")
+      .then(r => r.json())
+      .then((data: Array<{ id: string; event_date: string; title: string; description?: string }>) => {
+        setEvents(data.map(e => ({ id: e.id, date: e.event_date, title: e.title, description: e.description })));
+      })
+      .catch(() => {});
+  }, []);
+
+  async function addEvent() {
+    if (!newTitle.trim()) return;
+    const token = localStorage.getItem("boop_session");
+    const res = await fetch("/api/calendar", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ title: newTitle.trim(), description: newDesc.trim() || undefined, event_date: newDate }),
+    });
+    if (!res.ok) return;
+    const ev = await res.json();
+    setEvents(prev => [...prev, { id: ev.id, date: ev.event_date, title: ev.title, description: ev.description }]
+      .sort((a, b) => a.date.localeCompare(b.date)));
+    setNewTitle("");
+    setNewDesc("");
+    setShowAdd(false);
+  }
+
+  async function deleteEvent(id: string) {
+    const token = localStorage.getItem("boop_session");
+    await fetch(`/api/calendar/${id}`, {
+      method: "DELETE",
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    setEvents(prev => prev.filter(e => e.id !== id));
+    if (selected?.id === id) setSelected(null);
+  }
+
+
+  function prevMonth() {
+    setCursor(c => { const d = new Date(c.year, c.month - 1); return { year: d.getFullYear(), month: d.getMonth() }; });
+  }
+  function nextMonth() {
+    setCursor(c => { const d = new Date(c.year, c.month + 1); return { year: d.getFullYear(), month: d.getMonth() }; });
+  }
+
+  // Build calendar grid cells
+  const { year, month } = cursor;
+  const firstWeekday = new Date(year, month, 1).getDay();
+  const daysInMonth = new Date(year, month + 1, 0).getDate();
+  const cells: (number | null)[] = [...Array(firstWeekday).fill(null), ...Array.from({ length: daysInMonth }, (_, i) => i + 1)];
+  while (cells.length % 7 !== 0) cells.push(null);
+
+  const eventsByDate: Record<string, EventItem[]> = {};
+  for (const ev of events) (eventsByDate[ev.date] ??= []).push(ev);
+
+  const todayStr = now.toISOString().slice(0, 10);
+
+  const sortedEvents = [...events].sort((a, b) => a.date.localeCompare(b.date));
+
+  return (
+    <div className="min-h-screen bg-slate-950 px-6 py-10">
+      <div className="max-w-5xl mx-auto">
+
+        {/* Header */}
+        <div className="flex flex-wrap items-center justify-between gap-4 mb-8">
+          <h2 className="text-4xl font-black tracking-tight text-white">Guild Calendar</h2>
+
+          <div className="flex items-center gap-2">
+            {/* View toggle */}
+            <div className="flex bg-slate-900 border border-slate-800 rounded-lg p-0.5">
+              <button
+                onClick={() => setView("calendar")}
+                className={`px-3 py-1.5 rounded-md text-sm font-semibold transition-colors ${view === "calendar" ? "bg-slate-700 text-white" : "text-slate-500 hover:text-white"}`}
+              >
+                📅 Calendar
+              </button>
+              <button
+                onClick={() => setView("list")}
+                className={`px-3 py-1.5 rounded-md text-sm font-semibold transition-colors ${view === "list" ? "bg-slate-700 text-white" : "text-slate-500 hover:text-white"}`}
+              >
+                📋 List
+              </button>
+            </div>
+
+            {isOfficer && (
+              <button
+                onClick={() => setShowAdd(true)}
+                className="px-4 py-2 rounded-lg bg-violet-600 hover:bg-violet-500 text-white text-sm font-semibold transition-colors"
+              >
+                + Add Event
+              </button>
+            )}
+          </div>
+        </div>
+
+        {/* ── CALENDAR VIEW ── */}
+        {view === "calendar" && (
+          <>
+            {/* Month navigation */}
+            <div className="flex items-center justify-between mb-4">
+              <button onClick={prevMonth} className="w-9 h-9 flex items-center justify-center rounded-lg hover:bg-slate-800 text-slate-400 hover:text-white transition-colors text-xl">‹</button>
+              <h3 className="text-xl font-bold text-white">{MONTHS[month]} {year}</h3>
+              <button onClick={nextMonth} className="w-9 h-9 flex items-center justify-center rounded-lg hover:bg-slate-800 text-slate-400 hover:text-white transition-colors text-xl">›</button>
+            </div>
+
+            {/* Day-of-week headers */}
+            <div className="grid grid-cols-7 mb-1">
+              {DAY_HEADERS.map(d => (
+                <div key={d} className="text-center text-xs font-semibold text-slate-600 uppercase tracking-widest py-2">{d}</div>
+              ))}
+            </div>
+
+            {/* Calendar grid */}
+            <div className="grid grid-cols-7 gap-1">
+              {cells.map((day, i) => {
+                if (!day) return <div key={`e-${i}`} />;
+                const ds = dateStr(year, month, day);
+                const dayEvents = eventsByDate[ds] ?? [];
+                const isToday = ds === todayStr;
+
+                return (
+                  <div
+                    key={ds}
+                    className={`min-h-[80px] p-2 rounded-xl border transition-colors
+                      ${isToday
+                        ? "border-violet-500/50 bg-violet-950/30"
+                        : "border-slate-800/50 bg-slate-900/30 hover:bg-slate-900/60"
+                      }`}
+                  >
+                    <span className={`text-xs font-bold ${isToday ? "text-violet-400" : "text-slate-500"}`}>
+                      {day}
+                    </span>
+                    <div className="mt-1 flex flex-col gap-0.5">
+                      {dayEvents.slice(0, 2).map(ev => (
+                        <button
+                          key={ev.id}
+                          onClick={() => setSelected(ev)}
+                          className="text-left text-[10px] font-semibold px-1.5 py-0.5 rounded-md bg-violet-600/70 hover:bg-violet-500 text-white truncate w-full transition-colors"
+                        >
+                          {ev.title}
+                        </button>
+                      ))}
+                      {dayEvents.length > 2 && (
+                        <button
+                          onClick={() => setSelected(dayEvents[2])}
+                          className="text-[9px] text-slate-500 hover:text-slate-300 text-left pl-1 transition-colors"
+                        >
+                          +{dayEvents.length - 2} more
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </>
+        )}
+
+        {/* ── LIST VIEW ── */}
+        {view === "list" && (
+          <div className="flex flex-col gap-2">
+            {sortedEvents.length === 0 ? (
+              <div className="text-center py-24 text-slate-600">
+                <p className="text-4xl mb-3">📅</p>
+                <p className="font-semibold">No events yet</p>
+                <p className="text-sm mt-1">Hit "+ Add Event" to get started.</p>
+              </div>
+            ) : (
+              sortedEvents.map(ev => {
+                const d = new Date(ev.date);
+                const isPast = ev.date < todayStr;
+                return (
+                  <div
+                    key={ev.id}
+                    className={`flex items-start gap-4 p-4 rounded-xl border transition-colors ${isPast ? "border-slate-800/40 bg-slate-900/20 opacity-60" : "border-slate-800 bg-slate-900/50 hover:bg-slate-900"}`}
+                  >
+                    {/* Date block */}
+                    <div className="shrink-0 w-14 text-center rounded-lg bg-slate-800 py-2 px-1">
+                      <p className="text-[10px] font-bold text-violet-400 uppercase tracking-wide">
+                        {d.toLocaleDateString("en-US", { month: "short" })}
+                      </p>
+                      <p className="text-2xl font-black text-white leading-none">{d.getDate()}</p>
+                      <p className="text-[10px] text-slate-500">{d.getFullYear()}</p>
+                    </div>
+
+                    {/* Content */}
+                    <div className="flex-1 min-w-0 pt-1">
+                      <p className="font-bold text-white">{ev.title}</p>
+                      {ev.description && (
+                        <p className="text-sm text-slate-400 mt-1 leading-relaxed">{ev.description}</p>
+                      )}
+                    </div>
+
+                    {isOfficer && (
+                      <button
+                        onClick={() => deleteEvent(ev.id)}
+                        className="shrink-0 mt-1 text-slate-700 hover:text-red-400 transition-colors px-1"
+                        title="Delete"
+                      >✕</button>
+                    )}
+                  </div>
+                );
+              })
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* ── EVENT DETAIL MODAL ── */}
+      {selected && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4" onClick={() => setSelected(null)}>
+          <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" />
+          <div className="relative bg-slate-900 border border-slate-700 rounded-2xl p-6 max-w-md w-full shadow-2xl" onClick={e => e.stopPropagation()}>
+            <div className="flex items-start justify-between mb-4">
+              <div>
+                <p className="text-xs text-violet-400 font-bold uppercase tracking-widest mb-1">{selected.date}</p>
+                <h3 className="text-xl font-black text-white">{selected.title}</h3>
+              </div>
+              <button onClick={() => setSelected(null)} className="text-slate-500 hover:text-white transition-colors text-xl leading-none ml-4">✕</button>
+            </div>
+
+            {selected.description
+              ? <p className="text-slate-300 text-sm leading-relaxed">{selected.description}</p>
+              : <p className="text-slate-600 text-sm italic">No description provided.</p>
+            }
+
+            {isOfficer && (
+              <button
+                onClick={() => deleteEvent(selected.id)}
+                className="mt-5 text-xs text-red-500/70 hover:text-red-400 transition-colors"
+              >
+                Delete this event
+              </button>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* ── ADD EVENT MODAL ── */}
+      {isOfficer && showAdd && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4" onClick={() => setShowAdd(false)}>
+          <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" />
+          <div className="relative bg-slate-900 border border-slate-700 rounded-2xl p-6 max-w-md w-full shadow-2xl" onClick={e => e.stopPropagation()}>
+            <h3 className="text-xl font-black text-white mb-5">New Event</h3>
+
+            <div className="flex flex-col gap-4">
+              <div>
+                <label className="text-xs text-slate-400 uppercase tracking-widest font-semibold block mb-1.5">Date</label>
+                <input
+                  type="date"
+                  value={newDate}
+                  onChange={e => setNewDate(e.target.value)}
+                  className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2.5 text-white focus:outline-none focus:border-violet-500 transition-colors"
+                />
+              </div>
+              <div>
+                <label className="text-xs text-slate-400 uppercase tracking-widest font-semibold block mb-1.5">Title</label>
+                <input
+                  value={newTitle}
+                  onChange={e => setNewTitle(e.target.value)}
+                  onKeyDown={e => e.key === "Enter" && addEvent()}
+                  placeholder="Event name"
+                  className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2.5 text-white placeholder-slate-600 focus:outline-none focus:border-violet-500 transition-colors"
+                />
+              </div>
+              <div>
+                <label className="text-xs text-slate-400 uppercase tracking-widest font-semibold block mb-1.5">
+                  Description <span className="normal-case text-slate-600 font-normal">(optional)</span>
+                </label>
+                <textarea
+                  value={newDesc}
+                  onChange={e => setNewDesc(e.target.value)}
+                  placeholder="Details, links, notes..."
+                  rows={3}
+                  className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2.5 text-white placeholder-slate-600 focus:outline-none focus:border-violet-500 transition-colors resize-none"
+                />
+              </div>
+            </div>
+
+            <div className="flex gap-2 mt-6">
+              <button
+                onClick={addEvent}
+                disabled={!newTitle.trim()}
+                className="flex-1 py-2.5 rounded-lg bg-violet-600 hover:bg-violet-500 disabled:opacity-30 disabled:cursor-not-allowed text-white font-bold text-sm transition-colors"
+              >
+                Add Event
+              </button>
+              <button
+                onClick={() => setShowAdd(false)}
+                className="px-5 py-2.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 font-semibold text-sm transition-colors"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
