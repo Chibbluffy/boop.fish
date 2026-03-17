@@ -163,19 +163,8 @@ export default function WallOfShame() {
                     )}
                   </div>
 
-                  {/* Content row — shifts left when image present */}
+                  {/* Content row — image on left, text shifts right */}
                   <div className="flex gap-4 items-start">
-                    <div className="flex-1 min-w-0">
-                      <h3 className="text-lg font-black text-white leading-snug mb-2">
-                        {entry.title}
-                      </h3>
-                      {entry.description && (
-                        <p className="text-slate-400 text-sm leading-relaxed whitespace-pre-line">
-                          {entry.description}
-                        </p>
-                      )}
-                    </div>
-
                     {entry.image_path && (
                       <button
                         onClick={() => setLightbox(entry.image_path!)}
@@ -188,6 +177,17 @@ export default function WallOfShame() {
                         />
                       </button>
                     )}
+
+                    <div className="flex-1 min-w-0">
+                      <h3 className="text-lg font-black text-white leading-snug mb-2">
+                        {entry.title}
+                      </h3>
+                      {entry.description && (
+                        <p className="text-slate-400 text-sm leading-relaxed whitespace-pre-line">
+                          {entry.description}
+                        </p>
+                      )}
+                    </div>
                   </div>
                 </div>
               );

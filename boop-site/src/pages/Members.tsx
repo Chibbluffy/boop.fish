@@ -108,6 +108,10 @@ export default function Members() {
 
   const counts = members.reduce((acc, m) => { acc[m.role] = (acc[m.role] ?? 0) + 1; return acc; }, {} as Record<string, number>);
 
+  // Use the live server role (from the members list) so stale cached auth doesn't hide admin controls
+  const liveRole = members.find(m => m.id === user?.id)?.role ?? user?.role;
+  const isAdmin = liveRole === "admin";
+
   return (
     <div className="min-h-screen bg-slate-950 px-6 py-10">
       <div className="max-w-4xl mx-auto">
@@ -153,24 +157,24 @@ export default function Members() {
         ) : (
           <div className="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden">
             {/* Header row */}
-            <div className="grid grid-cols-[auto_1fr_1fr_auto_auto_auto_auto] gap-4 px-5 py-3 border-b border-slate-800 text-xs font-semibold text-slate-500 uppercase tracking-widest">
-              <span className="w-8" />
+            <div className="grid grid-cols-[2rem_1fr_1fr_8rem_4.5rem_7rem_4rem] gap-4 px-5 py-3 border-b border-slate-800 text-xs font-semibold text-slate-500 uppercase tracking-widest">
+              <span />
               <span>Username</span>
               <span>Character</span>
               <span>Joined</span>
               <span title="Ribbit count — activity marker">🐸</span>
               <span>Role</span>
-              <span />
+              {isAdmin && <span>Delete</span>}
             </div>
 
             {members.map((m, i) => {
-              const isMe = m.id === user.id;
-              const canEdit = !isMe && (user.role === "admin" || m.role === "member");
+              const isMe = m.id === user?.id;
+              const canEdit = !isMe && (isAdmin || m.role === "member");
 
               return (
                 <div
                   key={m.id}
-                  className={`grid grid-cols-[auto_1fr_1fr_auto_auto_auto_auto] gap-4 items-center px-5 py-3.5 ${
+                  className={`grid grid-cols-[2rem_1fr_1fr_8rem_4.5rem_7rem_4rem] gap-4 items-center px-5 py-3.5 ${
                     i < members.length - 1 ? "border-b border-slate-800/60" : ""
                   } hover:bg-slate-800/30 transition-colors`}
                 >
@@ -187,7 +191,6 @@ export default function Members() {
                   <div className="min-w-0">
                     <p className="font-semibold text-white truncate">
                       {m.username}
-                      {isMe && <span className="ml-2 text-xs text-slate-500">(you)</span>}
                     </p>
                     {m.email && <p className="text-xs text-slate-600 truncate">{m.email}</p>}
                   </div>
@@ -229,7 +232,7 @@ export default function Members() {
                         <option value="pending">pending</option>
                         <option value="member">member</option>
                         <option value="officer">officer</option>
-                        {user.role === "admin" && <option value="admin">admin</option>}
+                        {isAdmin && <option value="admin">admin</option>}
                       </select>
                     ) : (
                       <span className={`text-xs font-bold px-2 py-1 rounded-lg border ${ROLE_STYLE[m.role]}`}>
@@ -239,18 +242,21 @@ export default function Members() {
                   </div>
 
                   {/* Delete (admin only, not self) */}
-                  <div className="shrink-0">
-                    {user.role === "admin" && !isMe && (
-                      <button
-                        onClick={() => deleteAccount(m.id, m.username)}
-                        disabled={deleting === m.id}
-                        title="Delete account"
-                        className="text-slate-700 hover:text-red-400 disabled:opacity-30 disabled:cursor-not-allowed transition-colors text-sm"
-                      >
-                        🗑
-                      </button>
-                    )}
-                  </div>
+                  {isAdmin && (
+                    <div className="shrink-0">
+                      {!isMe ? (
+                        <button
+                          onClick={() => deleteAccount(m.id, m.username)}
+                          disabled={deleting === m.id}
+                          className="text-xs font-semibold text-red-500/60 hover:text-red-400 hover:bg-red-500/10 px-2 py-0.5 rounded transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+                        >
+                          {deleting === m.id ? "..." : "Delete"}
+                        </button>
+                      ) : (
+                        <span />
+                      )}
+                    </div>
+                  )}
                 </div>
               );
             })}

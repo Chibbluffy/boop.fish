@@ -525,7 +525,7 @@ const server = serve({
         const awards = await sql`
           SELECT id, award_type, display_name, user_id, reason, image_path, award_date, created_at
           FROM employee_awards
-          ORDER BY award_date DESC
+          ORDER BY award_date DESC, created_at DESC
         `;
         return json(awards);
       },
