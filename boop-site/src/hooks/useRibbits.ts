@@ -1,26 +1,32 @@
 import { useEffect, useState } from "react";
 import { getUser, getToken } from "../lib/auth";
 
-const KEY = "boop_ribbits";
+const KEY      = "boop_ribbits";
+const BASE_KEY = "boop_ribbit_base"; // last server-confirmed base, persisted separately
 const AUTH_EVENT = "boop-auth-changed";
 
 // ── Module-level singleton ────────────────────────────────────────────────────
-// _serverBase: the last count confirmed by the server (or loaded from stored user)
-// _localDelta: ribbits earned this session that haven't been synced yet
+// _serverBase: the last count confirmed by the server
+// _localDelta: ribbits earned since last sync, not yet sent to server
 // _count: what we display = _serverBase + _localDelta
 
-let _serverBase = 0;
-let _localDelta = 0;
 let _count = parseInt(localStorage.getItem(KEY) || "0", 10);
 
-// Initialise _serverBase from the cached user on startup so we don't flash 0
-const _cachedUser = getUser();
-if (_cachedUser && typeof _cachedUser.ribbit_count === "number") {
-  _serverBase = _cachedUser.ribbit_count;
-  // Any local excess above the server base is unsaved delta from a previous session
-  _localDelta = Math.max(0, _count - _serverBase);
-  _count = _serverBase + _localDelta;
+// Use the dedicated base key (accurate) if present; fall back to cached user
+// on first ever load before the key exists.
+let _serverBase = 0;
+const _storedBase = localStorage.getItem(BASE_KEY);
+if (_storedBase !== null) {
+  _serverBase = parseInt(_storedBase, 10);
+} else {
+  const _cachedUser = getUser();
+  if (_cachedUser && typeof _cachedUser.ribbit_count === "number") {
+    _serverBase = _cachedUser.ribbit_count;
+  }
 }
+
+let _localDelta = Math.max(0, _count - _serverBase);
+_count = _serverBase + _localDelta;
 
 const _subs = new Set<() => void>();
 
@@ -30,10 +36,10 @@ function notify() {
 
 // Called by auth.ts when a fresh server user object arrives (login / me check)
 export function initRibbitsFromServer(serverCount: number) {
-  // Keep any delta earned since page load; server is the authoritative base
   _serverBase = serverCount;
   _count = _serverBase + _localDelta;
-  localStorage.setItem(KEY, String(_count));
+  localStorage.setItem(KEY,      String(_count));
+  localStorage.setItem(BASE_KEY, String(_serverBase));
   notify();
 }
 
@@ -63,7 +69,8 @@ async function syncToServer(keepalive = false) {
       const { ribbit_count } = await res.json();
       _serverBase = ribbit_count;
       _count = _serverBase + _localDelta; // include any new clicks during the await
-      localStorage.setItem(KEY, String(_count));
+      localStorage.setItem(KEY,      String(_count));
+      localStorage.setItem(BASE_KEY, String(_serverBase));
       notify();
     } else {
       _localDelta += delta; // put it back

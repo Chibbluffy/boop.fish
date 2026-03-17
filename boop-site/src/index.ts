@@ -373,7 +373,7 @@ const server = serve({
     "/api/calendar": {
       async GET(_req) {
         const events = await sql`
-          SELECT id, title, description, event_date, created_at
+          SELECT id, title, description, event_date::text, created_at
           FROM calendar_events
           ORDER BY event_date ASC
         `;
