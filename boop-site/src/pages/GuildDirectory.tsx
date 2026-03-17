@@ -7,6 +7,7 @@ type Member = {
   family_name: string | null;
   discord_name: string | null;
   bdo_class: string | null;
+  alt_class: string | null;
   gear_ap: number | null;
   gear_aap: number | null;
   gear_dp: number | null;
@@ -18,7 +19,7 @@ type Member = {
   role: string;
 };
 
-type SortKey = "gs" | "ribbit_count" | "username";
+type SortKey = "gs" | "ribbit_count" | "username" | "timezone";
 
 const STATUS_STYLE: Record<string, string> = {
   "Active PvP":  "bg-red-500/20 text-red-400 border-red-500/30",
@@ -70,11 +71,12 @@ export default function GuildDirectory() {
   const [members, setMembers] = useState<Member[]>([]);
   const [loading, setLoading] = useState(true);
 
-  const [search, setSearch]           = useState("");
-  const [filterClass, setFilterClass] = useState("");
-  const [filterStatus, setFilterStatus] = useState("");
-  const [sortKey, setSortKey]         = useState<SortKey>("username");
-  const [sortDir, setSortDir]         = useState<1 | -1>(1);
+  const [search, setSearch]               = useState("");
+  const [filterClass, setFilterClass]     = useState("");
+  const [filterStatus, setFilterStatus]   = useState("");
+  const [filterTimezone, setFilterTimezone] = useState("");
+  const [sortKey, setSortKey]             = useState<SortKey>("username");
+  const [sortDir, setSortDir]             = useState<1 | -1>(1);
 
   useEffect(() => {
     if (!user || user.role === "pending") return;
@@ -93,9 +95,15 @@ export default function GuildDirectory() {
     );
   }
 
-  // Collect classes that actually appear
+  // Collect values that actually appear
   const classesInUse = Array.from(new Set(members.map(m => m.bdo_class).filter(Boolean))) as string[];
   classesInUse.sort();
+  const timezonesInUse = Array.from(new Set(members.map(m => m.timezone).filter(Boolean))) as string[];
+  timezonesInUse.sort((a, b) => {
+    const la = TIMEZONES.find(t => t.value === a)?.label ?? a;
+    const lb = TIMEZONES.find(t => t.value === b)?.label ?? b;
+    return la.localeCompare(lb);
+  });
 
   const PLAY_STATUSES = ["Active PvP", "Active PvE", "Semi-Active", "AFK", "Inactive"];
 
@@ -106,14 +114,21 @@ export default function GuildDirectory() {
         !m.username.toLowerCase().includes(q) &&
         !(m.family_name?.toLowerCase().includes(q)) &&
         !(m.discord_name?.toLowerCase().includes(q)) &&
-        !(m.bdo_class?.toLowerCase().includes(q))
+        !(m.bdo_class?.toLowerCase().includes(q)) &&
+        !(m.alt_class?.toLowerCase().includes(q))
       ) return false;
-      if (filterClass  && m.bdo_class   !== filterClass)  return false;
-      if (filterStatus && m.play_status !== filterStatus) return false;
+      if (filterClass    && m.bdo_class   !== filterClass)    return false;
+      if (filterStatus   && m.play_status !== filterStatus)   return false;
+      if (filterTimezone && m.timezone    !== filterTimezone) return false;
       return true;
     })
     .sort((a, b) => {
       if (sortKey === "username") return a.username.localeCompare(b.username) * sortDir;
+      if (sortKey === "timezone") {
+        const la = tzShort(a.timezone);
+        const lb = tzShort(b.timezone);
+        return la.localeCompare(lb) * sortDir;
+      }
       return ((b[sortKey] as number) - (a[sortKey] as number)) * sortDir;
     });
 
@@ -162,11 +177,20 @@ export default function GuildDirectory() {
           {PLAY_STATUSES.map(s => <option key={s} value={s}>{s}</option>)}
         </select>
 
+        <select value={filterTimezone} onChange={e => setFilterTimezone(e.target.value)}
+          className="bg-slate-900 border border-slate-800 rounded-lg px-3 py-2 text-sm text-slate-300 focus:outline-none focus:border-violet-500 transition-colors">
+          <option value="">All timezones</option>
+          {timezonesInUse.map(tz => (
+            <option key={tz} value={tz}>{tzShort(tz)}</option>
+          ))}
+        </select>
+
         <div className="flex items-center gap-1 ml-auto">
           <span className="text-xs text-slate-600 mr-1">Sort:</span>
           <SortBtn k="username"     label="Name" />
           <SortBtn k="gs"           label="GS" />
           <SortBtn k="ribbit_count" label="Frogs" />
+          <SortBtn k="timezone"     label="TZ" />
         </div>
       </div>
 
@@ -216,7 +240,9 @@ export default function GuildDirectory() {
                 <div className="flex items-center justify-between gap-2 bg-slate-800/50 rounded-xl px-3 py-2">
                   <div>
                     {m.bdo_class ? (
-                      <p className="text-xs font-semibold text-violet-300">{m.bdo_class}</p>
+                      <p className="text-xs font-semibold text-violet-300">
+                        {m.bdo_class}{m.alt_class && <span className="text-slate-500">/{m.alt_class}</span>}
+                      </p>
                     ) : (
                       <p className="text-xs text-slate-600">No class</p>
                     )}

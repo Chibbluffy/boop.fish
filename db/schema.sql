@@ -23,7 +23,8 @@ CREATE TABLE IF NOT EXISTS users (
                             CHECK (role IN ('pending', 'member', 'officer', 'admin')),
   character_name VARCHAR(100),                 -- in-game name
   ribbit_count  INTEGER     NOT NULL DEFAULT 0, -- 🐸 activity marker
-  bdo_class     VARCHAR(50),                    -- saved BDO class
+  bdo_class     VARCHAR(50),                    -- saved BDO class (main)
+  alt_class     VARCHAR(50),                    -- tagged / alt class
   gear_ap       INTEGER,                        -- saved AP
   gear_aap      INTEGER,                        -- saved Awakening AP
   gear_dp       INTEGER,                        -- saved DP
@@ -44,6 +45,7 @@ CREATE TABLE IF NOT EXISTS users (
 -- ALTER TABLE users ADD COLUMN IF NOT EXISTS guild_rank   VARCHAR(50) DEFAULT 'Member';
 -- ALTER TABLE users ADD COLUMN IF NOT EXISTS play_status  VARCHAR(30) DEFAULT 'Active';
 -- ALTER TABLE users ADD COLUMN IF NOT EXISTS roster_notes TEXT;
+-- ALTER TABLE users ADD COLUMN IF NOT EXISTS alt_class    VARCHAR(50);
 
 -- ============================================================
 -- SESSIONS  (server-side, fully revocable)

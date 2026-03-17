@@ -5,6 +5,7 @@ type GearRow = {
   username: string;
   family_name: string | null;
   bdo_class: string | null;
+  alt_class: string | null;
   gear_ap: number | null;
   gear_aap: number | null;
   gear_dp: number | null;
@@ -93,7 +94,9 @@ export default function GearLeaderboard() {
                       )}
                     </td>
                     <td className="px-3 py-2.5 text-sm text-slate-400">
-                      {row.bdo_class ?? <span className="text-slate-600">—</span>}
+                      {row.bdo_class
+                          ? <>{row.bdo_class}{row.alt_class && <span className="text-slate-600">/{row.alt_class}</span>}</>
+                          : <span className="text-slate-600">—</span>}
                     </td>
                     <td className={`px-3 py-2.5 text-sm tabular-nums font-mono ${sortKey === "gear_ap" ? "text-violet-300 font-bold" : "text-slate-300"}`}>
                       {row.gear_ap ?? <span className="text-slate-600">—</span>}
