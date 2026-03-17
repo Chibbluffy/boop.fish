@@ -52,6 +52,7 @@ function MembersSection({ me }: { me: AuthUser }) {
   const [updating, setUpdating]     = useState<string | null>(null);
   const [resetting, setResetting]   = useState<string | null>(null);
   const [resettingAll, setResettingAll] = useState(false);
+  const [deleting, setDeleting]     = useState<string | null>(null);
   const [error, setError]           = useState<string | null>(null);
 
   useEffect(() => {
@@ -96,7 +97,18 @@ function MembersSection({ me }: { me: AuthUser }) {
     setResettingAll(false);
   }
 
+  async function deleteAccount(id: string, username: string) {
+    if (!confirm(`Delete account "${username}"? This cannot be undone.`)) return;
+    setDeleting(id);
+    const res = await fetch(`/api/members/${id}`, { method: "DELETE", headers: authH() });
+    if (res.ok) setMembers(prev => prev.filter(m => m.id !== id));
+    setDeleting(null);
+  }
+
   const counts = members.reduce((a, m) => { a[m.role] = (a[m.role] ?? 0) + 1; return a; }, {} as Record<string, number>);
+
+  // Derive admin status from live server data so stale cached role doesn't hide controls
+  const isAdmin = (members.find(m => m.id === me.id)?.role ?? me.role) === "admin";
 
   return (
     <div>
@@ -132,21 +144,22 @@ function MembersSection({ me }: { me: AuthUser }) {
         <p className="text-slate-500 text-center py-16">Loading…</p>
       ) : (
         <div className="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden">
-          <div className="grid grid-cols-[auto_1fr_1fr_auto_auto_auto] gap-4 px-5 py-3 border-b border-slate-800 text-xs font-semibold text-slate-500 uppercase tracking-widest">
-            <span className="w-8" />
+          <div className={`grid gap-4 px-5 py-3 border-b border-slate-800 text-xs font-semibold text-slate-500 uppercase tracking-widest ${isAdmin ? "grid-cols-[2rem_1fr_1fr_8rem_4.5rem_7rem_4rem]" : "grid-cols-[2rem_1fr_1fr_8rem_4.5rem_7rem]"}`}>
+            <span />
             <span>Username</span>
             <span>Character</span>
             <span>Joined</span>
             <span title="Ribbit count">🐸</span>
             <span>Role</span>
+            {isAdmin && <span>Delete</span>}
           </div>
 
           {members.map((m, i) => {
             const isMe = m.id === me.id;
-            const canEdit = !isMe && (me.role === "admin" || ["pending", "member"].includes(m.role));
+            const canEdit = !isMe && (isAdmin || ["pending", "member"].includes(m.role));
             return (
               <div key={m.id}
-                className={`grid grid-cols-[auto_1fr_1fr_auto_auto_auto] gap-4 items-center px-5 py-3.5 hover:bg-slate-800/30 transition-colors ${
+                className={`grid gap-4 items-center px-5 py-3.5 hover:bg-slate-800/30 transition-colors ${isAdmin ? "grid-cols-[2rem_1fr_1fr_8rem_4.5rem_7rem_4rem]" : "grid-cols-[2rem_1fr_1fr_8rem_4.5rem_7rem]"} ${
                   i < members.length - 1 ? "border-b border-slate-800/60" : ""
                 }`}
               >
@@ -158,9 +171,7 @@ function MembersSection({ me }: { me: AuthUser }) {
                 </div>
 
                 <div className="min-w-0">
-                  <p className="font-semibold text-white truncate">
-                    {m.username}{isMe && <span className="ml-2 text-xs text-slate-500">(you)</span>}
-                  </p>
+                  <p className="font-semibold text-white truncate">{m.username}</p>
                   {m.email && <p className="text-xs text-slate-600 truncate">{m.email}</p>}
                 </div>
 
@@ -190,7 +201,7 @@ function MembersSection({ me }: { me: AuthUser }) {
                       <option value="pending">pending</option>
                       <option value="member">member</option>
                       <option value="officer">officer</option>
-                      {me.role === "admin" && <option value="admin">admin</option>}
+                      {isAdmin && <option value="admin">admin</option>}
                     </select>
                   ) : (
                     <span className={`text-xs font-bold px-2 py-1 rounded-lg border ${ROLE_STYLE[m.role]}`}>
@@ -198,6 +209,20 @@ function MembersSection({ me }: { me: AuthUser }) {
                     </span>
                   )}
                 </div>
+
+                {isAdmin && (
+                  <div className="shrink-0">
+                    {!isMe ? (
+                      <button
+                        onClick={() => deleteAccount(m.id, m.username)}
+                        disabled={deleting === m.id}
+                        className="text-xs font-semibold text-red-500/60 hover:text-red-400 hover:bg-red-500/10 px-2 py-0.5 rounded transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+                      >
+                        {deleting === m.id ? "..." : "Delete"}
+                      </button>
+                    ) : <span />}
+                  </div>
+                )}
               </div>
             );
           })}
