@@ -32,3 +32,7 @@ report.[0-9]_.[0-9]_.[0-9]_.[0-9]_.json
 
 # Finder (MacOS) folder config
 .DS_Store
+
+# Cached remote assets — auto-downloaded on server startup, no need to commit
+cache/*.png
+cache/*.etag
