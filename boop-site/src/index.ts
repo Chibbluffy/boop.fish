@@ -68,7 +68,7 @@ const server = serve({
         const password_hash = await hashPassword(password);
         const [user] = await sql`
           INSERT INTO users (username, password_hash, family_name, discord_name, timezone, role)
-          VALUES (${username}, ${password_hash}, ${family_name ?? null}, ${discord_name ?? null}, ${timezone}, 'pending')
+          VALUES (${username}, ${password_hash}, ${family_name ?? null}, ${discord_name ?? null}, ${timezone}, 'member')
           RETURNING id, username, email, role, character_name, family_name, discord_name, ribbit_count, bdo_class, alt_class, gear_ap, gear_aap, gear_dp, timezone
         `;
         const token = await createSession(user.id);
