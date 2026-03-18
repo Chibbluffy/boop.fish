@@ -21,9 +21,9 @@ const NAV_GROUPS = [
     memberOnly: true,
     items: [
       { label: "Calendar",         href: "#/calendar",          route: "calendar",          officerOnly: false },
-      { label: "Nodewar",          href: "#/nodewar",           route: "nodewar",           officerOnly: false },
-      { label: "Black Shrine",     href: "#/shrine",            route: "shrine",            officerOnly: false },
-      { label: "Guild Directory",  href: "#/guild-directory",   route: "guild-directory",   officerOnly: false },
+      { label: "Nodewar",          href: "#/nodewar",           route: "nodewar",           officerOnly: false, memberOnly: true },
+      { label: "Black Shrine",     href: "#/shrine",            route: "shrine",            officerOnly: false, memberOnly: false },
+      { label: "Guild Directory",  href: "#/guild-directory",   route: "guild-directory",   officerOnly: false, memberOnly: true },
       { label: "Gear Leaderboard", href: "#/gear-leaderboard",  route: "gear-leaderboard",  officerOnly: false },
     ],
   },
@@ -45,6 +45,7 @@ const ROLE_STYLE: Record<string, string> = {
   admin:   "bg-red-500/20 text-red-400 border border-red-500/30",
   officer: "bg-amber-500/20 text-amber-400 border border-amber-500/30",
   member:  "bg-slate-700/60 text-slate-400",
+  friend:  "bg-teal-500/20 text-teal-400 border border-teal-500/30",
   pending: "bg-slate-800/80 text-slate-500",
 };
 
@@ -278,7 +279,10 @@ export default function Nav({ route }: NavProps) {
                   </button>
                   {isOpen && (
                     <div className="absolute top-full left-0 mt-1.5 w-44 bg-slate-900 border border-slate-700/60 rounded-xl shadow-2xl py-1.5 z-50">
-                      {group.items.filter(item => !item.officerOnly || isOfficerOrAdmin(user)).map(item => (
+                      {group.items.filter(item =>
+  (!item.officerOnly || isOfficerOrAdmin(user)) &&
+  (!item.memberOnly  || (user?.role !== "friend" && user?.role !== "pending"))
+).map(item => (
                         <a key={item.href} href={item.href} onClick={() => setOpenGroup(null)}
                           className={`flex items-center px-3 py-2 text-sm transition-colors ${
                             route === item.route ? "text-white bg-slate-800/80 font-semibold" : "text-slate-400 hover:text-white hover:bg-slate-800/50"
@@ -417,7 +421,10 @@ export default function Nav({ route }: NavProps) {
 
               {NAV_GROUPS.map(group => {
                 if (group.memberOnly && (!user || user.role === "pending")) return null;
-                const visibleItems = group.items.filter(item => !item.officerOnly || isOfficerOrAdmin(user));
+                const visibleItems = group.items.filter(item =>
+  (!item.officerOnly || isOfficerOrAdmin(user)) &&
+  (!item.memberOnly  || (user?.role !== "friend" && user?.role !== "pending"))
+);
                 if (!visibleItems.length) return null;
                 const isExpanded = mobileSection === group.key;
                 return (

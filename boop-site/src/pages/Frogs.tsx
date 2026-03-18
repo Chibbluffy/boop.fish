@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from "react";
 import { useRibbits } from "../hooks/useRibbits";
+import { useAuth } from "../lib/auth";
 
 const FROG_COUNT = 60;
 
@@ -12,8 +13,13 @@ const FROGS = Array.from({ length: FROG_COUNT }).map((_, i) => ({
 
 type Float = { key: number; text: string; frogId: number };
 
+const FRIEND_RIBBIT_CAP = 300;
+
 export default function Frogs() {
   const { count: ribbited, add } = useRibbits();
+  const user = useAuth();
+  const isFriend = user?.role === "friend";
+  const isCapped = isFriend && ribbited >= FRIEND_RIBBIT_CAP;
   const [popped, setPopped] = useState<Set<number>>(new Set());
   const [litFrogs, setLitFrogs] = useState<Map<number, 2 | 3>>(new Map());
   const [floats, setFloats] = useState<Float[]>([]);
@@ -42,6 +48,7 @@ export default function Frogs() {
   }, []);
 
   function handleClick(id: number) {
+    if (isCapped) return;
     const mult = litFrogs.get(id) ?? 1;
     add(mult);
 
@@ -156,8 +163,16 @@ export default function Frogs() {
           })}
         </div>
 
+        {/* Friend ribbit cap notice */}
+        {isCapped && (
+          <div className="mt-8 text-center bg-violet-500/10 border border-violet-500/20 rounded-xl px-6 py-4 max-w-md mx-auto">
+            <p className="text-violet-300 font-semibold text-sm">Oops! You've collected the maximum ribbits as a non-member. 🐸</p>
+            <p className="text-slate-400 text-xs mt-1">Join Boop for more fun and features!</p>
+          </div>
+        )}
+
         {/* Milestone messages */}
-        {ribbited >= 10 && (
+        {!isCapped && ribbited >= 10 && (
           <p className="mt-8 text-center text-slate-600 text-sm">
             {ribbited >= 500
               ? "Maximum frog power unlocked. +5 payout tier. You are a legend. 🐸👑"

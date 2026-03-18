@@ -20,7 +20,7 @@ CREATE TABLE IF NOT EXISTS users (
   email         VARCHAR(255) UNIQUE,
   password_hash TEXT        NOT NULL,          -- bcrypt, salt embedded
   role          VARCHAR(20) NOT NULL DEFAULT 'member'
-                            CHECK (role IN ('pending', 'member', 'officer', 'admin')),
+                            CHECK (role IN ('pending', 'friend', 'member', 'officer', 'admin')),
   character_name VARCHAR(100),                 -- in-game name
   ribbit_count  INTEGER     NOT NULL DEFAULT 0, -- 🐸 activity marker
   bdo_class     VARCHAR(50),                    -- saved BDO class (main)
@@ -56,6 +56,8 @@ CREATE TABLE IF NOT EXISTS users (
 -- ALTER TABLE users ADD COLUMN IF NOT EXISTS discord_username VARCHAR(100);
 -- ALTER TABLE users ADD COLUMN IF NOT EXISTS discord_avatar  TEXT;
 -- ALTER TABLE users ALTER COLUMN password_hash DROP NOT NULL;
+-- ALTER TABLE users DROP CONSTRAINT IF EXISTS users_role_check;
+-- ALTER TABLE users ADD CONSTRAINT users_role_check CHECK (role IN ('pending', 'friend', 'member', 'officer', 'admin'));
 -- ALTER TABLE calendar_events ADD COLUMN IF NOT EXISTS event_time     TIME;
 -- ALTER TABLE calendar_events ADD COLUMN IF NOT EXISTS event_timezone VARCHAR(60);
 
