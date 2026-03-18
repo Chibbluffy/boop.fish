@@ -1054,7 +1054,7 @@ const server = serve({
       if (!filename || filename.includes("..") || filename.includes("/")) {
         return new Response("Not found", { status: 404 });
       }
-      const file = Bun.file(join(import.meta.dir, "../../public/sounds", filename));
+      const file = Bun.file(join(import.meta.dir, "../public/sounds", filename));
       if (!(await file.exists())) return new Response("Not found", { status: 404 });
       const ext = filename.split(".").pop()?.toLowerCase();
       const mime = ext === "ogg" ? "audio/ogg" : "audio/mpeg";
