@@ -85,7 +85,7 @@ const server = serve({
           SELECT id, username, email, password_hash, role, character_name, family_name, discord_name, ribbit_count, bdo_class, alt_class, gear_ap, gear_aap, gear_dp, timezone
           FROM users WHERE username = ${username}
         `;
-        if (!user) return err("Invalid username or password", 401);
+        if (!user || !user.password_hash) return err("Invalid username or password", 401);
 
         const ok = await verifyPassword(password, user.password_hash);
         if (!ok) return err("Invalid username or password", 401);
@@ -102,6 +102,108 @@ const server = serve({
         const token = auth?.startsWith("Bearer ") ? auth.slice(7) : null;
         if (token) await deleteSession(token);
         return json({ ok: true });
+      },
+    },
+
+    // ── Discord OAuth ────────────────────────────────────────────────────────
+
+    "/auth/discord": {
+      async GET(_req) {
+        const clientId    = process.env.DISCORD_CLIENT_ID;
+        const siteUrl     = process.env.SITE_URL ?? "https://boop.fish";
+        const redirectUri = encodeURIComponent(`${siteUrl}/auth/discord/callback`);
+        if (!clientId) return err("Discord OAuth not configured", 500);
+        const url = `https://discord.com/oauth2/authorize?client_id=${clientId}&redirect_uri=${redirectUri}&response_type=code&scope=identify%20guilds`;
+        return Response.redirect(url, 302);
+      },
+    },
+
+    "/auth/discord/callback": {
+      async GET(req) {
+        const siteUrl      = process.env.SITE_URL ?? "https://boop.fish";
+        const clientId     = process.env.DISCORD_CLIENT_ID!;
+        const clientSecret = process.env.DISCORD_CLIENT_SECRET!;
+        const guildId      = process.env.DISCORD_GUILD_ID;
+        const redirectUri  = `${siteUrl}/auth/discord/callback`;
+
+        const url  = new URL(req.url);
+        const code = url.searchParams.get("code");
+        if (!code) return Response.redirect(`${siteUrl}/#/auth?discord_error=missing_code`, 302);
+
+        // Exchange code for access token
+        const tokenRes = await fetch("https://discord.com/api/oauth2/token", {
+          method: "POST",
+          headers: { "Content-Type": "application/x-www-form-urlencoded" },
+          body: new URLSearchParams({
+            client_id:     clientId,
+            client_secret: clientSecret,
+            grant_type:    "authorization_code",
+            code,
+            redirect_uri:  redirectUri,
+          }),
+        });
+        if (!tokenRes.ok) return Response.redirect(`${siteUrl}/#/auth?discord_error=token_exchange`, 302);
+        const { access_token } = await tokenRes.json() as { access_token: string };
+
+        // Fetch Discord user profile
+        const discordUser = await fetch("https://discord.com/api/users/@me", {
+          headers: { Authorization: `Bearer ${access_token}` },
+        }).then(r => r.json()) as { id: string; username: string; avatar: string | null };
+
+        // Check guild membership
+        if (guildId) {
+          const guilds = await fetch("https://discord.com/api/users/@me/guilds", {
+            headers: { Authorization: `Bearer ${access_token}` },
+          }).then(r => r.json()) as { id: string }[];
+          if (!guilds.some(g => g.id === guildId)) {
+            return Response.redirect(`${siteUrl}/#/auth?discord_error=not_in_guild`, 302);
+          }
+        }
+
+        const discordId       = discordUser.id;
+        const discordUsername = discordUser.username;
+        const discordAvatar   = discordUser.avatar
+          ? `https://cdn.discordapp.com/avatars/${discordId}/${discordUser.avatar}.png`
+          : null;
+
+        // Find existing user by discord_id, or auto-link by matching username
+        let [user] = await sql`SELECT id, role FROM users WHERE discord_id = ${discordId}`;
+
+        if (!user) {
+          // Try to link to an existing account with the same username (covers bootstrap admin)
+          const [existing] = await sql`SELECT id, role FROM users WHERE username = ${discordUsername} AND discord_id IS NULL`;
+          if (existing) {
+            await sql`
+              UPDATE users SET discord_id = ${discordId}, discord_username = ${discordUsername},
+                               discord_avatar = ${discordAvatar}, updated_at = NOW()
+              WHERE id = ${existing.id}
+            `;
+            user = existing;
+          } else {
+            // Create a new account — auto-approved since they're in the guild
+            // Ensure username uniqueness
+            let username = discordUsername;
+            const taken = await sql`SELECT id FROM users WHERE username = ${username}`;
+            if (taken.length) username = `${discordUsername}_${discordId.slice(-4)}`;
+
+            const [newUser] = await sql`
+              INSERT INTO users (username, password_hash, role, discord_id, discord_username, discord_avatar, discord_name)
+              VALUES (${username}, '', 'member', ${discordId}, ${discordUsername}, ${discordAvatar}, ${discordUsername})
+              RETURNING id, role
+            `;
+            user = newUser;
+          }
+        } else {
+          // Sync latest Discord profile info
+          await sql`
+            UPDATE users SET discord_username = ${discordUsername}, discord_avatar = ${discordAvatar},
+                             discord_name = ${discordUsername}, updated_at = NOW()
+            WHERE id = ${user.id}
+          `;
+        }
+
+        const sessionToken = await createSession(user.id);
+        return Response.redirect(`${siteUrl}/#/auth?token=${sessionToken}`, 302);
       },
     },
 
@@ -165,6 +267,20 @@ const server = serve({
         const user = await authenticate(req);
         if (!user) return err("Unauthorized", 401);
         return json({ user });
+      },
+    },
+
+    "/api/auth/me": {
+      async GET(req) {
+        const user = await authenticate(req);
+        if (!user) return err("Unauthorized", 401);
+        const [full] = await sql`
+          SELECT id, username, email, role, character_name, family_name, discord_name,
+                 discord_id, discord_username, discord_avatar, ribbit_count, bdo_class,
+                 alt_class, gear_ap, gear_aap, gear_dp, timezone
+          FROM users WHERE id = ${user.id}
+        `;
+        return json(full);
       },
     },
 

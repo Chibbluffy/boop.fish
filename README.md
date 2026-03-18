@@ -68,9 +68,19 @@ Create a `.env` file (or set environment variables):
 DATABASE_URL=postgres://user:password@localhost:5432/yourdb
 ADMIN_USERNAME=youradminuser
 ADMIN_PASSWORD=youradminpassword
+
+DISCORD_CLIENT_ID=your_client_id
+DISCORD_CLIENT_SECRET=your_client_secret
+DISCORD_GUILD_ID=your_server_id
+DISCORD_BOT_TOKEN=your_bot_token
 ```
 
 `ADMIN_USERNAME` / `ADMIN_PASSWORD` seed an admin account on startup if it doesn't exist yet. `SITE_URL` can optionally be set (defaults to `https://boop.fish`).
+
+Discord OAuth setup:
+1. Create an app at [discord.com/developers/applications](https://discord.com/developers/applications)
+2. Under **OAuth2** → copy Client ID and Client Secret; add redirect URI `https://boop.fish/auth/discord/callback`
+3. No bot required — membership is verified using the user's own OAuth token
 
 ### 3. Install and run
 

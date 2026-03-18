@@ -36,20 +36,28 @@ CREATE TABLE IF NOT EXISTS users (
   play_status   VARCHAR(30)  DEFAULT 'Active',  -- PvP/PvE/AFK/etc.
   roster_notes  TEXT,                           -- officer-managed notes
   payout_tier   INTEGER     NOT NULL DEFAULT 1, -- guild payout tier (1-10)
+  -- Discord OAuth (nullable — existing password accounts stay valid)
+  discord_id       VARCHAR(20)  UNIQUE,
+  discord_username VARCHAR(100),
+  discord_avatar   TEXT,
   created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at    TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 -- Migrations for existing installs:
--- ALTER TABLE users ADD COLUMN IF NOT EXISTS timezone     VARCHAR(60);
--- ALTER TABLE users ADD COLUMN IF NOT EXISTS family_name  VARCHAR(100);
--- ALTER TABLE users ADD COLUMN IF NOT EXISTS discord_name VARCHAR(100);
--- ALTER TABLE users ADD COLUMN IF NOT EXISTS guild_rank   VARCHAR(50) DEFAULT 'Member';
--- ALTER TABLE users ADD COLUMN IF NOT EXISTS play_status  VARCHAR(30) DEFAULT 'Active';
--- ALTER TABLE users ADD COLUMN IF NOT EXISTS roster_notes TEXT;
--- ALTER TABLE users ADD COLUMN IF NOT EXISTS alt_class    VARCHAR(50);
+-- ALTER TABLE users ADD COLUMN IF NOT EXISTS timezone        VARCHAR(60);
+-- ALTER TABLE users ADD COLUMN IF NOT EXISTS family_name     VARCHAR(100);
+-- ALTER TABLE users ADD COLUMN IF NOT EXISTS discord_name    VARCHAR(100);
+-- ALTER TABLE users ADD COLUMN IF NOT EXISTS guild_rank      VARCHAR(50) DEFAULT 'Member';
+-- ALTER TABLE users ADD COLUMN IF NOT EXISTS play_status     VARCHAR(30) DEFAULT 'Active';
+-- ALTER TABLE users ADD COLUMN IF NOT EXISTS roster_notes    TEXT;
+-- ALTER TABLE users ADD COLUMN IF NOT EXISTS alt_class       VARCHAR(50);
+-- ALTER TABLE users ADD COLUMN IF NOT EXISTS payout_tier     INTEGER NOT NULL DEFAULT 1;
+-- ALTER TABLE users ADD COLUMN IF NOT EXISTS discord_id      VARCHAR(20) UNIQUE;
+-- ALTER TABLE users ADD COLUMN IF NOT EXISTS discord_username VARCHAR(100);
+-- ALTER TABLE users ADD COLUMN IF NOT EXISTS discord_avatar  TEXT;
+-- ALTER TABLE users ALTER COLUMN password_hash DROP NOT NULL;
 -- ALTER TABLE calendar_events ADD COLUMN IF NOT EXISTS event_time     TIME;
 -- ALTER TABLE calendar_events ADD COLUMN IF NOT EXISTS event_timezone VARCHAR(60);
--- ALTER TABLE users ADD COLUMN IF NOT EXISTS payout_tier  INTEGER NOT NULL DEFAULT 1;
 
 -- ============================================================
 -- SESSIONS  (server-side, fully revocable)
