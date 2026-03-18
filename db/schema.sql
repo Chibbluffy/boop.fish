@@ -19,7 +19,7 @@ CREATE TABLE IF NOT EXISTS users (
   username      VARCHAR(50) UNIQUE NOT NULL,
   email         VARCHAR(255) UNIQUE,
   password_hash TEXT        NOT NULL,          -- bcrypt, salt embedded
-  role          VARCHAR(20) NOT NULL DEFAULT 'pending'
+  role          VARCHAR(20) NOT NULL DEFAULT 'member'
                             CHECK (role IN ('pending', 'member', 'officer', 'admin')),
   character_name VARCHAR(100),                 -- in-game name
   ribbit_count  INTEGER     NOT NULL DEFAULT 0, -- 🐸 activity marker
