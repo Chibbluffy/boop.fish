@@ -15,74 +15,32 @@ type Float = { key: number; text: string; frogId: number };
 
 const FRIEND_RIBBIT_CAP = 300;
 
-// ── Frog croak synthesizer ────────────────────────────────────────────────────
+// ── Frog croak audio ─────────────────────────────────────────────────────────
 
-let _audioCtx: AudioContext | null = null;
-function getCtx(): AudioContext | null {
-  try {
-    if (!_audioCtx || _audioCtx.state === "closed") _audioCtx = new AudioContext();
-    if (_audioCtx.state === "suspended") _audioCtx.resume();
-    return _audioCtx;
-  } catch { return null; }
-}
-
-// Five distinct croak personalities — random selection per click
-const CROAK_TYPES = [
-  { freq: 110, sweep: 0.55, dur: 0.20, wave: "square"   as OscillatorType }, // deep basso
-  { freq: 160, sweep: 0.60, dur: 0.16, wave: "square"   as OscillatorType }, // classic ribbit
-  { freq: 85,  sweep: 0.50, dur: 0.26, wave: "sawtooth" as OscillatorType }, // bullfrog grumble
-  { freq: 200, sweep: 0.65, dur: 0.13, wave: "square"   as OscillatorType }, // high chirp
-  { freq: 130, sweep: 0.45, dur: 0.22, wave: "sawtooth" as OscillatorType }, // raspy croak
-];
+const CROAKS = ["/sounds/croak1.mp3", "/sounds/croak2.mp3", "/sounds/croak3.mp3"];
 
 function playCroak(mult: 1 | 2 | 3) {
-  const ctx = getCtx();
-  if (!ctx) return;
-  const now = ctx.currentTime;
+  const src = CROAKS[Math.floor(Math.random() * CROAKS.length)];
+  const vol = mult === 3 ? 0.85 : mult === 2 ? 0.55 : 0.30;
+  const a = new Audio(src);
+  a.volume = vol;
+  a.play().catch(() => {});
 
-  const type = CROAK_TYPES[Math.floor(Math.random() * CROAK_TYPES.length)];
-  // Volume scales with multiplier
-  const baseVol = mult === 3 ? 0.75 : mult === 2 ? 0.48 : 0.25;
-  // Pitch randomised slightly so every click sounds a little different
-  const pitchJitter = 0.85 + Math.random() * 0.3;
-
-  function oneCroak(startTime: number, freq: number, vol: number, dur: number) {
-    const osc  = ctx.createOscillator();
-    const gain = ctx.createGain();
-    // Bandpass filter carves out the "froggy" mid-range
-    const filt = ctx.createBiquadFilter();
-    filt.type = "bandpass";
-    filt.frequency.value = freq * 2.2;
-    filt.Q.value = 1.8;
-
-    osc.type = type.wave;
-    // Pitch swoops down — that's the characteristic ribbit shape
-    osc.frequency.setValueAtTime(freq * 2.0, startTime);
-    osc.frequency.exponentialRampToValueAtTime(freq * type.sweep, startTime + dur * 0.65);
-    osc.frequency.exponentialRampToValueAtTime(freq * type.sweep * 0.8, startTime + dur);
-
-    gain.gain.setValueAtTime(0, startTime);
-    gain.gain.linearRampToValueAtTime(vol, startTime + 0.009);       // fast attack
-    gain.gain.setValueAtTime(vol, startTime + dur * 0.25);            // sustain briefly
-    gain.gain.exponentialRampToValueAtTime(0.0001, startTime + dur); // tail off
-
-    osc.connect(filt);
-    filt.connect(gain);
-    gain.connect(ctx.destination);
-    osc.start(startTime);
-    osc.stop(startTime + dur + 0.04);
-  }
-
-  const f = type.freq * pitchJitter;
-  oneCroak(now, f, baseVol, type.dur);
-
-  // 2× frogs croak twice (rapid-fire ribbit-ribbit)
+  // 2× plays a second croak slightly offset
   if (mult >= 2) {
-    oneCroak(now + type.dur * 0.75, f * (0.88 + Math.random() * 0.25), baseVol * 0.88, type.dur * 0.9);
+    setTimeout(() => {
+      const a2 = new Audio(CROAKS[Math.floor(Math.random() * CROAKS.length)]);
+      a2.volume = vol * 0.85;
+      a2.play().catch(() => {});
+    }, 120);
   }
-  // 3× frogs add a third even rowdier croak
+  // 3× adds a third
   if (mult >= 3) {
-    oneCroak(now + type.dur * 1.45, f * (0.80 + Math.random() * 0.40), baseVol * 0.80, type.dur * 0.85);
+    setTimeout(() => {
+      const a3 = new Audio(CROAKS[Math.floor(Math.random() * CROAKS.length)]);
+      a3.volume = vol * 0.70;
+      a3.play().catch(() => {});
+    }, 240);
   }
 }
 
