@@ -69,7 +69,9 @@ const server = serve({
         const [user] = await sql`
           INSERT INTO users (username, password_hash, family_name, discord_name, timezone, role)
           VALUES (${username}, ${password_hash}, ${family_name ?? null}, ${discord_name ?? null}, ${timezone}, 'member')
-          RETURNING id, username, email, role, character_name, family_name, discord_name, ribbit_count, bdo_class, alt_class, gear_ap, gear_aap, gear_dp, timezone
+          RETURNING id, username, email, role, character_name, family_name, discord_name,
+                    discord_id, discord_username, discord_avatar,
+                    ribbit_count, bdo_class, alt_class, gear_ap, gear_aap, gear_dp, timezone
         `;
         const token = await createSession(user.id);
         return json({ token, user }, 201);
@@ -315,8 +317,9 @@ const server = serve({
             gear_aap       = ${parsedAap},
             gear_dp        = ${parsedDp}
           WHERE id = ${user.id}
-          RETURNING id, username, email, role, character_name, family_name, discord_name, ribbit_count,
-                    bdo_class, alt_class, gear_ap, gear_aap, gear_dp, timezone
+          RETURNING id, username, email, role, character_name, family_name, discord_name,
+                    discord_id, discord_username, discord_avatar,
+                    ribbit_count, bdo_class, alt_class, gear_ap, gear_aap, gear_dp, timezone
         `;
 
         // Keep shrine signup in sync if one exists
