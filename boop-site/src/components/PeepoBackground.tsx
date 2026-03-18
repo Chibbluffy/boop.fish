@@ -1,4 +1,4 @@
-import React, { useMemo } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 
 // Mix of static and animated peepo emotes from BTTV
 const PEEPOS = [
@@ -17,21 +17,35 @@ const PEEPOS = [
 ];
 
 const CELL = 52;
-const COLS = 32;
-const ROWS = 26;
 
 // Deterministic seeded random — same layout on every render
 function rand(seed: number) {
   return ((Math.sin(seed) * 43758.5453) % 1 + 1) / 2;
 }
 
+// Calculate how many cols/rows are needed to fill the screen.
+// Extra 60% accounts for the -25% top/left offset, scale(1.45), and drift animation.
+function getCounts() {
+  return {
+    cols: Math.ceil(window.innerWidth  * 1.6 / CELL) + 2,
+    rows: Math.ceil(window.innerHeight * 1.6 / CELL) + 2,
+  };
+}
+
 export default function PeepoBackground() {
+  const [{ cols, rows }, setSize] = useState(getCounts);
+
+  useEffect(() => {
+    const onResize = () => setSize(getCounts());
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, []);
+
   const cells = useMemo(
-    () =>
-      Array.from({ length: COLS * ROWS }, (_, i) =>
-        PEEPOS[Math.floor(rand(i * 7 + 3) * PEEPOS.length)]
-      ),
-    []
+    () => Array.from({ length: cols * rows }, (_, i) =>
+      PEEPOS[Math.floor(rand(i * 7 + 3) * PEEPOS.length)]
+    ),
+    [cols, rows]
   );
 
   return (
@@ -52,8 +66,8 @@ export default function PeepoBackground() {
             top: "-25%",
             left: "-25%",
             display: "grid",
-            gridTemplateColumns: `repeat(${COLS}, ${CELL}px)`,
-            gridTemplateRows: `repeat(${ROWS}, ${CELL}px)`,
+            gridTemplateColumns: `repeat(${cols}, ${CELL}px)`,
+            gridTemplateRows: `repeat(${rows}, ${CELL}px)`,
             opacity: 0.09,
             animation: "peepo-drift 35s ease-in-out infinite alternate",
             transformOrigin: "center center",
