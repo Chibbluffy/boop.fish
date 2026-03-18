@@ -7,7 +7,7 @@ export type AuthUser = {
   id: string;
   username: string;
   email: string | null;
-  role: "pending" | "member" | "officer" | "admin";
+  role: "pending" | "friend" | "member" | "officer" | "admin";
   character_name: string | null;
   family_name: string | null;
   discord_name: string | null;

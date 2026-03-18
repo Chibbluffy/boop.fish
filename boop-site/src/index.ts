@@ -115,7 +115,7 @@ const server = serve({
         const siteUrl     = process.env.SITE_URL ?? "https://boop.fish";
         const redirectUri = encodeURIComponent(`${siteUrl}/auth/discord/callback`);
         if (!clientId) return err("Discord OAuth not configured", 500);
-        const url = `https://discord.com/oauth2/authorize?client_id=${clientId}&redirect_uri=${redirectUri}&response_type=code&scope=identify%20guilds`;
+        const url = `https://discord.com/oauth2/authorize?client_id=${clientId}&redirect_uri=${redirectUri}&response_type=code&scope=identify%20guilds%20guilds.members.read`;
         return Response.redirect(url, 302);
       },
     },
@@ -152,21 +152,26 @@ const server = serve({
           headers: { Authorization: `Bearer ${access_token}` },
         }).then(r => r.json()) as { id: string; username: string; avatar: string | null };
 
-        // Check guild membership
-        if (guildId) {
-          const guilds = await fetch("https://discord.com/api/users/@me/guilds", {
-            headers: { Authorization: `Bearer ${access_token}` },
-          }).then(r => r.json()) as { id: string }[];
-          if (!guilds.some(g => g.id === guildId)) {
-            return Response.redirect(`${siteUrl}/#/auth?discord_error=not_in_guild`, 302);
-          }
-        }
-
         const discordId       = discordUser.id;
         const discordUsername = discordUser.username;
         const discordAvatar   = discordUser.avatar
           ? `https://cdn.discordapp.com/avatars/${discordId}/${discordUser.avatar}.png`
           : null;
+
+        // Check guild membership and determine role from Discord server roles
+        let discordRole: "member" | "friend" = "friend";
+        if (guildId) {
+          const memberRes = await fetch(`https://discord.com/api/users/@me/guilds/${guildId}/member`, {
+            headers: { Authorization: `Bearer ${access_token}` },
+          });
+          if (!memberRes.ok) {
+            return Response.redirect(`${siteUrl}/#/auth?discord_error=not_in_guild`, 302);
+          }
+          const memberData = await memberRes.json() as { roles: string[] };
+          const memberRoleId = process.env.DISCORD_MEMBER_ROLE_ID;
+          // If no member role configured, everyone in the guild is a member
+          discordRole = (!memberRoleId || memberData.roles.includes(memberRoleId)) ? "member" : "friend";
+        }
 
         // Find existing user by discord_id, or auto-link by matching username
         let [user] = await sql`SELECT id, role FROM users WHERE discord_id = ${discordId}`;
@@ -175,31 +180,35 @@ const server = serve({
           // Try to link to an existing account with the same username (covers bootstrap admin)
           const [existing] = await sql`SELECT id, role FROM users WHERE username = ${discordUsername} AND discord_id IS NULL`;
           if (existing) {
+            // Only update role if it won't downgrade an officer/admin
+            const updatedRole = (existing.role === "officer" || existing.role === "admin")
+              ? existing.role : discordRole;
             await sql`
               UPDATE users SET discord_id = ${discordId}, discord_username = ${discordUsername},
-                               discord_avatar = ${discordAvatar}, updated_at = NOW()
+                               discord_avatar = ${discordAvatar}, role = ${updatedRole}, updated_at = NOW()
               WHERE id = ${existing.id}
             `;
             user = existing;
           } else {
-            // Create a new account — auto-approved since they're in the guild
-            // Ensure username uniqueness
+            // Create a new account
             let username = discordUsername;
             const taken = await sql`SELECT id FROM users WHERE username = ${username}`;
             if (taken.length) username = `${discordUsername}_${discordId.slice(-4)}`;
 
             const [newUser] = await sql`
               INSERT INTO users (username, password_hash, role, discord_id, discord_username, discord_avatar, discord_name)
-              VALUES (${username}, '', 'member', ${discordId}, ${discordUsername}, ${discordAvatar}, ${discordUsername})
+              VALUES (${username}, '', ${discordRole}, ${discordId}, ${discordUsername}, ${discordAvatar}, ${discordUsername})
               RETURNING id, role
             `;
             user = newUser;
           }
         } else {
-          // Sync latest Discord profile info
+          // Sync Discord profile info; re-evaluate role on each login but never downgrade officers/admins
+          const updatedRole = (user.role === "officer" || user.role === "admin")
+            ? user.role : discordRole;
           await sql`
             UPDATE users SET discord_username = ${discordUsername}, discord_avatar = ${discordAvatar},
-                             discord_name = ${discordUsername}, updated_at = NOW()
+                             discord_name = ${discordUsername}, role = ${updatedRole}, updated_at = NOW()
             WHERE id = ${user.id}
           `;
         }
@@ -348,8 +357,16 @@ const server = serve({
         // Cap delta to prevent API abuse — legitimate 15-second sync bursts are well under this
         if (delta > 500) return err("delta too large", 400);
 
+        const FRIEND_CAP = 300;
+        if (user.role === "friend" && user.ribbit_count >= FRIEND_CAP) {
+          return json({ ribbit_count: user.ribbit_count, capped: true });
+        }
+
         const [updated] = await sql`
-          UPDATE users SET ribbit_count = ribbit_count + ${delta}
+          UPDATE users SET ribbit_count = LEAST(
+            ribbit_count + ${delta},
+            CASE WHEN role = 'friend' THEN ${FRIEND_CAP} ELSE 2147483647 END
+          )
           WHERE id = ${user.id}
           RETURNING ribbit_count
         `;
@@ -524,7 +541,7 @@ const server = serve({
         if (!requireRole(actor, "officer")) return err("Forbidden", 403);
 
         const { role } = await req.json();
-        if (!["pending", "member", "officer", "admin"].includes(role)) return err("Invalid role");
+        if (!["pending", "friend", "member", "officer", "admin"].includes(role)) return err("Invalid role");
 
         // Only admins can assign the admin role
         if (role === "admin" && actor!.role !== "admin") return err("Forbidden", 403);
@@ -547,14 +564,14 @@ const server = serve({
     "/api/guild-members": {
       async GET(req) {
         const user = await authenticate(req);
-        if (!user || user.role === "pending") return err("Forbidden", 403);
+        if (!user || user.role === "pending" || user.role === "friend") return err("Forbidden", 403);
         const rows = await sql`
           SELECT username, family_name, discord_name, bdo_class, alt_class,
                  gear_ap, gear_aap, gear_dp,
                  GREATEST(COALESCE(gear_ap, 0), COALESCE(gear_aap, 0)) + COALESCE(gear_dp, 0) AS gs,
                  timezone, ribbit_count, play_status, guild_rank, role
           FROM users
-          WHERE role != 'pending'
+          WHERE role NOT IN ('pending', 'friend')
           ORDER BY
             CASE role WHEN 'admin' THEN 0 WHEN 'officer' THEN 1 ELSE 2 END,
             username ASC

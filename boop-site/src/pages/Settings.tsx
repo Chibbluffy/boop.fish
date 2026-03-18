@@ -37,6 +37,7 @@ const ROLE_STYLE: Record<string, string> = {
   admin:   "bg-red-500/20 text-red-400 border border-red-500/30",
   officer: "bg-amber-500/20 text-amber-400 border border-amber-500/30",
   member:  "bg-slate-700/50 text-slate-400 border border-slate-700",
+  friend:  "bg-teal-500/20 text-teal-400 border border-teal-500/30",
   pending: "bg-slate-800/80 text-slate-500 border border-slate-700/50",
 };
 
@@ -44,7 +45,7 @@ const ROLE_STYLE: Record<string, string> = {
 
 type Member = {
   id: string; username: string; email: string | null;
-  role: "pending" | "member" | "officer" | "admin";
+  role: "pending" | "friend" | "member" | "officer" | "admin";
   character_name: string | null; ribbit_count: number; created_at: string;
 };
 
@@ -158,7 +159,7 @@ function MembersSection({ me }: { me: AuthUser }) {
 
           {members.map((m, i) => {
             const isMe = m.id === me.id;
-            const canEdit = !isMe && (isAdmin || ["pending", "member"].includes(m.role));
+            const canEdit = !isMe && (isAdmin || ["pending", "friend", "member"].includes(m.role));
             return (
               <div key={m.id}
                 className={`grid gap-4 items-center px-5 py-3.5 hover:bg-slate-800/30 transition-colors ${isAdmin ? "grid-cols-[2rem_1fr_1fr_8rem_4.5rem_7rem_4rem]" : "grid-cols-[2rem_1fr_1fr_8rem_4.5rem_7rem]"} ${
@@ -201,6 +202,7 @@ function MembersSection({ me }: { me: AuthUser }) {
                     <select value={m.role} disabled={updating === m.id} onChange={e => changeRole(m.id, e.target.value)}
                       className={`text-xs font-bold px-2 py-1 rounded-lg border bg-slate-950 cursor-pointer transition-opacity disabled:opacity-40 ${ROLE_STYLE[m.role]}`}>
                       <option value="pending">pending</option>
+                      <option value="friend">friend</option>
                       <option value="member">member</option>
                       <option value="officer">officer</option>
                       {isAdmin && <option value="admin">admin</option>}
