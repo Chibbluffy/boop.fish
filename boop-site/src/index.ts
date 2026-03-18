@@ -1047,6 +1047,22 @@ const server = serve({
       },
     },
 
+    // Serve public sound files
+    "/sounds/*": async req => {
+      const url = new URL(req.url);
+      const filename = url.pathname.replace("/sounds/", "");
+      if (!filename || filename.includes("..") || filename.includes("/")) {
+        return new Response("Not found", { status: 404 });
+      }
+      const file = Bun.file(join(import.meta.dir, "../../public/sounds", filename));
+      if (!(await file.exists())) return new Response("Not found", { status: 404 });
+      const ext = filename.split(".").pop()?.toLowerCase();
+      const mime = ext === "ogg" ? "audio/ogg" : "audio/mpeg";
+      return new Response(file, {
+        headers: { "Content-Type": mime, "Cache-Control": "public, max-age=86400" },
+      });
+    },
+
     // Serve cached static assets
     "/assets/class-sprite.png": async _req => {
       const file = Bun.file(join(CACHE_DIR, "class-sprite.png"));
