@@ -26,7 +26,7 @@ import PayoutTracker from "./pages/PayoutTracker";
 type Route = "home" | "class-roller" | "shuffler" | "employee" | "frogs" | "wall" | "submit-wall" | "calendar" | "nodewar" | "shrine" | "auth" | "manage" | "ribbit-leaderboard" | "gear-leaderboard" | "guild-directory" | "payout-tracker";
 
 function parseHash(): Route {
-  const h = location.hash.replace(/^#\/?/, "").split("/")[0];
+  const h = location.hash.replace(/^#\/?/, "").split("/")[0].split("?")[0];
     switch (h) {
     case "class-roller":
       return "class-roller";
