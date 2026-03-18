@@ -1,55 +1,66 @@
 import React, { useEffect, useState } from "react";
-import { useAuth, saveSession, clearSession } from "../lib/auth";
-import { TIMEZONES } from "../lib/timezones";
+import { useAuth, saveSession, clearSession, type AuthUser } from "../lib/auth";
 
-type Mode = "login" | "register" | "forgot" | "reset";
-
-function getResetToken(): string | null {
-  return new URLSearchParams(location.hash.split("?")[1] ?? "").get("reset");
+// Read a param from the hash query string e.g. #/auth?token=xxx
+function getHashParam(key: string): string | null {
+  return new URLSearchParams(location.hash.split("?")[1] ?? "").get(key);
 }
 
 export default function Auth() {
   const user = useAuth();
-  const [mode, setMode] = useState<Mode>(() => (getResetToken() ? "reset" : "login"));
-
-  const [username, setUsername] = useState("");
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [confirm, setConfirm] = useState("");
-  const [famName, setFamName] = useState("");
-  const [discordName, setDiscordName] = useState("");
-  const [timezone, setTimezone] = useState("");
   const [error, setError] = useState<string | null>(null);
-  const [info, setInfo] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [showLegacy, setShowLegacy] = useState(false);
 
-  // Detect reset token in URL on mount
+  // Legacy password form state
+  const [username, setUsername] = useState("");
+  const [password, setPassword] = useState("");
+
+  // On mount — handle Discord callback token or error
   useEffect(() => {
-    if (getResetToken()) setMode("reset");
+    const token        = getHashParam("token");
+    const discordError = getHashParam("discord_error");
+
+    if (token) {
+      // Exchange the one-time token for the full user object
+      setLoading(true);
+      fetch("/api/auth/me", { headers: { Authorization: `Bearer ${token}` } })
+        .then(r => r.json())
+        .then((u: AuthUser) => {
+          saveSession(token, u);
+          // Clean token from URL then navigate home
+          history.replaceState(null, "", location.pathname + "#/");
+          window.dispatchEvent(new HashChangeEvent("hashchange"));
+        })
+        .catch(() => setError("Login failed. Please try again."))
+        .finally(() => setLoading(false));
+    }
+
+    if (discordError) {
+      history.replaceState(null, "", location.pathname + "#/auth");
+      setError(
+        discordError === "not_in_guild"
+          ? "You need to be in the boop Discord server to log in."
+          : "Discord login failed. Please try again."
+      );
+    }
   }, []);
 
-  function reset() { setError(null); setInfo(null); }
+  async function logout() {
+    const token = localStorage.getItem("boop_session");
+    if (token) await fetch("/api/auth/logout", { method: "POST", headers: { Authorization: `Bearer ${token}` } }).catch(() => {});
+    clearSession();
+  }
 
-  // ── Submit handlers ─────────────────────────────────────────────────────────
-
-  async function submitLoginRegister() {
-    reset();
+  async function submitLegacy() {
     if (!username.trim() || !password) return setError("Fill in all fields.");
-    if (mode === "register" && password !== confirm) return setError("Passwords do not match.");
-    if (mode === "register" && password.length < 8) return setError("Password must be at least 8 characters.");
-    if (mode === "register" && !timezone) return setError("Please select your timezone.");
-
     setLoading(true);
+    setError(null);
     try {
-      const body: Record<string, string> = { username, password };
-      if (mode === "register" && famName.trim()) body.family_name = famName.trim();
-      if (mode === "register" && discordName.trim()) body.discord_name = discordName.trim();
-      if (mode === "register") body.timezone = timezone;
-
-      const res = await fetch(mode === "login" ? "/api/auth/login" : "/api/auth/register", {
+      const res  = await fetch("/api/auth/login", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
+        body: JSON.stringify({ username, password }),
       });
       const data = await res.json();
       if (!res.ok) return setError(data.error ?? "Something went wrong.");
@@ -61,68 +72,20 @@ export default function Auth() {
     }
   }
 
-  async function submitForgot() {
-    reset();
-    if (!email.trim()) return setError("Enter your email address.");
-    setLoading(true);
-    try {
-      await fetch("/api/auth/forgot-password", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email }),
-      });
-      // Always show the same message — never confirm whether email exists
-      setInfo("If that email is registered, a reset link is on its way. Check your inbox (and spam).");
-    } catch {
-      setError("Could not reach the server.");
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  async function submitReset() {
-    reset();
-    const token = getResetToken();
-    if (!token) return setError("Missing reset token. Request a new link.");
-    if (!password) return setError("Enter a new password.");
-    if (password.length < 8) return setError("Password must be at least 8 characters.");
-    if (password !== confirm) return setError("Passwords do not match.");
-
-    setLoading(true);
-    try {
-      const res = await fetch("/api/auth/reset-password", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ token, password }),
-      });
-      const data = await res.json();
-      if (!res.ok) return setError(data.error ?? "Something went wrong.");
-      setInfo("Password updated! You can now sign in.");
-      // Clean the token from the URL
-      history.replaceState(null, "", location.pathname + "#/auth");
-      setMode("login");
-    } catch {
-      setError("Could not reach the server.");
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  async function logout() {
-    const token = localStorage.getItem("boop_session");
-    if (token) await fetch("/api/auth/logout", { method: "POST", headers: { Authorization: `Bearer ${token}` } }).catch(() => {});
-    clearSession();
-  }
-
-  // ── Logged in ────────────────────────────────────────────────────────────────
+  // ── Logged in view ───────────────────────────────────────────────────────────
   if (user) {
+    const avatarUrl = user.discord_avatar;
     return (
       <div className="min-h-screen bg-slate-950 flex items-center justify-center p-6">
         <div className="w-full max-w-sm bg-slate-900 border border-slate-800 rounded-2xl p-8">
           <div className="flex flex-col items-center gap-2 mb-6">
-            <div className="w-16 h-16 rounded-full bg-violet-600/20 border border-violet-500/30 flex items-center justify-center text-2xl font-black text-violet-300">
-              {user.username[0].toUpperCase()}
-            </div>
+            {avatarUrl ? (
+              <img src={avatarUrl} alt="" className="w-16 h-16 rounded-full border-2 border-violet-500/40" />
+            ) : (
+              <div className="w-16 h-16 rounded-full bg-violet-600/20 border border-violet-500/30 flex items-center justify-center text-2xl font-black text-violet-300">
+                {user.username[0].toUpperCase()}
+              </div>
+            )}
             <p className="text-lg font-black text-white">{user.username}</p>
             {user.family_name && <p className="text-sm text-slate-400">{user.family_name}</p>}
             <span className={`text-xs font-bold px-2 py-0.5 rounded-full uppercase tracking-widest ${
@@ -141,149 +104,74 @@ export default function Auth() {
     );
   }
 
-  // ── Shared layout wrapper ────────────────────────────────────────────────────
+  // ── Login view ───────────────────────────────────────────────────────────────
   return (
     <div className="min-h-screen bg-slate-950 flex items-center justify-center p-6">
       <div className="w-full max-w-sm">
         <div className="mb-8 text-center">
           <h2 className="text-3xl font-black text-white">boop<span className="text-violet-400">.fish</span></h2>
-          <p className="text-slate-400 mt-1 text-sm">
-            {mode === "login"    ? "Welcome back." :
-             mode === "register" ? "Join the guild." :
-             mode === "forgot"   ? "Recover your account." :
-                                   "Choose a new password."}
-          </p>
+          <p className="text-slate-400 mt-1 text-sm">Sign in with your Discord account.</p>
         </div>
-
-        {/* Mode tabs — only show for login/register */}
-        {(mode === "login" || mode === "register") && (
-          <div className="flex bg-slate-900 border border-slate-800 rounded-xl p-1 mb-6">
-            {(["login", "register"] as const).map(m => (
-              <button key={m} onClick={() => { setMode(m); reset(); }}
-                className={`flex-1 py-2 rounded-lg text-sm font-semibold transition-colors ${mode === m ? "bg-slate-700 text-white" : "text-slate-500 hover:text-white"}`}>
-                {m === "login" ? "Sign in" : "Register"}
-              </button>
-            ))}
-          </div>
-        )}
 
         <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 flex flex-col gap-4">
 
-          {/* ── Login ── */}
-          {mode === "login" && <>
-            <Field label="Username">
-              <TextInput value={username} onChange={setUsername} placeholder="your_username" onEnter={submitLoginRegister} />
-            </Field>
-            <Field label="Password">
-              <TextInput type="password" value={password} onChange={setPassword} placeholder="••••••••" onEnter={submitLoginRegister} />
-            </Field>
-            <button onClick={() => { setMode("forgot"); reset(); }}
-              className="text-xs text-slate-500 hover:text-violet-400 transition-colors text-left -mt-2">
-              Forgot password?
-            </button>
-          </>}
+          {loading ? (
+            <p className="text-center text-slate-500 py-4 text-sm">Logging in…</p>
+          ) : (
+            <a
+              href="/auth/discord"
+              className="flex items-center justify-center gap-3 w-full py-3 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-sm transition-colors"
+            >
+              <DiscordIcon />
+              Continue with Discord
+            </a>
+          )}
 
-          {/* ── Register ── */}
-          {mode === "register" && <>
-            <Field label="Username">
-              <TextInput value={username} onChange={setUsername} placeholder="your_username" onEnter={submitLoginRegister} />
-            </Field>
-            <Field label="Family Name" optional>
-              <TextInput value={famName} onChange={setFamName} placeholder="BDO family name" onEnter={submitLoginRegister} />
-            </Field>
-            <Field label="Discord" optional>
-              <TextInput value={discordName} onChange={setDiscordName} placeholder="your discord username" onEnter={submitLoginRegister} />
-            </Field>
-            <Field label="Timezone">
-              <select
-                value={timezone}
-                onChange={e => setTimezone(e.target.value)}
-                className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2.5 text-white focus:outline-none focus:border-violet-500 transition-colors"
-              >
-                <option value="" disabled>Select your timezone…</option>
-                {TIMEZONES.map(tz => (
-                  <option key={tz.value} value={tz.value}>{tz.label}</option>
-                ))}
-              </select>
-            </Field>
-            <Field label="Password">
-              <TextInput type="password" value={password} onChange={setPassword} placeholder="8+ characters" onEnter={submitLoginRegister} />
-            </Field>
-            <Field label="Confirm Password">
-              <TextInput type="password" value={confirm} onChange={setConfirm} placeholder="••••••••" onEnter={submitLoginRegister} />
-            </Field>
-          </>}
+          {error && (
+            <p className="text-sm text-red-400 bg-red-500/10 border border-red-500/20 rounded-lg px-3 py-2">
+              {error}
+            </p>
+          )}
 
-          {/* ── Forgot password ── */}
-          {mode === "forgot" && <>
-            <Field label="Email address">
-              <TextInput type="email" value={email} onChange={setEmail} placeholder="you@example.com" onEnter={submitForgot} />
-            </Field>
-          </>}
+          {/* Legacy password login — admin fallback */}
+          {!loading && (
+            <div className="border-t border-slate-800 pt-3 mt-1">
+              <button onClick={() => setShowLegacy(v => !v)}
+                className="text-xs text-slate-600 hover:text-slate-400 transition-colors w-full text-center">
+                {showLegacy ? "Hide" : "Sign in with password"}
+              </button>
 
-          {/* ── Reset password ── */}
-          {mode === "reset" && <>
-            <Field label="New Password">
-              <TextInput type="password" value={password} onChange={setPassword} placeholder="8+ characters" onEnter={submitReset} />
-            </Field>
-            <Field label="Confirm New Password">
-              <TextInput type="password" value={confirm} onChange={setConfirm} placeholder="••••••••" onEnter={submitReset} />
-            </Field>
-          </>}
-
-          {/* Feedback */}
-          {error && <p className="text-sm text-red-400 bg-red-500/10 border border-red-500/20 rounded-lg px-3 py-2">{error}</p>}
-          {info  && <p className="text-sm text-green-400 bg-green-500/10 border border-green-500/20 rounded-lg px-3 py-2">{info}</p>}
-
-          {/* Submit */}
-          <button
-            onClick={mode === "forgot" ? submitForgot : mode === "reset" ? submitReset : submitLoginRegister}
-            disabled={loading}
-            className="w-full py-3 rounded-xl bg-violet-600 hover:bg-violet-500 disabled:opacity-50 disabled:cursor-not-allowed text-white font-bold text-sm transition-colors mt-1"
-          >
-            {loading ? "..." :
-             mode === "login"    ? "Sign in" :
-             mode === "register" ? "Create account" :
-             mode === "forgot"   ? "Send reset link" :
-                                   "Update password"}
-          </button>
-
-          {/* Back links */}
-          {(mode === "forgot" || mode === "reset") && (
-            <button onClick={() => { setMode("login"); reset(); }}
-              className="text-xs text-slate-500 hover:text-slate-300 transition-colors text-center">
-              ← Back to sign in
-            </button>
+              {showLegacy && (
+                <div className="flex flex-col gap-3 mt-3">
+                  <input value={username} onChange={e => setUsername(e.target.value)}
+                    placeholder="Username"
+                    className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2.5 text-white placeholder-slate-600 text-sm focus:outline-none focus:border-violet-500 transition-colors" />
+                  <input value={password} onChange={e => setPassword(e.target.value)}
+                    type="password" placeholder="Password"
+                    onKeyDown={e => e.key === "Enter" && submitLegacy()}
+                    className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2.5 text-white placeholder-slate-600 text-sm focus:outline-none focus:border-violet-500 transition-colors" />
+                  <button onClick={submitLegacy} disabled={loading}
+                    className="w-full py-2.5 rounded-xl bg-slate-700 hover:bg-slate-600 disabled:opacity-50 text-white font-semibold text-sm transition-colors">
+                    Sign in
+                  </button>
+                </div>
+              )}
+            </div>
           )}
         </div>
+
+        <p className="text-center text-xs text-slate-700 mt-4">
+          You must be a member of the boop Discord server to log in.
+        </p>
       </div>
     </div>
   );
 }
 
-// ── Small shared sub-components ───────────────────────────────────────────────
-
-function Field({ label, optional, children }: { label: string; optional?: boolean; children: React.ReactNode }) {
+function DiscordIcon() {
   return (
-    <div>
-      <label className="text-xs text-slate-400 uppercase tracking-widest font-semibold block mb-1.5">
-        {label}{optional && <span className="normal-case text-slate-600 font-normal ml-1">(optional)</span>}
-      </label>
-      {children}
-    </div>
-  );
-}
-
-function TextInput({ value, onChange, placeholder, type = "text", onEnter }:
-  { value: string; onChange: (v: string) => void; placeholder?: string; type?: string; onEnter?: () => void }) {
-  return (
-    <input
-      type={type}
-      value={value}
-      onChange={e => onChange(e.target.value)}
-      onKeyDown={e => e.key === "Enter" && onEnter?.()}
-      placeholder={placeholder}
-      className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2.5 text-white placeholder-slate-600 focus:outline-none focus:border-violet-500 transition-colors"
-    />
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+      <path d="M20.317 4.37a19.791 19.791 0 0 0-4.885-1.515.074.074 0 0 0-.079.037c-.21.375-.444.864-.608 1.25a18.27 18.27 0 0 0-5.487 0 12.64 12.64 0 0 0-.617-1.25.077.077 0 0 0-.079-.037A19.736 19.736 0 0 0 3.677 4.37a.07.07 0 0 0-.032.027C.533 9.046-.32 13.58.099 18.057c.002.022.015.043.03.052a19.9 19.9 0 0 0 5.993 3.03.078.078 0 0 0 .084-.028c.462-.63.874-1.295 1.226-1.994a.076.076 0 0 0-.041-.106 13.107 13.107 0 0 1-1.872-.892.077.077 0 0 1-.008-.128 10.2 10.2 0 0 0 .372-.292.074.074 0 0 1 .077-.01c3.928 1.793 8.18 1.793 12.062 0a.074.074 0 0 1 .078.01c.12.098.246.198.373.292a.077.077 0 0 1-.006.127 12.299 12.299 0 0 1-1.873.892.077.077 0 0 0-.041.107c.36.698.772 1.362 1.225 1.993a.076.076 0 0 0 .084.028 19.839 19.839 0 0 0 6.002-3.03.077.077 0 0 0 .032-.054c.5-5.177-.838-9.674-3.549-13.66a.061.061 0 0 0-.031-.03zM8.02 15.33c-1.183 0-2.157-1.085-2.157-2.419 0-1.333.956-2.419 2.157-2.419 1.21 0 2.176 1.096 2.157 2.42 0 1.333-.956 2.418-2.157 2.418zm7.975 0c-1.183 0-2.157-1.085-2.157-2.419 0-1.333.955-2.419 2.157-2.419 1.21 0 2.176 1.096 2.157 2.42 0 1.333-.946 2.418-2.157 2.418z"/>
+    </svg>
   );
 }

@@ -11,6 +11,9 @@ export type AuthUser = {
   character_name: string | null;
   family_name: string | null;
   discord_name: string | null;
+  discord_id: string | null;
+  discord_username: string | null;
+  discord_avatar: string | null;
   ribbit_count: number;
   bdo_class: string | null;
   alt_class: string | null;

@@ -10,11 +10,18 @@ export type SessionUser = {
   email: string | null;
   role: "pending" | "member" | "officer" | "admin";
   character_name: string | null;
+  family_name: string | null;
+  discord_name: string | null;
+  discord_id: string | null;
+  discord_username: string | null;
+  discord_avatar: string | null;
   ribbit_count: number;
   bdo_class: string | null;
+  alt_class: string | null;
   gear_ap: number | null;
   gear_aap: number | null;
   gear_dp: number | null;
+  timezone: string | null;
 };
 
 const SESSION_TTL_DAYS = 30;
@@ -51,8 +58,10 @@ export async function createSession(userId: string): Promise<string> {
 export async function getSessionUser(token: string): Promise<SessionUser | null> {
   if (!token) return null;
   const rows = await sql<SessionUser[]>`
-    SELECT u.id, u.username, u.email, u.role, u.character_name, u.ribbit_count,
-           u.bdo_class, u.gear_ap, u.gear_aap, u.gear_dp
+    SELECT u.id, u.username, u.email, u.role, u.character_name, u.family_name,
+           u.discord_name, u.discord_id, u.discord_username, u.discord_avatar,
+           u.ribbit_count, u.bdo_class, u.alt_class, u.gear_ap, u.gear_aap,
+           u.gear_dp, u.timezone
     FROM sessions s
     JOIN users u ON u.id = s.user_id
     WHERE s.token = ${token}
