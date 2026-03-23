@@ -5,38 +5,47 @@ import ClassSelect from "./ClassSelect";
 import { TIMEZONES } from "../lib/timezones";
 
 const NAV_GROUPS = [
+  // ── Public sections (always visible, stay on the left) ───────────────────
+  {
+    key: "activities",
+    label: "Activities",
+    memberOnly: false,
+    items: [
+      { label: "Class Roller",       href: "#/class-roller",       route: "class-roller",       officerOnly: false },
+      { label: "Name Shuffler",      href: "#/shuffler",           route: "shuffler",            officerOnly: false },
+      { label: "Frogs",              href: "#/frogs",              route: "frogs",               officerOnly: false },
+      { label: "Ribbit Leaderboard", href: "#/ribbit-leaderboard", route: "ribbit-leaderboard",  officerOnly: false },
+    ],
+  },
+  {
+    key: "spotlight",
+    label: "Spotlight",
+    memberOnly: false,
+    items: [
+      { label: "Hall of Fame", href: "#/employee",    route: "employee",    officerOnly: false },
+      { label: "Wall of Shame",href: "#/wall",        route: "wall",        officerOnly: false },
+      { label: "Submit",       href: "#/submit-wall", route: "submit-wall", officerOnly: false },
+    ],
+  },
+  // ── Guild-only sections (appear after login, rendered on the right) ───────
+  {
+    key: "guild-info",
+    label: "Guild Info",
+    memberOnly: true,
+    items: [
+      { label: "Calendar",         href: "#/calendar",         route: "calendar",         officerOnly: false },
+      { label: "Black Shrine",     href: "#/shrine",           route: "shrine",            officerOnly: false },
+      { label: "Gear Leaderboard", href: "#/gear-leaderboard", route: "gear-leaderboard",  officerOnly: false },
+      { label: "Nodewar",          href: "#/nodewar",          route: "nodewar",           officerOnly: false },
+    ],
+  },
   {
     key: "tools",
     label: "Tools",
-    memberOnly: false,
-    items: [
-      { label: "Class Roller",    href: "#/class-roller",    route: "class-roller",    officerOnly: false },
-      { label: "Shuffler",        href: "#/shuffler",        route: "shuffler",        officerOnly: false },
-      { label: "Payout Tracker",  href: "#/payout-tracker",  route: "payout-tracker",  officerOnly: true  },
-    ],
-  },
-  {
-    key: "activities",
-    label: "Guild Activities",
     memberOnly: true,
     items: [
-      { label: "Calendar",         href: "#/calendar",          route: "calendar",          officerOnly: false },
-      { label: "Nodewar",          href: "#/nodewar",           route: "nodewar",           officerOnly: false, memberOnly: true },
-      { label: "Black Shrine",     href: "#/shrine",            route: "shrine",            officerOnly: false, memberOnly: false },
-      { label: "Guild Directory",  href: "#/guild-directory",   route: "guild-directory",   officerOnly: false, memberOnly: true },
-      { label: "Gear Leaderboard", href: "#/gear-leaderboard",  route: "gear-leaderboard",  officerOnly: false },
-    ],
-  },
-  {
-    key: "misc",
-    label: "Misc",
-    memberOnly: false,
-    items: [
-      { label: "Frogs",                   href: "#/frogs",              route: "frogs",              officerOnly: false },
-      { label: "Employee of the Month",   href: "#/employee",           route: "employee",           officerOnly: false },
-      { label: "Wall of Shame",           href: "#/wall",               route: "wall",               officerOnly: false },
-      { label: "Submit to Wall of Shame", href: "#/submit-wall",        route: "submit-wall",        officerOnly: false },
-      { label: "Ribbit Leaderboard",      href: "#/ribbit-leaderboard", route: "ribbit-leaderboard", officerOnly: false },
+      { label: "Payout Tracker",  href: "#/payout-tracker",  route: "payout-tracker",  officerOnly: true  },
+      { label: "Guild Directory", href: "#/guild-directory",  route: "guild-directory", officerOnly: false, memberOnly: true },
     ],
   },
 ] as const;
@@ -260,8 +269,8 @@ export default function Nav({ route }: NavProps) {
               Home
             </a>
 
-            {NAV_GROUPS.map(group => {
-              if (group.memberOnly && (!user || user.role === "pending")) return null;
+            {/* Public groups — always visible, anchored left */}
+            {NAV_GROUPS.filter(g => !g.memberOnly).map(group => {
               const isGroupActive = group.items.some(i => i.route === route);
               const isOpen = openGroup === group.key;
               return (
@@ -280,9 +289,49 @@ export default function Nav({ route }: NavProps) {
                   {isOpen && (
                     <div className="absolute top-full left-0 mt-1.5 w-44 bg-slate-900 border border-slate-700/60 rounded-xl shadow-2xl py-1.5 z-50">
                       {group.items.filter(item =>
-  (!item.officerOnly || isOfficerOrAdmin(user)) &&
-  (!item.memberOnly  || (user?.role !== "friend" && user?.role !== "pending"))
-).map(item => (
+                        (!item.officerOnly || isOfficerOrAdmin(user)) &&
+                        (!item.memberOnly  || (user?.role !== "friend" && user?.role !== "pending"))
+                      ).map(item => (
+                        <a key={item.href} href={item.href} onClick={() => setOpenGroup(null)}
+                          className={`flex items-center px-3 py-2 text-sm transition-colors ${
+                            route === item.route ? "text-white bg-slate-800/80 font-semibold" : "text-slate-400 hover:text-white hover:bg-slate-800/50"
+                          }`}
+                        >
+                          {item.label}
+                        </a>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+
+            <div className="flex-1" />
+
+            {/* Guild-only groups — appear after login, anchored right */}
+            {NAV_GROUPS.filter(g => g.memberOnly).map(group => {
+              if (!user || user.role === "pending") return null;
+              const isGroupActive = group.items.some(i => i.route === route);
+              const isOpen = openGroup === group.key;
+              return (
+                <div key={group.key} className="relative">
+                  <button
+                    onClick={() => setOpenGroup(isOpen ? null : group.key)}
+                    className={`flex items-center gap-1 shrink-0 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors whitespace-nowrap ${
+                      isGroupActive || isOpen ? "bg-slate-800 text-white" : "text-slate-400 hover:text-white hover:bg-slate-800/60"
+                    }`}
+                  >
+                    {group.label}
+                    <svg className={`w-3 h-3 opacity-50 transition-transform ${isOpen ? "rotate-180" : ""}`} viewBox="0 0 10 6" fill="none">
+                      <path d="M1 1l4 4 4-4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+                    </svg>
+                  </button>
+                  {isOpen && (
+                    <div className="absolute top-full right-0 mt-1.5 w-44 bg-slate-900 border border-slate-700/60 rounded-xl shadow-2xl py-1.5 z-50">
+                      {group.items.filter(item =>
+                        (!item.officerOnly || isOfficerOrAdmin(user)) &&
+                        (!item.memberOnly  || (user?.role !== "friend" && user?.role !== "pending"))
+                      ).map(item => (
                         <a key={item.href} href={item.href} onClick={() => setOpenGroup(null)}
                           className={`flex items-center px-3 py-2 text-sm transition-colors ${
                             route === item.route ? "text-white bg-slate-800/80 font-semibold" : "text-slate-400 hover:text-white hover:bg-slate-800/50"
@@ -306,8 +355,6 @@ export default function Nav({ route }: NavProps) {
                 Manage
               </a>
             )}
-
-            <div className="flex-1" />
 
             {user ? (
               <div className="shrink-0 relative">

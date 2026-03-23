@@ -28,6 +28,7 @@ CREATE TABLE IF NOT EXISTS users (
   gear_ap       INTEGER,                        -- saved AP
   gear_aap      INTEGER,                        -- saved Awakening AP
   gear_dp       INTEGER,                        -- saved DP
+  gear_image_url TEXT,                          -- gear screenshot URL (set via bot or site)
   -- Roster fields
   timezone      VARCHAR(60),                    -- IANA timezone, set at registration
   family_name   VARCHAR(100),                   -- BDO family name
@@ -55,6 +56,7 @@ CREATE TABLE IF NOT EXISTS users (
 -- ALTER TABLE users ADD COLUMN IF NOT EXISTS discord_id      VARCHAR(20) UNIQUE;
 -- ALTER TABLE users ADD COLUMN IF NOT EXISTS discord_username VARCHAR(100);
 -- ALTER TABLE users ADD COLUMN IF NOT EXISTS discord_avatar  TEXT;
+-- ALTER TABLE users ADD COLUMN IF NOT EXISTS gear_image_url  TEXT;
 -- ALTER TABLE users ALTER COLUMN password_hash DROP NOT NULL;
 -- ALTER TABLE users DROP CONSTRAINT IF EXISTS users_role_check;
 -- ALTER TABLE users ADD CONSTRAINT users_role_check CHECK (role IN ('pending', 'friend', 'member', 'officer', 'admin'));
