@@ -1,16 +1,19 @@
 import React, { useEffect, useState } from "react";
 import { useAuth, isOfficerOrAdmin, AuthUser } from "../lib/auth";
 import ShrineSection from "./ShrineSection";
+import GuildDirectory from "./GuildDirectory";
+import PayoutTracker from "./PayoutTracker";
 import { TIMEZONES } from "../lib/timezones";
 
-type SectionId = "members" | "roster" | "announcements" | "wall" | "shrine";
+type SectionId = "members" | "roster" | "announcements" | "wall" | "shrine" | "directory" | "payout";
 
 const SIDEBAR = [
   {
     group: "Roster",
     items: [
-      { id: "members" as SectionId, label: "Members",  icon: "👥", desc: "Roles & ribbits" },
-      { id: "roster"  as SectionId, label: "Roster",   icon: "📋", desc: "Guild roster" },
+      { id: "members"   as SectionId, label: "Members",        icon: "👥", desc: "Roles & ribbits" },
+      { id: "roster"    as SectionId, label: "Roster",         icon: "📋", desc: "Guild roster" },
+      { id: "directory" as SectionId, label: "Guild Directory",icon: "📖", desc: "Member profiles" },
     ],
   },
   {
@@ -23,7 +26,8 @@ const SIDEBAR = [
   {
     group: "Guild",
     items: [
-      { id: "shrine" as SectionId, label: "Black Shrine", icon: "⛩️", desc: "Team builder" },
+      { id: "shrine" as SectionId, label: "Black Shrine",    icon: "⛩️", desc: "Team builder" },
+      { id: "payout" as SectionId, label: "Payout Tracker",  icon: "💰", desc: "Tier management" },
     ],
   },
 ];
@@ -696,7 +700,7 @@ function RosterSection() {
 
 // ── Main Settings page ────────────────────────────────────────────────────────
 
-const VALID_SECTIONS: SectionId[] = ["members", "roster", "announcements", "wall", "shrine"];
+const VALID_SECTIONS: SectionId[] = ["members", "roster", "announcements", "wall", "shrine", "directory", "payout"];
 
 function getSectionFromHash(): SectionId {
   const sub = location.hash.replace(/^#\/?/, "").split("/")[1] ?? "";
@@ -773,6 +777,8 @@ export default function Settings() {
         {section === "announcements" && <AnnouncementsSection />}
         {section === "wall"          && <WallSection />}
         {section === "shrine"        && <ShrineSection />}
+        {section === "directory"     && <GuildDirectory />}
+        {section === "payout"        && <PayoutTracker />}
       </div>
     </div>
   );
