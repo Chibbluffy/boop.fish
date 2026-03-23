@@ -18,8 +18,8 @@ const NAV_GROUPS = [
     ],
   },
   {
-    key: "spotlight",
-    label: "Spotlight",
+    key: "callouts",
+    label: "Callouts",
     memberOnly: false,
     items: [
       { label: "Hall of Fame", href: "#/employee",    route: "employee",    officerOnly: false },
