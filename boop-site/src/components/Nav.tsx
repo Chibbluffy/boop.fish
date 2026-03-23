@@ -23,6 +23,8 @@ const NAV_GROUPS = [
     items: [
       { label: "Class Roller",       href: "#/class-roller",       route: "class-roller",       officerOnly: false },
       { label: "Name Shuffler",      href: "#/shuffler",           route: "shuffler",            officerOnly: false },
+      { label: "Random Chooser",     href: "#/random-chooser",     route: "random-chooser",      officerOnly: false },
+      { label: "Dice Roller",        href: "#/dice-roller",        route: "dice-roller",         officerOnly: false },
       { label: "Frogs",              href: "#/frogs",              route: "frogs",               officerOnly: false },
       { label: "Ribbit Leaderboard", href: "#/ribbit-leaderboard", route: "ribbit-leaderboard",  officerOnly: false },
     ],

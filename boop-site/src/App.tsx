@@ -22,8 +22,10 @@ import RibbitLeaderboard from "./pages/RibbitLeaderboard";
 import GearLeaderboard from "./pages/GearLeaderboard";
 import GuildDirectory from "./pages/GuildDirectory";
 import PayoutTracker from "./pages/PayoutTracker";
+import RandomChooser from "./pages/RandomChooser";
+import DiceRoller from "./pages/DiceRoller";
 
-type Route = "home" | "class-roller" | "shuffler" | "employee" | "frogs" | "wall" | "submit-wall" | "calendar" | "nodewar" | "shrine" | "auth" | "manage" | "ribbit-leaderboard" | "gear-leaderboard" | "guild-directory" | "payout-tracker";
+type Route = "home" | "class-roller" | "shuffler" | "employee" | "frogs" | "wall" | "submit-wall" | "calendar" | "nodewar" | "shrine" | "auth" | "manage" | "ribbit-leaderboard" | "gear-leaderboard" | "guild-directory" | "payout-tracker" | "random-chooser" | "dice-roller";
 
 function parseHash(): Route {
   const h = location.hash.replace(/^#\/?/, "").split("/")[0].split("?")[0];
@@ -54,6 +56,8 @@ function parseHash(): Route {
     case "gear-leaderboard":   return "gear-leaderboard";
     case "guild-directory":    return "guild-directory";
     case "payout-tracker":     return "payout-tracker";
+    case "random-chooser":     return "random-chooser";
+    case "dice-roller":        return "dice-roller";
     default:
       return "home";
   }
@@ -114,6 +118,8 @@ export function App() {
         {route === "gear-leaderboard"   && <GearLeaderboard />}
         {route === "guild-directory"    && <GuildDirectory />}
         {route === "payout-tracker"     && <PayoutTracker />}
+        {route === "random-chooser"     && <RandomChooser />}
+        {route === "dice-roller"        && <DiceRoller />}
       </main>
     </div>
   );
