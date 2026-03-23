@@ -58,7 +58,7 @@ export default function PeepoBackground() {
       `}</style>
       <div
         className="fixed inset-0 z-0 pointer-events-none overflow-hidden"
-        style={{ willChange: "transform" }}
+        style={{ contain: "paint" }}
         aria-hidden="true"
       >
         <div
@@ -72,6 +72,7 @@ export default function PeepoBackground() {
             opacity: 0.09,
             animation: "peepo-drift 35s ease-in-out infinite alternate",
             transformOrigin: "center center",
+            willChange: "transform",
           }}
         >
           {cells.map((src, i) => (
