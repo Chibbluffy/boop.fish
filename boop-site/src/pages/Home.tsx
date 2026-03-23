@@ -69,10 +69,7 @@ export default function Home() {
 
             <h1 className="text-6xl lg:text-7xl font-black text-white leading-none tracking-tight mb-6">
               Welcome to<br />
-              <span className="text-transparent bg-clip-text bg-gradient-to-r from-amber-300 to-amber-500">
-                boop
-              </span>
-              <span className="text-slate-500">.fish</span>
+              boop<span className="text-violet-400">.fish</span>
             </h1>
 
             <p className="text-slate-400 text-lg leading-relaxed max-w-md mb-8">
@@ -82,9 +79,9 @@ export default function Home() {
 
             <div className="flex flex-wrap gap-3">
               {user ? (
-                <a href="#/class-roller"
-                  className="px-6 py-3 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-sm transition-all active:scale-95 shadow-lg shadow-amber-900/30">
-                  Roll a Class →
+                <a href="#/frogs"
+                  className="px-6 py-3 rounded-xl bg-violet-600 hover:bg-violet-500 text-white font-black text-sm transition-all active:scale-95 shadow-lg shadow-violet-900/30">
+                  Frogs →
                 </a>
               ) : (
                 <a href="#/auth"
@@ -92,9 +89,9 @@ export default function Home() {
                   Join the Guild →
                 </a>
               )}
-              <a href="#/nodewar"
+              <a href="#/wall"
                 className="px-6 py-3 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 font-semibold text-sm transition-all active:scale-95">
-                Nodewar History
+                Wall of Shame
               </a>
             </div>
           </div>
