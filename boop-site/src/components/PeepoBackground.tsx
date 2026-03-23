@@ -58,6 +58,7 @@ export default function PeepoBackground() {
       `}</style>
       <div
         className="fixed inset-0 z-0 pointer-events-none overflow-hidden"
+        style={{ willChange: "transform" }}
         aria-hidden="true"
       >
         <div
@@ -81,7 +82,7 @@ export default function PeepoBackground() {
               height={CELL}
               style={{ objectFit: "contain" }}
               loading="eager"
-              decoding="async"
+              decoding="sync"
             />
           ))}
         </div>
