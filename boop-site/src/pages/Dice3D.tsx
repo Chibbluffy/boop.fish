@@ -46,7 +46,7 @@ const Dice3D = forwardRef<Dice3DHandle>((_, ref) => {
         settleTimeout: 5000,
         theme: "default",
         themeColor: "#7c3aed",
-        scale: 20,
+        scale: 5,
       });
 
       await box.init();
@@ -74,7 +74,7 @@ const Dice3D = forwardRef<Dice3DHandle>((_, ref) => {
   return (
     <div
       id={CONTAINER_ID}
-      className="w-full rounded-2xl overflow-hidden border border-slate-700 bg-slate-950"
+      className="w-full rounded-2xl overflow-hidden border border-slate-700 bg-slate-950 [&>canvas]:block [&>canvas]:w-full [&>canvas]:h-full"
       style={{ height: 380, position: "relative" }}
     />
   );
