@@ -60,6 +60,13 @@ db/
 psql -d <your_db> -f db/schema.sql
 ```
 
+- On Mac
+	- Run without starting on reboot
+		- ```LC_ALL="en_US.UTF-8" /opt/homebrew/opt/postgresql@16/bin/postgres -D /opt/homebrew/var/postgresql@16```
+	- Run on login
+		- ```brew services start postgresql@16```
+
+
 ### 2. Environment
 
 Create a `.env` file (or set environment variables):
