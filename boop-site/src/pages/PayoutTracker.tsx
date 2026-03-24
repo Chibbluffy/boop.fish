@@ -4,6 +4,7 @@ import { useAuth, isOfficerOrAdmin } from "../lib/auth";
 type PayoutMember = {
   id: string;
   username: string;
+  discord_name: string | null;
   family_name: string | null;
   payout_tier: number;
   ribbit_count: number;
@@ -189,7 +190,10 @@ export default function PayoutTracker() {
 
   const filtered = members.filter(m => {
     const q = search.toLowerCase();
-    return !q || m.username.toLowerCase().includes(q) || (m.family_name?.toLowerCase().includes(q) ?? false);
+    return !q
+      || m.username.toLowerCase().includes(q)
+      || (m.discord_name?.toLowerCase().includes(q) ?? false)
+      || (m.family_name?.toLowerCase().includes(q) ?? false);
   });
 
   function toggleSelect(id: string) {
@@ -339,6 +343,7 @@ export default function PayoutTracker() {
                 {/* Name */}
                 <div className="min-w-0">
                   <p className="text-sm font-semibold text-white truncate">{m.username}</p>
+                  {m.discord_name && <p className="text-xs text-slate-500 truncate">{m.discord_name}</p>}
                   {m.family_name && <p className="text-xs text-slate-600 truncate">{m.family_name}</p>}
                 </div>
 

@@ -53,6 +53,17 @@ const server = serve({
       return new Response(file);
     },
 
+    // Serve @3d-dice/dice-box dist assets for the 3D dice roller
+    "/dice-box/*": async req => {
+      const DICE_BOX_DIST = join(import.meta.dir, "../node_modules/@3d-dice/dice-box/dist");
+      const url = new URL(req.url);
+      const filePath = safeJoin(DICE_BOX_DIST, url.pathname.replace("/dice-box/", ""));
+      if (!filePath) return new Response("Not found", { status: 404 });
+      const file = Bun.file(filePath);
+      if (!(await file.exists())) return new Response("Not found", { status: 404 });
+      return new Response(file);
+    },
+
     // ── Auth ────────────────────────────────────────────────────────────────
 
     "/api/auth/register": {
@@ -624,7 +635,7 @@ const server = serve({
         const user = await authenticate(req);
         if (!requireRole(user, "officer")) return err("Forbidden", 403);
         const members = await sql`
-          SELECT u.id, u.username, u.family_name, u.payout_tier, u.ribbit_count,
+          SELECT u.id, u.username, u.discord_name, u.family_name, u.payout_tier, u.ribbit_count,
                  ph.old_tier    AS last_old_tier,
                  ph.new_tier    AS last_new_tier,
                  ph.reason      AS last_reason,
