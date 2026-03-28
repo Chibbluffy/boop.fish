@@ -78,7 +78,10 @@ export default function CalendarPage() {
   const [selected, setSelected] = useState<EventItem | null>(null);
   const [showAdd, setShowAdd]   = useState(false);
   const [editing, setEditing]   = useState<EventItem | null>(null);
-  const [showPast, setShowPast] = useState(false);
+  const [showPast, setShowPast]         = useState(false);
+  const [upcomingPage, setUpcomingPage] = useState(0);
+  const [showAllUpcoming, setShowAllUpcoming] = useState(false);
+  const PAGE_SIZE = 10;
 
   // New event form
   const [newDate,  setNewDate]  = useState(now.toISOString().slice(0, 10));
@@ -356,12 +359,51 @@ export default function CalendarPage() {
             </div>
           );
 
+          const totalPages = Math.ceil(upcoming.length / PAGE_SIZE);
+          const visibleUpcoming = showAllUpcoming
+            ? upcoming
+            : upcoming.slice(upcomingPage * PAGE_SIZE, (upcomingPage + 1) * PAGE_SIZE);
+
           return (
             <div className="flex flex-col gap-2">
               {upcoming.length === 0 && (
                 <p className="text-center text-slate-600 text-sm py-6">No upcoming events.</p>
               )}
-              {upcoming.map(ev => <EventRow key={ev.id} ev={ev} />)}
+
+              {visibleUpcoming.map(ev => <EventRow key={ev.id} ev={ev} />)}
+
+              {/* Pagination controls for upcoming */}
+              {!showAllUpcoming && totalPages > 1 && (
+                <div className="flex items-center justify-between mt-2 px-1">
+                  <button
+                    onClick={() => setUpcomingPage(p => Math.max(0, p - 1))}
+                    disabled={upcomingPage === 0}
+                    className="px-3 py-1.5 rounded-lg text-sm bg-slate-800 hover:bg-slate-700 text-slate-300 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+                  >
+                    ← Prev
+                  </button>
+                  <span className="text-xs text-slate-500">
+                    Page {upcomingPage + 1} of {totalPages}
+                  </span>
+                  <button
+                    onClick={() => setUpcomingPage(p => Math.min(totalPages - 1, p + 1))}
+                    disabled={upcomingPage >= totalPages - 1}
+                    className="px-3 py-1.5 rounded-lg text-sm bg-slate-800 hover:bg-slate-700 text-slate-300 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+                  >
+                    Next →
+                  </button>
+                </div>
+              )}
+
+              {/* Show all / collapse toggle */}
+              {upcoming.length > PAGE_SIZE && (
+                <button
+                  onClick={() => { setShowAllUpcoming(a => !a); setUpcomingPage(0); }}
+                  className="text-xs text-slate-600 hover:text-slate-400 transition-colors mx-auto mt-1"
+                >
+                  {showAllUpcoming ? `▲ Paginate (${PAGE_SIZE}/page)` : `▼ Show all ${upcoming.length} upcoming`}
+                </button>
+              )}
 
               {past.length > 0 && (
                 <>
