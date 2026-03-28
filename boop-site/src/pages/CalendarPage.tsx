@@ -248,7 +248,7 @@ export default function CalendarPage() {
   const eventsByDate: Record<string, EventItem[]> = {};
   for (const ev of events) (eventsByDate[ev.date] ??= []).push(ev);
 
-  const todayStr    = now.toISOString().slice(0, 10);
+  const todayStr    = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
   const sortedEvents = [...events].sort((a, b) => a.date.localeCompare(b.date));
 
   const inp = "w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2.5 text-white placeholder-slate-600 focus:outline-none focus:border-violet-500 transition-colors";
