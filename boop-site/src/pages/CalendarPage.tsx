@@ -69,7 +69,7 @@ function displayTime(ev: EventItem, viewerTz: string | null): { time: string; tz
 export default function CalendarPage() {
   const authUser  = useAuth();
   const isOfficer = isOfficerOrAdmin(authUser);
-  const viewerTz  = authUser?.timezone ?? null;
+  const viewerTz  = Intl.DateTimeFormat().resolvedOptions().timeZone;
 
   const [events, setEvents] = useState<EventItem[]>([]);
   const now = new Date();
