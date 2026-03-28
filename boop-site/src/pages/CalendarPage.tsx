@@ -12,6 +12,8 @@ type EventItem = {
   discord?: boolean;     // true = sourced from Discord scheduled events
   user_count?: number | null;
   url?: string;          // Discord event link
+  interested_count?: number;   // non-Discord events only
+  viewer_interested?: boolean; // non-Discord events only
 };
 
 const MONTHS = ["January","February","March","April","May","June","July","August","September","October","November","December"];
@@ -108,8 +110,10 @@ export default function CalendarPage() {
   }, [authUser?.timezone]);
 
   useEffect(() => {
+    const token = localStorage.getItem("boop_session");
+    const calHeaders: HeadersInit = token ? { Authorization: `Bearer ${token}` } : {};
     Promise.all([
-      fetch("/api/calendar").then(r => r.json()).catch(() => []),
+      fetch("/api/calendar", { headers: calHeaders }).then(r => r.json()).catch(() => []),
       fetch("/api/discord-events").then(r => r.json()).catch(() => []),
     ]).then(([cal, discord]) => {
       const calEvents: EventItem[] = (cal as any[]).map(e => ({
@@ -119,6 +123,8 @@ export default function CalendarPage() {
         description: e.description,
         event_time: e.event_time?.slice(0, 5) ?? undefined,
         event_timezone: e.event_timezone ?? undefined,
+        interested_count: e.interested_count ?? 0,
+        viewer_interested: e.viewer_interested ?? false,
       }));
       const discordEvents: EventItem[] = discord as EventItem[];
       // Merge and sort; Discord events that share a date+title with a local event are deduplicated
@@ -204,6 +210,26 @@ export default function CalendarPage() {
     };
     setEvents(prev => prev.map(e => e.id === updated.id ? updated : e).sort((a, b) => a.date.localeCompare(b.date)));
     setEditing(null);
+  }
+
+  async function toggleInterest(eventId: string) {
+    if (!authUser) return;
+    const token = localStorage.getItem("boop_session");
+    const res = await fetch(`/api/calendar/${eventId}/interest`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (!res.ok) return;
+    const { interested } = await res.json();
+    const delta = interested ? 1 : -1;
+    setEvents(prev => prev.map(e => e.id === eventId
+      ? { ...e, viewer_interested: interested, interested_count: Math.max(0, (e.interested_count ?? 0) + delta) }
+      : e
+    ));
+    setSelected(prev => prev?.id === eventId
+      ? { ...prev, viewer_interested: interested, interested_count: Math.max(0, (prev.interested_count ?? 0) + delta) }
+      : prev
+    );
   }
 
   function prevMonth() {
@@ -347,6 +373,9 @@ export default function CalendarPage() {
                     {ev.discord && ev.user_count != null && ev.user_count > 0 && (
                       <span className="text-[10px] text-slate-500">{ev.user_count} interested</span>
                     )}
+                    {!ev.discord && (ev.interested_count ?? 0) > 0 && (
+                      <span className="text-[10px] text-slate-500">{ev.interested_count} interested</span>
+                    )}
                   </div>
                   {dt && (
                     <p className={`text-xs mt-0.5 font-semibold ${ev.discord ? "text-indigo-300" : "text-violet-300"}`}>
@@ -370,12 +399,29 @@ export default function CalendarPage() {
                   )}
                 </div>
 
-                {isOfficer && !ev.discord && (
+                {!ev.discord && (
                   <div className="shrink-0 flex items-center gap-1 mt-1">
-                    <button onClick={() => openEdit(ev)}
-                      className="text-slate-600 hover:text-slate-300 transition-colors px-1 text-xs" title="Edit">✎</button>
-                    <button onClick={() => deleteEvent(ev.id)}
-                      className="text-slate-700 hover:text-red-400 transition-colors px-1 text-xs" title="Delete">✕</button>
+                    {authUser && (
+                      <button
+                        onClick={() => toggleInterest(ev.id)}
+                        className={`text-xs px-2 py-0.5 rounded-full border transition-colors ${
+                          ev.viewer_interested
+                            ? "bg-violet-600/30 border-violet-500/50 text-violet-300 hover:bg-violet-600/20"
+                            : "border-slate-700 text-slate-600 hover:text-slate-300 hover:border-slate-500"
+                        }`}
+                        title={ev.viewer_interested ? "Remove interest" : "Mark as interested"}
+                      >
+                        {ev.viewer_interested ? "✓ Interested" : "+ Interested"}
+                      </button>
+                    )}
+                    {isOfficer && (
+                      <>
+                        <button onClick={() => openEdit(ev)}
+                          className="text-slate-600 hover:text-slate-300 transition-colors px-1 text-xs" title="Edit">✎</button>
+                        <button onClick={() => deleteEvent(ev.id)}
+                          className="text-slate-700 hover:text-red-400 transition-colors px-1 text-xs" title="Delete">✕</button>
+                      </>
+                    )}
                   </div>
                 )}
               </div>
@@ -529,6 +575,9 @@ export default function CalendarPage() {
                   {selected.discord && selected.user_count != null && selected.user_count > 0 && (
                     <p className="text-xs text-slate-500 mt-0.5">{selected.user_count} interested</p>
                   )}
+                  {!selected.discord && (selected.interested_count ?? 0) > 0 && (
+                    <p className="text-xs text-slate-500 mt-0.5">{selected.interested_count} interested</p>
+                  )}
                 </div>
                 <button onClick={() => setSelected(null)} className="text-slate-500 hover:text-white transition-colors text-xl leading-none ml-4">✕</button>
               </div>
@@ -545,16 +594,32 @@ export default function CalendarPage() {
                 </a>
               )}
 
-              {isOfficer && !selected.discord && (
-                <div className="mt-5 flex items-center gap-4">
-                  <button onClick={() => openEdit(selected)}
-                    className="text-xs text-slate-400 hover:text-white transition-colors">
-                    Edit event
-                  </button>
-                  <button onClick={() => deleteEvent(selected.id)}
-                    className="text-xs text-red-500/70 hover:text-red-400 transition-colors">
-                    Delete this event
-                  </button>
+              {!selected.discord && (
+                <div className="mt-5 flex items-center gap-4 flex-wrap">
+                  {authUser && (
+                    <button
+                      onClick={() => toggleInterest(selected.id)}
+                      className={`text-xs px-3 py-1.5 rounded-full border transition-colors ${
+                        selected.viewer_interested
+                          ? "bg-violet-600/30 border-violet-500/50 text-violet-300 hover:bg-violet-600/20"
+                          : "border-slate-700 text-slate-400 hover:text-white hover:border-slate-500"
+                      }`}
+                    >
+                      {selected.viewer_interested ? "✓ Interested" : "+ Interested"}
+                    </button>
+                  )}
+                  {isOfficer && (
+                    <>
+                      <button onClick={() => openEdit(selected)}
+                        className="text-xs text-slate-400 hover:text-white transition-colors">
+                        Edit event
+                      </button>
+                      <button onClick={() => deleteEvent(selected.id)}
+                        className="text-xs text-red-500/70 hover:text-red-400 transition-colors">
+                        Delete this event
+                      </button>
+                    </>
+                  )}
                 </div>
               )}
             </div>
