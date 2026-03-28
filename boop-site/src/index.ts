@@ -763,13 +763,34 @@ const server = serve({
     // ── Calendar ─────────────────────────────────────────────────────────────
 
     "/api/calendar": {
-      async GET(_req) {
-        const events = await sql`
-          SELECT id, title, description, event_date::text,
-                 event_time::text, event_timezone, created_at
-          FROM calendar_events
-          ORDER BY event_date ASC, event_time ASC NULLS LAST
-        `;
+      async GET(req) {
+        const user = await authenticate(req);
+        let events;
+        if (user) {
+          events = await sql`
+            SELECT
+              ce.id, ce.title, ce.description, ce.event_date::text,
+              ce.event_time::text, ce.event_timezone, ce.created_at,
+              COUNT(cei.user_id)::int AS interested_count,
+              COALESCE(BOOL_OR(cei.user_id = ${user.id}::uuid), false) AS viewer_interested
+            FROM calendar_events ce
+            LEFT JOIN calendar_event_interests cei ON cei.event_id = ce.id
+            GROUP BY ce.id
+            ORDER BY ce.event_date ASC, ce.event_time ASC NULLS LAST
+          `;
+        } else {
+          events = await sql`
+            SELECT
+              ce.id, ce.title, ce.description, ce.event_date::text,
+              ce.event_time::text, ce.event_timezone, ce.created_at,
+              COUNT(cei.user_id)::int AS interested_count,
+              false AS viewer_interested
+            FROM calendar_events ce
+            LEFT JOIN calendar_event_interests cei ON cei.event_id = ce.id
+            GROUP BY ce.id
+            ORDER BY ce.event_date ASC, ce.event_time ASC NULLS LAST
+          `;
+        }
         return json(events);
       },
 
@@ -821,6 +842,33 @@ const server = serve({
 
         await sql`DELETE FROM calendar_events WHERE id = ${req.params.id}`;
         return json({ ok: true });
+      },
+    },
+
+    "/api/calendar/:id/interest": {
+      async POST(req) {
+        const user = await authenticate(req);
+        if (!user) return err("Unauthorized", 401);
+
+        const eventId = req.params.id;
+        const [existing] = await sql`
+          SELECT 1 FROM calendar_event_interests
+          WHERE event_id = ${eventId} AND user_id = ${user.id}
+        `;
+        if (existing) {
+          await sql`
+            DELETE FROM calendar_event_interests
+            WHERE event_id = ${eventId} AND user_id = ${user.id}
+          `;
+          return json({ interested: false });
+        } else {
+          await sql`
+            INSERT INTO calendar_event_interests (event_id, user_id)
+            VALUES (${eventId}, ${user.id})
+            ON CONFLICT DO NOTHING
+          `;
+          return json({ interested: true });
+        }
       },
     },
 

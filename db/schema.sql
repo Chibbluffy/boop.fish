@@ -97,6 +97,22 @@ CREATE TABLE IF NOT EXISTS calendar_events (
 CREATE INDEX IF NOT EXISTS idx_calendar_event_date ON calendar_events(event_date);
 
 -- ============================================================
+-- CALENDAR EVENT INTERESTS
+-- Tracks which users are interested in non-Discord calendar
+-- events, mirroring Discord's native "interested" system.
+-- ============================================================
+CREATE TABLE IF NOT EXISTS calendar_event_interests (
+  event_id   UUID NOT NULL REFERENCES calendar_events(id) ON DELETE CASCADE,
+  user_id    UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  PRIMARY KEY (event_id, user_id)
+);
+CREATE INDEX IF NOT EXISTS idx_calendar_interests_event ON calendar_event_interests(event_id);
+CREATE INDEX IF NOT EXISTS idx_calendar_interests_user  ON calendar_event_interests(user_id);
+-- Migration for existing installs:
+-- (run the CREATE TABLE and CREATE INDEX statements above)
+
+-- ============================================================
 -- EMPLOYEE AWARDS  (employee of the day / month)
 -- display_name is stored directly so awards survive account
 -- deletion.  user_id is a soft-link for profile lookups.
