@@ -77,6 +77,7 @@ export default function CalendarPage() {
   const [view, setView]       = useState<"calendar" | "list">("calendar");
   const [selected, setSelected] = useState<EventItem | null>(null);
   const [showAdd, setShowAdd]   = useState(false);
+  const [editing, setEditing]   = useState<EventItem | null>(null);
 
   // New event form
   const [newDate,  setNewDate]  = useState(now.toISOString().slice(0, 10));
@@ -84,6 +85,13 @@ export default function CalendarPage() {
   const [newDesc,  setNewDesc]  = useState("");
   const [newTime,  setNewTime]  = useState("");
   const [newTz,    setNewTz]    = useState(authUser?.timezone ?? "");
+
+  // Edit form state — populated when editing is set
+  const [editDate,  setEditDate]  = useState("");
+  const [editTitle, setEditTitle] = useState("");
+  const [editDesc,  setEditDesc]  = useState("");
+  const [editTime,  setEditTime]  = useState("");
+  const [editTz,    setEditTz]    = useState("");
 
   // Keep newTz in sync if user logs in mid-session
   useEffect(() => {
@@ -142,6 +150,47 @@ export default function CalendarPage() {
     await fetch(`/api/calendar/${id}`, { method: "DELETE", headers: { Authorization: `Bearer ${token}` } });
     setEvents(prev => prev.filter(e => e.id !== id));
     if (selected?.id === id) setSelected(null);
+  }
+
+  function openEdit(ev: EventItem) {
+    setEditDate(ev.date);
+    setEditTitle(ev.title);
+    setEditDesc(ev.description ?? "");
+    setEditTime(ev.event_time ?? "");
+    setEditTz(ev.event_timezone ?? "");
+    setEditing(ev);
+    setSelected(null);
+  }
+
+  async function saveEdit() {
+    if (!editing || !editTitle.trim()) return;
+    const token = localStorage.getItem("boop_session");
+    const body: Record<string, string | undefined> = {
+      title: editTitle.trim(),
+      description: editDesc.trim() || undefined,
+      event_date: editDate,
+    };
+    if (editTime) {
+      body.event_time     = editTime;
+      body.event_timezone = editTz || undefined;
+    }
+    const res = await fetch(`/api/calendar/${editing.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+      body: JSON.stringify(body),
+    });
+    if (!res.ok) return;
+    const ev = await res.json();
+    const updated: EventItem = {
+      id: ev.id,
+      date: String(ev.event_date).slice(0, 10),
+      title: ev.title,
+      description: ev.description,
+      event_time: ev.event_time?.slice(0, 5) ?? undefined,
+      event_timezone: ev.event_timezone ?? undefined,
+    };
+    setEvents(prev => prev.map(e => e.id === updated.id ? updated : e).sort((a, b) => a.date.localeCompare(b.date)));
+    setEditing(null);
   }
 
   function prevMonth() {
@@ -336,15 +385,86 @@ export default function CalendarPage() {
               }
 
               {isOfficer && (
-                <button onClick={() => deleteEvent(selected.id)}
-                  className="mt-5 text-xs text-red-500/70 hover:text-red-400 transition-colors">
-                  Delete this event
-                </button>
+                <div className="mt-5 flex items-center gap-4">
+                  <button onClick={() => openEdit(selected)}
+                    className="text-xs text-slate-400 hover:text-white transition-colors">
+                    Edit event
+                  </button>
+                  <button onClick={() => deleteEvent(selected.id)}
+                    className="text-xs text-red-500/70 hover:text-red-400 transition-colors">
+                    Delete this event
+                  </button>
+                </div>
               )}
             </div>
           </div>
         );
       })()}
+
+      {/* ── EDIT EVENT MODAL ── */}
+      {isOfficer && editing && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4" onClick={() => setEditing(null)}>
+          <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" />
+          <div className="relative bg-slate-900 border border-slate-700 rounded-2xl p-6 max-w-md w-full shadow-2xl overflow-y-auto max-h-[90vh]" onClick={e => e.stopPropagation()}>
+            <h3 className="text-xl font-black text-white mb-5">Edit Event</h3>
+
+            <div className="flex flex-col gap-4">
+              <div>
+                <label className="text-xs text-slate-400 uppercase tracking-widest font-semibold block mb-1.5">Date</label>
+                <input type="date" value={editDate} onChange={e => setEditDate(e.target.value)} className={inp} />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-xs text-slate-400 uppercase tracking-widest font-semibold block mb-1.5">
+                    Time <span className="normal-case text-slate-600 font-normal">(optional)</span>
+                  </label>
+                  <input type="time" value={editTime} onChange={e => setEditTime(e.target.value)} className={inp} />
+                </div>
+                <div>
+                  <label className="text-xs text-slate-400 uppercase tracking-widest font-semibold block mb-1.5">Timezone</label>
+                  <select value={editTz} onChange={e => setEditTz(e.target.value)} disabled={!editTime} className={`${inp} disabled:opacity-30`}>
+                    <option value="">— select —</option>
+                    {TIMEZONES.map(tz => (
+                      <option key={tz.value} value={tz.value}>{tz.label}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              {editTime && !editTz && (
+                <p className="text-xs text-amber-400/80 -mt-2">Select a timezone so members can see the correct time.</p>
+              )}
+
+              <div>
+                <label className="text-xs text-slate-400 uppercase tracking-widest font-semibold block mb-1.5">Title</label>
+                <input value={editTitle} onChange={e => setEditTitle(e.target.value)}
+                  onKeyDown={e => e.key === "Enter" && saveEdit()}
+                  placeholder="Event name" className={inp} />
+              </div>
+              <div>
+                <label className="text-xs text-slate-400 uppercase tracking-widest font-semibold block mb-1.5">
+                  Description <span className="normal-case text-slate-600 font-normal">(optional)</span>
+                </label>
+                <textarea value={editDesc} onChange={e => setEditDesc(e.target.value)}
+                  placeholder="Details, links, notes..." rows={3}
+                  className={`${inp} resize-none`} />
+              </div>
+            </div>
+
+            <div className="flex gap-2 mt-6">
+              <button onClick={saveEdit} disabled={!editTitle.trim()}
+                className="flex-1 py-2.5 rounded-lg bg-violet-600 hover:bg-violet-500 disabled:opacity-30 disabled:cursor-not-allowed text-white font-bold text-sm transition-colors">
+                Save Changes
+              </button>
+              <button onClick={() => setEditing(null)}
+                className="px-5 py-2.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 font-semibold text-sm transition-colors">
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ── ADD EVENT MODAL ── */}
       {isOfficer && showAdd && (
