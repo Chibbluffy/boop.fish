@@ -81,6 +81,8 @@ export default function CalendarPage() {
   const [showPast, setShowPast]         = useState(false);
   const [upcomingPage, setUpcomingPage] = useState(0);
   const [showAllUpcoming, setShowAllUpcoming] = useState(false);
+  const [pastPage, setPastPage] = useState(0);
+  const [showAllPast, setShowAllPast] = useState(false);
   const PAGE_SIZE = 10;
 
   // New event form
@@ -405,17 +407,61 @@ export default function CalendarPage() {
                 </button>
               )}
 
-              {past.length > 0 && (
-                <>
-                  <button
-                    onClick={() => setShowPast(p => !p)}
-                    className="flex items-center gap-2 text-xs text-slate-600 hover:text-slate-400 transition-colors mt-2 mx-auto"
-                  >
-                    <span>{showPast ? "▲ Hide" : "▼ Show"} {past.length} past event{past.length !== 1 ? "s" : ""}</span>
-                  </button>
-                  {showPast && [...past].reverse().map(ev => <EventRow key={ev.id} ev={ev} />)}
-                </>
-              )}
+              {past.length > 0 && (() => {
+                const reversedPast = [...past].reverse();
+                const pastTotalPages = Math.ceil(reversedPast.length / PAGE_SIZE);
+                const visiblePast = showAllPast
+                  ? reversedPast
+                  : reversedPast.slice(pastPage * PAGE_SIZE, (pastPage + 1) * PAGE_SIZE);
+
+                return (
+                  <>
+                    <button
+                      onClick={() => setShowPast(p => !p)}
+                      className="text-xs text-slate-600 hover:text-slate-400 transition-colors mt-2 mx-auto"
+                    >
+                      {showPast ? "▲ Hide" : "▼ Show"} {past.length} past event{past.length !== 1 ? "s" : ""}
+                    </button>
+
+                    {showPast && (
+                      <>
+                        {visiblePast.map(ev => <EventRow key={ev.id} ev={ev} />)}
+
+                        {!showAllPast && pastTotalPages > 1 && (
+                          <div className="flex items-center justify-between mt-2 px-1">
+                            <button
+                              onClick={() => setPastPage(p => Math.max(0, p - 1))}
+                              disabled={pastPage === 0}
+                              className="px-3 py-1.5 rounded-lg text-sm bg-slate-800 hover:bg-slate-700 text-slate-300 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+                            >
+                              ← Prev
+                            </button>
+                            <span className="text-xs text-slate-500">
+                              Page {pastPage + 1} of {pastTotalPages}
+                            </span>
+                            <button
+                              onClick={() => setPastPage(p => Math.min(pastTotalPages - 1, p + 1))}
+                              disabled={pastPage >= pastTotalPages - 1}
+                              className="px-3 py-1.5 rounded-lg text-sm bg-slate-800 hover:bg-slate-700 text-slate-300 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+                            >
+                              Next →
+                            </button>
+                          </div>
+                        )}
+
+                        {reversedPast.length > PAGE_SIZE && (
+                          <button
+                            onClick={() => { setShowAllPast(a => !a); setPastPage(0); }}
+                            className="text-xs text-slate-600 hover:text-slate-400 transition-colors mx-auto mt-1"
+                          >
+                            {showAllPast ? `▲ Paginate (${PAGE_SIZE}/page)` : `▼ Show all ${reversedPast.length} past`}
+                          </button>
+                        )}
+                      </>
+                    )}
+                  </>
+                );
+              })()}
             </div>
           );
         })()}
