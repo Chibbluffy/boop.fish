@@ -759,6 +759,27 @@ const server = serve({
     },
 
     "/api/calendar/:id": {
+      async PATCH(req) {
+        const user = await authenticate(req);
+        if (!requireRole(user, "officer")) return err("Forbidden", 403);
+
+        const { title, description, event_date, event_time, event_timezone } = await req.json();
+        if (!title || !event_date) return err("title and event_date are required");
+
+        const [event] = await sql`
+          UPDATE calendar_events
+          SET title        = ${title},
+              description  = ${description ?? null},
+              event_date   = ${event_date},
+              event_time   = ${event_time ?? null},
+              event_timezone = ${event_timezone ?? null}
+          WHERE id = ${req.params.id}
+          RETURNING id, title, description, event_date::text, event_time::text, event_timezone, created_at
+        `;
+        if (!event) return err("Not found", 404);
+        return json(event);
+      },
+
       async DELETE(req) {
         const user = await authenticate(req);
         if (!requireRole(user, "officer")) return err("Forbidden", 403);
