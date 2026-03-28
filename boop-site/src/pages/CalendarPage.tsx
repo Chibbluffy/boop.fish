@@ -9,6 +9,9 @@ type EventItem = {
   description?: string;
   event_time?: string;   // "HH:MM" in event_timezone, optional
   event_timezone?: string; // IANA tz of creator
+  discord?: boolean;     // true = sourced from Discord scheduled events
+  user_count?: number | null;
+  url?: string;          // Discord event link
 };
 
 const MONTHS = ["January","February","March","April","May","June","July","August","September","October","November","December"];
@@ -105,19 +108,23 @@ export default function CalendarPage() {
   }, [authUser?.timezone]);
 
   useEffect(() => {
-    fetch("/api/calendar")
-      .then(r => r.json())
-      .then((data: Array<{ id: string; event_date: string; title: string; description?: string; event_time?: string; event_timezone?: string }>) => {
-        setEvents(data.map(e => ({
-          id: e.id,
-          date: String(e.event_date).slice(0, 10),
-          title: e.title,
-          description: e.description,
-          event_time: e.event_time?.slice(0, 5) ?? undefined,
-          event_timezone: e.event_timezone ?? undefined,
-        })));
-      })
-      .catch(() => {});
+    Promise.all([
+      fetch("/api/calendar").then(r => r.json()).catch(() => []),
+      fetch("/api/discord-events").then(r => r.json()).catch(() => []),
+    ]).then(([cal, discord]) => {
+      const calEvents: EventItem[] = (cal as any[]).map(e => ({
+        id: e.id,
+        date: String(e.event_date).slice(0, 10),
+        title: e.title,
+        description: e.description,
+        event_time: e.event_time?.slice(0, 5) ?? undefined,
+        event_timezone: e.event_timezone ?? undefined,
+      }));
+      const discordEvents: EventItem[] = discord as EventItem[];
+      // Merge and sort; Discord events that share a date+title with a local event are deduplicated
+      const combined = [...calEvents, ...discordEvents].sort((a, b) => a.date.localeCompare(b.date));
+      setEvents(combined);
+    });
   }, []);
 
   async function addEvent() {
@@ -280,7 +287,7 @@ export default function CalendarPage() {
                         const dt = displayTime(ev, viewerTz);
                         return (
                           <button key={ev.id} onClick={() => setSelected(ev)}
-                            className="text-left text-[10px] font-semibold px-1.5 py-0.5 rounded-md bg-violet-600/70 hover:bg-violet-500 text-white truncate w-full transition-colors"
+                            className={`text-left text-[10px] font-semibold px-1.5 py-0.5 rounded-md text-white truncate w-full transition-colors ${ev.discord ? "bg-indigo-600/70 hover:bg-indigo-500" : "bg-violet-600/70 hover:bg-violet-500"}`}
                           >
                             {dt && <span className="opacity-75 mr-1">{dt.time}</span>}{ev.title}
                           </button>
@@ -310,9 +317,15 @@ export default function CalendarPage() {
             const isPast = ev.date < todayStr;
             const dt = displayTime(ev, viewerTz);
             return (
-              <div className={`flex items-start gap-4 p-4 rounded-xl border transition-colors ${isPast ? "border-slate-800/40 bg-slate-900/20 opacity-50" : "border-slate-800 bg-slate-900/50 hover:bg-slate-900"}`}>
+              <div className={`flex items-start gap-4 p-4 rounded-xl border transition-colors ${
+                isPast
+                  ? "border-slate-800/40 bg-slate-900/20 opacity-50"
+                  : ev.discord
+                    ? "border-indigo-500/30 bg-indigo-950/20 hover:bg-indigo-950/30"
+                    : "border-slate-800 bg-slate-900/50 hover:bg-slate-900"
+              }`}>
                 <div className="shrink-0 w-14 text-center rounded-lg bg-slate-800 py-2 px-1">
-                  <p className="text-[10px] font-bold text-violet-400 uppercase tracking-wide">
+                  <p className={`text-[10px] font-bold uppercase tracking-wide ${ev.discord ? "text-indigo-400" : "text-violet-400"}`}>
                     {d.toLocaleDateString("en-US", { month: "short", timeZone: "UTC" })}
                   </p>
                   <p className="text-2xl font-black text-white leading-none">
@@ -324,9 +337,19 @@ export default function CalendarPage() {
                 </div>
 
                 <div className="flex-1 min-w-0 pt-1">
-                  <p className="font-bold text-white">{ev.title}</p>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <p className="font-bold text-white">{ev.title}</p>
+                    {ev.discord && (
+                      <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-indigo-500/20 text-indigo-400 border border-indigo-500/30 uppercase tracking-wide">
+                        Discord
+                      </span>
+                    )}
+                    {ev.discord && ev.user_count != null && ev.user_count > 0 && (
+                      <span className="text-[10px] text-slate-500">{ev.user_count} interested</span>
+                    )}
+                  </div>
                   {dt && (
-                    <p className="text-xs text-violet-300 mt-0.5 font-semibold">
+                    <p className={`text-xs mt-0.5 font-semibold ${ev.discord ? "text-indigo-300" : "text-violet-300"}`}>
                       🕐 {dt.time} {dt.tz}
                       {dt.converted && ev.event_timezone && (
                         <span className="text-slate-600 font-normal ml-1.5">
@@ -339,9 +362,15 @@ export default function CalendarPage() {
                   {ev.description && (
                     <p className="text-sm text-slate-400 mt-1 leading-relaxed">{ev.description}</p>
                   )}
+                  {ev.discord && ev.url && (
+                    <a href={ev.url} target="_blank" rel="noopener noreferrer"
+                      className="text-xs text-indigo-400 hover:text-indigo-300 transition-colors mt-1 inline-block">
+                      View on Discord →
+                    </a>
+                  )}
                 </div>
 
-                {isOfficer && (
+                {isOfficer && !ev.discord && (
                   <div className="shrink-0 flex items-center gap-1 mt-1">
                     <button onClick={() => openEdit(ev)}
                       className="text-slate-600 hover:text-slate-300 transition-colors px-1 text-xs" title="Edit">✎</button>
@@ -489,7 +518,17 @@ export default function CalendarPage() {
                   ) : (
                     <p className="text-xs text-slate-600 mb-1">All day</p>
                   )}
-                  <h3 className="text-xl font-black text-white">{selected.title}</h3>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <h3 className="text-xl font-black text-white">{selected.title}</h3>
+                    {selected.discord && (
+                      <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-indigo-500/20 text-indigo-400 border border-indigo-500/30 uppercase tracking-wide">
+                        Discord
+                      </span>
+                    )}
+                  </div>
+                  {selected.discord && selected.user_count != null && selected.user_count > 0 && (
+                    <p className="text-xs text-slate-500 mt-0.5">{selected.user_count} interested</p>
+                  )}
                 </div>
                 <button onClick={() => setSelected(null)} className="text-slate-500 hover:text-white transition-colors text-xl leading-none ml-4">✕</button>
               </div>
@@ -499,7 +538,14 @@ export default function CalendarPage() {
                 : <p className="text-slate-600 text-sm italic">No description provided.</p>
               }
 
-              {isOfficer && (
+              {selected.discord && selected.url && (
+                <a href={selected.url} target="_blank" rel="noopener noreferrer"
+                  className="mt-4 inline-block text-sm text-indigo-400 hover:text-indigo-300 transition-colors">
+                  View on Discord →
+                </a>
+              )}
+
+              {isOfficer && !selected.discord && (
                 <div className="mt-5 flex items-center gap-4">
                   <button onClick={() => openEdit(selected)}
                     className="text-xs text-slate-400 hover:text-white transition-colors">

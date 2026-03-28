@@ -725,6 +725,41 @@ const server = serve({
       },
     },
 
+    // ── Discord scheduled events (read-only, proxied to avoid exposing bot token) ──
+    "/api/discord-events": {
+      async GET() {
+        const botToken = process.env.DISCORD_BOT_TOKEN;
+        const guildId  = process.env.DISCORD_GUILD_ID;
+        if (!botToken || !guildId) return json([]);
+
+        const res = await fetch(
+          `https://discord.com/api/v10/guilds/${guildId}/scheduled-events?with_user_count=true`,
+          { headers: { Authorization: `Bot ${botToken}` } }
+        );
+        if (!res.ok) return json([]);
+
+        const events: any[] = await res.json();
+        // Only return scheduled (1) or active (2) events; normalise to calendar shape
+        const normalized = events
+          .filter(e => e.status === 1 || e.status === 2)
+          .map(e => {
+            const start = new Date(e.scheduled_start_time);
+            return {
+              id:          `discord-${e.id}`,
+              title:       e.name,
+              description: e.description || null,
+              date:        start.toISOString().slice(0, 10),
+              event_time:  start.toISOString().slice(11, 16), // HH:MM UTC
+              event_timezone: "UTC",
+              discord:     true,
+              user_count:  e.user_count ?? null,
+              url:         `https://discord.com/events/${guildId}/${e.id}`,
+            };
+          });
+        return json(normalized);
+      },
+    },
+
     // ── Calendar ─────────────────────────────────────────────────────────────
 
     "/api/calendar": {
