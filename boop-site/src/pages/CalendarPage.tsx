@@ -78,6 +78,7 @@ export default function CalendarPage() {
   const [selected, setSelected] = useState<EventItem | null>(null);
   const [showAdd, setShowAdd]   = useState(false);
   const [editing, setEditing]   = useState<EventItem | null>(null);
+  const [showPast, setShowPast] = useState(false);
 
   // New event form
   const [newDate,  setNewDate]  = useState(now.toISOString().slice(0, 10));
@@ -295,61 +296,87 @@ export default function CalendarPage() {
         )}
 
         {/* ── LIST VIEW ── */}
-        {view === "list" && (
-          <div className="flex flex-col gap-2">
-            {sortedEvents.length === 0 ? (
-              <div className="text-center py-24 text-slate-600">
-                <p className="text-4xl mb-3">📅</p>
-                <p className="font-semibold">No events yet</p>
-                <p className="text-sm mt-1">Hit "+ Add Event" to get started.</p>
-              </div>
-            ) : sortedEvents.map(ev => {
-              const d    = new Date(ev.date + "T12:00:00Z");
-              const isPast = ev.date < todayStr;
-              const dt   = displayTime(ev, viewerTz);
-              return (
-                <div key={ev.id}
-                  className={`flex items-start gap-4 p-4 rounded-xl border transition-colors ${isPast ? "border-slate-800/40 bg-slate-900/20 opacity-60" : "border-slate-800 bg-slate-900/50 hover:bg-slate-900"}`}
-                >
-                  <div className="shrink-0 w-14 text-center rounded-lg bg-slate-800 py-2 px-1">
-                    <p className="text-[10px] font-bold text-violet-400 uppercase tracking-wide">
-                      {d.toLocaleDateString("en-US", { month: "short", timeZone: "UTC" })}
-                    </p>
-                    <p className="text-2xl font-black text-white leading-none">
-                      {d.toLocaleDateString("en-US", { day: "numeric", timeZone: "UTC" })}
-                    </p>
-                    <p className="text-[10px] text-slate-500">
-                      {d.toLocaleDateString("en-US", { year: "numeric", timeZone: "UTC" })}
-                    </p>
-                  </div>
+        {view === "list" && (() => {
+          const upcoming = sortedEvents.filter(ev => ev.date >= todayStr);
+          const past     = sortedEvents.filter(ev => ev.date < todayStr);
 
-                  <div className="flex-1 min-w-0 pt-1">
-                    <p className="font-bold text-white">{ev.title}</p>
-                    {dt && (
-                      <p className="text-xs text-violet-300 mt-0.5 font-semibold">
-                        🕐 {dt.time} {dt.tz}
-                        {dt.converted && ev.event_timezone && (
-                          <span className="text-slate-600 font-normal ml-1.5">
-                            (originally {fmtTime(toUTC(ev.date, ev.event_time!, ev.event_timezone), ev.event_timezone)} {tzShort(ev.event_timezone)})
-                          </span>
-                        )}
-                      </p>
-                    )}
-                    {!dt && <p className="text-xs text-slate-600 mt-0.5">All day</p>}
-                    {ev.description && (
-                      <p className="text-sm text-slate-400 mt-1 leading-relaxed">{ev.description}</p>
-                    )}
-                  </div>
+          function EventRow({ ev }: { ev: EventItem }) {
+            const d = new Date(ev.date + "T12:00:00Z");
+            const isPast = ev.date < todayStr;
+            const dt = displayTime(ev, viewerTz);
+            return (
+              <div className={`flex items-start gap-4 p-4 rounded-xl border transition-colors ${isPast ? "border-slate-800/40 bg-slate-900/20 opacity-50" : "border-slate-800 bg-slate-900/50 hover:bg-slate-900"}`}>
+                <div className="shrink-0 w-14 text-center rounded-lg bg-slate-800 py-2 px-1">
+                  <p className="text-[10px] font-bold text-violet-400 uppercase tracking-wide">
+                    {d.toLocaleDateString("en-US", { month: "short", timeZone: "UTC" })}
+                  </p>
+                  <p className="text-2xl font-black text-white leading-none">
+                    {d.toLocaleDateString("en-US", { day: "numeric", timeZone: "UTC" })}
+                  </p>
+                  <p className="text-[10px] text-slate-500">
+                    {d.toLocaleDateString("en-US", { year: "numeric", timeZone: "UTC" })}
+                  </p>
+                </div>
 
-                  {isOfficer && (
-                    <button onClick={() => deleteEvent(ev.id)}
-                      className="shrink-0 mt-1 text-slate-700 hover:text-red-400 transition-colors px-1" title="Delete">✕</button>
+                <div className="flex-1 min-w-0 pt-1">
+                  <p className="font-bold text-white">{ev.title}</p>
+                  {dt && (
+                    <p className="text-xs text-violet-300 mt-0.5 font-semibold">
+                      🕐 {dt.time} {dt.tz}
+                      {dt.converted && ev.event_timezone && (
+                        <span className="text-slate-600 font-normal ml-1.5">
+                          (originally {fmtTime(toUTC(ev.date, ev.event_time!, ev.event_timezone), ev.event_timezone)} {tzShort(ev.event_timezone)})
+                        </span>
+                      )}
+                    </p>
+                  )}
+                  {!dt && <p className="text-xs text-slate-600 mt-0.5">All day</p>}
+                  {ev.description && (
+                    <p className="text-sm text-slate-400 mt-1 leading-relaxed">{ev.description}</p>
                   )}
                 </div>
-              );
-            })}
-          </div>
-        )}
+
+                {isOfficer && (
+                  <div className="shrink-0 flex items-center gap-1 mt-1">
+                    <button onClick={() => openEdit(ev)}
+                      className="text-slate-600 hover:text-slate-300 transition-colors px-1 text-xs" title="Edit">✎</button>
+                    <button onClick={() => deleteEvent(ev.id)}
+                      className="text-slate-700 hover:text-red-400 transition-colors px-1 text-xs" title="Delete">✕</button>
+                  </div>
+                )}
+              </div>
+            );
+          }
+
+          if (sortedEvents.length === 0) return (
+            <div className="text-center py-24 text-slate-600">
+              <p className="text-4xl mb-3">📅</p>
+              <p className="font-semibold">No events yet</p>
+              <p className="text-sm mt-1">Hit "+ Add Event" to get started.</p>
+            </div>
+          );
+
+          return (
+            <div className="flex flex-col gap-2">
+              {upcoming.length === 0 && (
+                <p className="text-center text-slate-600 text-sm py-6">No upcoming events.</p>
+              )}
+              {upcoming.map(ev => <EventRow key={ev.id} ev={ev} />)}
+
+              {past.length > 0 && (
+                <>
+                  <button
+                    onClick={() => setShowPast(p => !p)}
+                    className="flex items-center gap-2 text-xs text-slate-600 hover:text-slate-400 transition-colors mt-2 mx-auto"
+                  >
+                    <span>{showPast ? "▲ Hide" : "▼ Show"} {past.length} past event{past.length !== 1 ? "s" : ""}</span>
+                  </button>
+                  {showPast && [...past].reverse().map(ev => <EventRow key={ev.id} ev={ev} />)}
+                </>
+              )}
+            </div>
+          );
+        })()}
       </div>
 
       {/* ── EVENT DETAIL MODAL ── */}
