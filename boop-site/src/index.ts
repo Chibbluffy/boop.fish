@@ -626,8 +626,9 @@ const server = serve({
         `;
         if (!updated) return err("User not found", 404);
 
-        // Gear fields: only update when all three are explicitly included in the body
+        // Gear fields: admin-only, only update when all three are explicitly included in the body
         if ("gear_ap" in body && "gear_aap" in body && "gear_dp" in body) {
+          if (!requireRole(user, "admin")) return err("Forbidden", 403);
           const ap  = body.gear_ap  != null ? parseInt(body.gear_ap)  : null;
           const aap = body.gear_aap != null ? parseInt(body.gear_aap) : null;
           const dp  = body.gear_dp  != null ? parseInt(body.gear_dp)  : null;
