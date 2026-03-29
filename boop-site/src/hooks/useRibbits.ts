@@ -87,7 +87,13 @@ setInterval(() => {
 
 // ── Flush on tab close ────────────────────────────────────────────────────────
 window.addEventListener("beforeunload", () => {
-  if (_localDelta > 0 && getToken()) syncToServer(true /* keepalive */);
+  if (_localDelta > 0 && getToken()) {
+    syncToServer(true /* keepalive */);
+    // Response handler won't run after unload, so mark localStorage clean now.
+    // If the keepalive fails the user loses a few ribbits — better than double-counting.
+    localStorage.setItem(KEY,      String(_serverBase));
+    localStorage.setItem(BASE_KEY, String(_serverBase));
+  }
 });
 
 // ── Re-seed from server when auth state changes ───────────────────────────────
