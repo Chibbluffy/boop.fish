@@ -612,7 +612,8 @@ const server = serve({
       async PATCH(req) {
         const user = await authenticate(req);
         if (!requireRole(user, "officer")) return err("Forbidden", 403);
-        const { family_name, discord_name, guild_rank, play_status, roster_notes } = await req.json();
+        const body = await req.json();
+        const { family_name, discord_name, guild_rank, play_status, roster_notes } = body;
         const [updated] = await sql`
           UPDATE users SET
             family_name   = COALESCE(${family_name  ?? null}, family_name),
@@ -624,6 +625,21 @@ const server = serve({
           RETURNING id, family_name, discord_name, guild_rank, play_status, roster_notes
         `;
         if (!updated) return err("User not found", 404);
+
+        // Gear fields: only update when all three are explicitly included in the body
+        if ("gear_ap" in body && "gear_aap" in body && "gear_dp" in body) {
+          const ap  = body.gear_ap  != null ? parseInt(body.gear_ap)  : null;
+          const aap = body.gear_aap != null ? parseInt(body.gear_aap) : null;
+          const dp  = body.gear_dp  != null ? parseInt(body.gear_dp)  : null;
+          if ((ap  != null && (isNaN(ap)  || ap  < 0)) ||
+              (aap != null && (isNaN(aap) || aap < 0)) ||
+              (dp  != null && (isNaN(dp)  || dp  < 0))) return err("gear values must be non-negative numbers");
+          await sql`
+            UPDATE users SET gear_ap = ${ap}, gear_aap = ${aap}, gear_dp = ${dp}
+            WHERE id = ${req.params.id}
+          `;
+        }
+
         return json(updated);
       },
     },
@@ -714,7 +730,7 @@ const server = serve({
           LIMIT 10
         `;
         const gear = await sql`
-          SELECT username, family_name, bdo_class, alt_class, gear_ap, gear_aap, gear_dp,
+          SELECT id, username, family_name, bdo_class, alt_class, gear_ap, gear_aap, gear_dp,
             GREATEST(COALESCE(gear_ap, 0), COALESCE(gear_aap, 0)) + COALESCE(gear_dp, 0) AS gs
           FROM users
           WHERE role != 'pending'
