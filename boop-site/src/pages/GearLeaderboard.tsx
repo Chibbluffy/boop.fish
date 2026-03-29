@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { useAuth } from "../lib/auth";
 
 type GearRow = {
+  id: string;
   username: string;
   family_name: string | null;
   bdo_class: string | null;
@@ -14,21 +15,133 @@ type GearRow = {
 
 type SortKey = "gs" | "gear_ap" | "gear_aap" | "gear_dp";
 
+function token() { return localStorage.getItem("boop_session") ?? ""; }
+function authH() { return { Authorization: `Bearer ${token()}` }; }
+
+function EditGearModal({
+  row,
+  onClose,
+  onSaved,
+}: {
+  row: GearRow;
+  onClose: () => void;
+  onSaved: (id: string, ap: number | null, aap: number | null, dp: number | null) => void;
+}) {
+  const [ap,  setAp]  = useState(row.gear_ap  != null ? String(row.gear_ap)  : "");
+  const [aap, setAap] = useState(row.gear_aap != null ? String(row.gear_aap) : "");
+  const [dp,  setDp]  = useState(row.gear_dp  != null ? String(row.gear_dp)  : "");
+  const [saving, setSaving] = useState(false);
+  const [error,  setError]  = useState("");
+
+  async function save() {
+    setSaving(true);
+    setError("");
+    const res = await fetch(`/api/roster/${row.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json", ...authH() },
+      body: JSON.stringify({
+        gear_ap:  ap.trim()  ? parseInt(ap)  : null,
+        gear_aap: aap.trim() ? parseInt(aap) : null,
+        gear_dp:  dp.trim()  ? parseInt(dp)  : null,
+      }),
+    });
+    setSaving(false);
+    if (!res.ok) {
+      const d = await res.json().catch(() => ({}));
+      setError(d.error ?? "Failed to save");
+      return;
+    }
+    const newAp  = ap.trim()  ? parseInt(ap)  : null;
+    const newAap = aap.trim() ? parseInt(aap) : null;
+    const newDp  = dp.trim()  ? parseInt(dp)  : null;
+    onSaved(row.id, newAp, newAap, newDp);
+    onClose();
+  }
+
+  function clearAll() {
+    setAp(""); setAap(""); setDp("");
+  }
+
+  const inp = "w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-white placeholder-slate-600 focus:outline-none focus:border-violet-500 transition-colors font-mono";
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4" onClick={onClose}>
+      <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" />
+      <div
+        className="relative bg-slate-900 border border-slate-700 rounded-2xl p-6 w-full max-w-sm shadow-2xl"
+        onClick={e => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between mb-5">
+          <div>
+            <h3 className="text-white font-bold">{row.username}</h3>
+            {row.family_name && <p className="text-slate-500 text-xs">{row.family_name}</p>}
+          </div>
+          <button onClick={onClose} className="text-slate-500 hover:text-white transition-colors text-lg leading-none">✕</button>
+        </div>
+
+        <div className="space-y-3 mb-5">
+          <div>
+            <label className="block text-xs text-slate-500 mb-1 uppercase tracking-wider">AP</label>
+            <input className={inp} type="number" min="0" placeholder="—" value={ap}  onChange={e => setAp(e.target.value)} />
+          </div>
+          <div>
+            <label className="block text-xs text-slate-500 mb-1 uppercase tracking-wider">AAP</label>
+            <input className={inp} type="number" min="0" placeholder="—" value={aap} onChange={e => setAap(e.target.value)} />
+          </div>
+          <div>
+            <label className="block text-xs text-slate-500 mb-1 uppercase tracking-wider">DP</label>
+            <input className={inp} type="number" min="0" placeholder="—" value={dp}  onChange={e => setDp(e.target.value)} />
+          </div>
+        </div>
+
+        {error && <p className="text-red-400 text-xs mb-3">{error}</p>}
+
+        <div className="flex gap-2">
+          <button
+            onClick={clearAll}
+            className="px-3 py-2 text-sm text-slate-400 hover:text-white bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded-lg transition-colors"
+          >
+            Clear All
+          </button>
+          <button
+            onClick={save}
+            disabled={saving}
+            className="flex-1 px-4 py-2 text-sm font-semibold bg-violet-600 hover:bg-violet-500 disabled:opacity-50 text-white rounded-lg transition-colors"
+          >
+            {saving ? "Saving…" : "Save"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function GearLeaderboard() {
   const user = useAuth();
+  const isAdmin = user?.role === "admin";
   const [gear, setGear] = useState<GearRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [sortKey, setSortKey] = useState<SortKey>("gs");
   const [showAll, setShowAll] = useState(false);
+  const [editing, setEditing] = useState<GearRow | null>(null);
 
   useEffect(() => {
     if (!user || user.role === "pending") return;
-    const token = localStorage.getItem("boop_session") ?? "";
-    fetch("/api/leaderboard", { headers: { Authorization: `Bearer ${token}` } })
+    fetch("/api/leaderboard", { headers: authH() })
       .then(r => r.json())
       .then(d => setGear(d.gear ?? []))
       .finally(() => setLoading(false));
   }, [user]);
+
+  function handleSaved(id: string, ap: number | null, aap: number | null, dp: number | null) {
+    setGear(prev => prev
+      .map(r => r.id === id
+        ? { ...r, gear_ap: ap, gear_aap: aap, gear_dp: dp,
+            gs: Math.max(ap ?? 0, aap ?? 0) + (dp ?? 0) }
+        : r)
+      .filter(r => r.gear_ap != null || r.gear_aap != null || r.gear_dp != null)
+    );
+  }
 
   if (!user || user.role === "pending") {
     return (
@@ -79,6 +192,7 @@ export default function GearLeaderboard() {
                   <th className={thSort("gs")}        onClick={() => setSortKey("gs")}>
                     GS{sortKey === "gs" && " ▾"}
                   </th>
+                  {isAdmin && <th className={thBase} />}
                 </tr>
               </thead>
               <tbody>
@@ -110,6 +224,16 @@ export default function GearLeaderboard() {
                     <td className={`px-3 py-2.5 text-sm tabular-nums font-black ${sortKey === "gs" ? "text-violet-400" : "text-slate-200"}`}>
                       {row.gs > 0 ? row.gs : <span className="text-slate-600 font-normal">—</span>}
                     </td>
+                    {isAdmin && (
+                      <td className="px-3 py-2.5 text-right">
+                        <button
+                          onClick={() => setEditing(row)}
+                          className="text-xs text-slate-600 hover:text-slate-300 transition-colors px-2 py-1 rounded hover:bg-slate-700/50"
+                        >
+                          Edit
+                        </button>
+                      </td>
+                    )}
                   </tr>
                 ))}
               </tbody>
@@ -127,6 +251,14 @@ export default function GearLeaderboard() {
             </div>
           )}
         </>
+      )}
+
+      {editing && (
+        <EditGearModal
+          row={editing}
+          onClose={() => setEditing(null)}
+          onSaved={handleSaved}
+        />
       )}
     </div>
   );
