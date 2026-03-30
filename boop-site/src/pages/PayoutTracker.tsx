@@ -16,7 +16,12 @@ type PayoutMember = {
 };
 
 function ribbitBonus(ribbits: number): number {
-  return Math.min(5, Math.floor(ribbits / 100));
+  if (ribbits >= 300) return 5;
+  if (ribbits >= 200) return 4;
+  if (ribbits >= 100) return 3;
+  if (ribbits >=  50) return 2;
+  if (ribbits >=  25) return 1;
+  return 0;
 }
 
 function effectiveTier(m: PayoutMember): number {
