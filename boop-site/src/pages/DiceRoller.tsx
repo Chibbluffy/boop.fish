@@ -76,13 +76,14 @@ class DiceSounds {
       this.playBuffer(ctx, delay, 0.4 + Math.random() * 0.3);
     }
 
-    const clatterCount = diceCount * 3 + Math.floor(Math.random() * 3);
+    const clatterCount = Math.min(diceCount * 3 + Math.floor(Math.random() * 3), 12);
     for (let i = 0; i < clatterCount; i++) {
       const delay = 0.15 + i * 0.04 + Math.random() * 0.06;
       this.playBuffer(ctx, delay, 0.1 + Math.random() * 0.15);
     }
 
-    for (let i = 0; i < diceCount; i++) {
+    const settleCount = Math.min(diceCount, 4);
+    for (let i = 0; i < settleCount; i++) {
       const delay = 0.5 + i * 0.08 + Math.random() * 0.1;
       this.playBuffer(ctx, delay, 0.05 + Math.random() * 0.08);
     }
