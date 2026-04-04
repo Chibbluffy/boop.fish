@@ -762,7 +762,7 @@ const server = serve({
           SELECT id, username, family_name, bdo_class, alt_class, gear_ap, gear_aap, gear_dp, discord_id,
             GREATEST(COALESCE(gear_ap, 0), COALESCE(gear_aap, 0)) + COALESCE(gear_dp, 0) AS gs
           FROM users
-          WHERE role != 'pending'
+          WHERE role IN ('member', 'officer', 'admin')
             AND (gear_ap IS NOT NULL OR gear_aap IS NOT NULL OR gear_dp IS NOT NULL)
           ORDER BY gs DESC
         `;
