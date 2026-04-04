@@ -65,6 +65,9 @@ psql -d <your_db> -f db/schema.sql
 		- ```LC_ALL="en_US.UTF-8" /opt/homebrew/opt/postgresql@16/bin/postgres -D /opt/homebrew/var/postgresql@16```
 	- Run on login
 		- ```brew services start postgresql@16```
+  - Login after starting db services
+    - `psql postgres`
+    - `\c boopfish`
 
 
 ### 2. Environment
