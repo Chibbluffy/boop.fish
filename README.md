@@ -116,6 +116,24 @@ To restart after updates:
 pm2 restart boop-fish
 ```
 
+### 5. Daily role sync
+
+A script checks all Discord-linked users against the guild once a day and updates roles automatically (members who left become `pending`, members who lost the member role become `friend`). Officers and admins are never downgraded.
+
+Schedule it with pm2 (run from repo root):
+
+```bash
+pm2 start "bun run scripts/sync-discord-roles.ts" --name sync-discord-roles --cron "0 0 * * *" --no-autorestart
+pm2 save
+```
+
+To run it manually:
+```bash
+cd boop-site && bun run ../scripts/sync-discord-roles.ts
+```
+
+Requires `DISCORD_BOT_TOKEN`, `DISCORD_GUILD_ID`, and optionally `DISCORD_MEMBER_ROLE_ID` in your `.env`.
+
 ## Roles
 
 | Role | Access |
