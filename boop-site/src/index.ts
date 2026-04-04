@@ -723,6 +723,34 @@ const server = serve({
       async GET(req) {
         const user = await authenticate(req);
         if (!user || user.role === "pending") return err("Forbidden", 403);
+
+        const botToken = process.env.DISCORD_BOT_TOKEN;
+        const guildId  = process.env.DISCORD_GUILD_ID;
+        const memberRoleId = process.env.GUILD_MEMBER_ROLE_ID;
+
+        // Fetch all guild members with the member role in one paginated batch
+        let guildMemberIds: Set<string> | null = null;
+        if (botToken && guildId && memberRoleId) {
+          guildMemberIds = new Set<string>();
+          let after = "0";
+          while (true) {
+            const res = await fetch(
+              `https://discord.com/api/v10/guilds/${guildId}/members?limit=1000&after=${after}`,
+              { headers: { Authorization: `Bot ${botToken}` } }
+            );
+            if (!res.ok) break;
+            const members: any[] = await res.json();
+            if (members.length === 0) break;
+            for (const m of members) {
+              if (m.roles.includes(memberRoleId)) {
+                guildMemberIds.add(m.user.id);
+              }
+            }
+            if (members.length < 1000) break;
+            after = members[members.length - 1].user.id;
+          }
+        }
+
         const ribbits = await sql`
           SELECT username, family_name, ribbit_count
           FROM users
@@ -730,14 +758,20 @@ const server = serve({
           ORDER BY ribbit_count DESC
           LIMIT 10
         `;
-        const gear = await sql`
-          SELECT id, username, family_name, bdo_class, alt_class, gear_ap, gear_aap, gear_dp,
+        const gearRows = await sql`
+          SELECT id, username, family_name, bdo_class, alt_class, gear_ap, gear_aap, gear_dp, discord_id,
             GREATEST(COALESCE(gear_ap, 0), COALESCE(gear_aap, 0)) + COALESCE(gear_dp, 0) AS gs
           FROM users
           WHERE role != 'pending'
             AND (gear_ap IS NOT NULL OR gear_aap IS NOT NULL OR gear_dp IS NOT NULL)
           ORDER BY gs DESC
         `;
+
+        // Filter to only current guild members (by role), then strip discord_id from response
+        const gear = gearRows
+          .filter(r => !guildMemberIds || (r.discord_id && guildMemberIds.has(r.discord_id)))
+          .map(({ discord_id, ...rest }) => rest);
+
         return json({ ribbits, gear });
       },
     },
