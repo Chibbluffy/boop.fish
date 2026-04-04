@@ -759,7 +759,9 @@ const server = serve({
           LIMIT 10
         `;
         const gearRows = await sql`
-          SELECT id, username, family_name, bdo_class, alt_class, gear_ap, gear_aap, gear_dp, discord_id,
+          SELECT id,
+            COALESCE(NULLIF(discord_username, ''), username) AS username,
+            family_name, bdo_class, alt_class, gear_ap, gear_aap, gear_dp, discord_id,
             GREATEST(COALESCE(gear_ap, 0), COALESCE(gear_aap, 0)) + COALESCE(gear_dp, 0) AS gs
           FROM users
           WHERE role IN ('member', 'officer', 'admin')
