@@ -123,15 +123,18 @@ export default function GearLeaderboard() {
   const [loading, setLoading] = useState(true);
   const [sortKey, setSortKey] = useState<SortKey>("gs");
   const [showAll, setShowAll] = useState(false);
+  const [showNonMembers, setShowNonMembers] = useState(false);
   const [editing, setEditing] = useState<GearRow | null>(null);
 
   useEffect(() => {
     if (!user || user.role === "pending") return;
-    fetch("/api/leaderboard", { headers: authH() })
+    setLoading(true);
+    const url = isAdmin && showNonMembers ? "/api/leaderboard?all=true" : "/api/leaderboard";
+    fetch(url, { headers: authH() })
       .then(r => r.json())
       .then(d => setGear(d.gear ?? []))
       .finally(() => setLoading(false));
-  }, [user]);
+  }, [user, showNonMembers]);
 
   function handleSaved(id: string, ap: number | null, aap: number | null, dp: number | null) {
     setGear(prev => prev
@@ -160,11 +163,25 @@ export default function GearLeaderboard() {
 
   return (
     <div className="max-w-4xl mx-auto px-4 py-10">
-      <div className="flex items-baseline gap-3 mb-6">
-        <h1 className="text-2xl font-black text-white">Gear Score Leaderboard</h1>
-        <span className="text-sm text-slate-500">
-          {showAll ? `All ${sorted.length}` : `Top ${Math.min(25, sorted.length)}`}
-        </span>
+      <div className="flex items-center justify-between mb-6">
+        <div className="flex items-baseline gap-3">
+          <h1 className="text-2xl font-black text-white">Gear Score Leaderboard</h1>
+          <span className="text-sm text-slate-500">
+            {showAll ? `All ${sorted.length}` : `Top ${Math.min(25, sorted.length)}`}
+          </span>
+        </div>
+        {isAdmin && (
+          <button
+            onClick={() => { setShowNonMembers(v => !v); setShowAll(false); }}
+            className={`px-3 py-1.5 text-xs font-semibold rounded-lg border transition-colors ${
+              showNonMembers
+                ? "bg-amber-500/20 border-amber-500/50 text-amber-300 hover:bg-amber-500/30"
+                : "bg-slate-800 border-slate-700 text-slate-400 hover:text-white hover:bg-slate-700"
+            }`}
+          >
+            {showNonMembers ? "Showing All Users" : "Members Only"}
+          </button>
+        )}
       </div>
 
       {loading ? (
