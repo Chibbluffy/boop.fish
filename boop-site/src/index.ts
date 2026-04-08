@@ -725,14 +725,14 @@ const server = serve({
         if (!user || user.role === "pending") return err("Forbidden", 403);
 
         const url = new URL(req.url);
-        const showAll = url.searchParams.get("all") === "true" && user.role === "admin";
+        const showAll = url.searchParams.get("all") === "true";
 
         const botToken = process.env.DISCORD_BOT_TOKEN;
         const guildId  = process.env.DISCORD_GUILD_ID;
         const memberRoleId = process.env.GUILD_MEMBER_ROLE_ID;
 
         // Fetch all guild members with the member role in one paginated batch
-        // (skipped when admin requests all users)
+        // (skipped when ?all=true is requested)
         let guildMemberIds: Set<string> | null = null;
         if (!showAll && botToken && guildId && memberRoleId) {
           guildMemberIds = new Set<string>();

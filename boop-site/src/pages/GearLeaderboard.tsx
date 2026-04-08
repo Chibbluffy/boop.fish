@@ -170,18 +170,16 @@ export default function GearLeaderboard() {
             {showAll ? `All ${sorted.length}` : `Top ${Math.min(25, sorted.length)}`}
           </span>
         </div>
-        {isAdmin && (
-          <button
-            onClick={() => { setShowNonMembers(v => !v); setShowAll(false); }}
-            className={`px-3 py-1.5 text-xs font-semibold rounded-lg border transition-colors ${
-              showNonMembers
-                ? "bg-amber-500/20 border-amber-500/50 text-amber-300 hover:bg-amber-500/30"
-                : "bg-slate-800 border-slate-700 text-slate-400 hover:text-white hover:bg-slate-700"
-            }`}
-          >
-            {showNonMembers ? "Showing All Users" : "Members Only"}
-          </button>
-        )}
+        <button
+          onClick={() => { setShowNonMembers(v => !v); setShowAll(false); }}
+          className={`px-3 py-1.5 text-xs font-semibold rounded-lg border transition-colors ${
+            showNonMembers
+              ? "bg-amber-500/20 border-amber-500/50 text-amber-300 hover:bg-amber-500/30"
+              : "bg-slate-800 border-slate-700 text-slate-400 hover:text-white hover:bg-slate-700"
+          }`}
+        >
+          {showNonMembers ? "Showing All Users" : "Members Only"}
+        </button>
       </div>
 
       {loading ? (
