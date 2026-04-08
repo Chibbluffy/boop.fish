@@ -762,16 +762,27 @@ const server = serve({
           ORDER BY ribbit_count DESC
           LIMIT 10
         `;
-        const gearRows = await sql`
-          SELECT id,
-            COALESCE(NULLIF(discord_username, ''), username) AS username,
-            family_name, bdo_class, alt_class, gear_ap, gear_aap, gear_dp, discord_id,
-            GREATEST(COALESCE(gear_ap, 0), COALESCE(gear_aap, 0)) + COALESCE(gear_dp, 0) AS gs
-          FROM users
-          WHERE role IN ('member', 'officer', 'admin')
-            AND (gear_ap IS NOT NULL OR gear_aap IS NOT NULL OR gear_dp IS NOT NULL)
-          ORDER BY gs DESC
-        `;
+        const gearRows = showAll
+          ? await sql`
+              SELECT id,
+                COALESCE(NULLIF(discord_username, ''), username) AS username,
+                family_name, bdo_class, alt_class, gear_ap, gear_aap, gear_dp, discord_id,
+                GREATEST(COALESCE(gear_ap, 0), COALESCE(gear_aap, 0)) + COALESCE(gear_dp, 0) AS gs
+              FROM users
+              WHERE role != 'pending'
+                AND (gear_ap IS NOT NULL OR gear_aap IS NOT NULL OR gear_dp IS NOT NULL)
+              ORDER BY gs DESC
+            `
+          : await sql`
+              SELECT id,
+                COALESCE(NULLIF(discord_username, ''), username) AS username,
+                family_name, bdo_class, alt_class, gear_ap, gear_aap, gear_dp, discord_id,
+                GREATEST(COALESCE(gear_ap, 0), COALESCE(gear_aap, 0)) + COALESCE(gear_dp, 0) AS gs
+              FROM users
+              WHERE role IN ('member', 'officer', 'admin')
+                AND (gear_ap IS NOT NULL OR gear_aap IS NOT NULL OR gear_dp IS NOT NULL)
+              ORDER BY gs DESC
+            `;
 
         // Filter to only current guild members (by role), then strip discord_id from response
         const gear = gearRows
