@@ -129,7 +129,7 @@ export default function GearLeaderboard() {
   useEffect(() => {
     if (!user || user.role === "pending") return;
     setLoading(true);
-    const url = isAdmin && showNonMembers ? "/api/leaderboard?all=true" : "/api/leaderboard";
+    const url = showNonMembers ? "/api/leaderboard?all=true" : "/api/leaderboard";
     fetch(url, { headers: authH() })
       .then(r => r.json())
       .then(d => setGear(d.gear ?? []))
