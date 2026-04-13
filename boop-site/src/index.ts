@@ -579,7 +579,7 @@ const server = serve({
         const rows = await sql`
           SELECT username, family_name, discord_name, bdo_class, alt_class,
                  gear_ap, gear_aap, gear_dp,
-                 GREATEST(COALESCE(gear_ap, 0), COALESCE(gear_aap, 0)) + COALESCE(gear_dp, 0) AS gs,
+                 (COALESCE(gear_ap, 0) + COALESCE(gear_aap, 0)) / 2.0 + COALESCE(gear_dp, 0) AS gs,
                  timezone, ribbit_count, play_status, guild_rank, role
           FROM users
           WHERE role NOT IN ('pending', 'friend')
@@ -767,7 +767,7 @@ const server = serve({
               SELECT id,
                 COALESCE(NULLIF(discord_username, ''), username) AS username,
                 family_name, bdo_class, alt_class, gear_ap, gear_aap, gear_dp, discord_id,
-                GREATEST(COALESCE(gear_ap, 0), COALESCE(gear_aap, 0)) + COALESCE(gear_dp, 0) AS gs
+                (COALESCE(gear_ap, 0) + COALESCE(gear_aap, 0)) / 2.0 + COALESCE(gear_dp, 0) AS gs
               FROM users
               WHERE role != 'pending'
                 AND (gear_ap IS NOT NULL OR gear_aap IS NOT NULL OR gear_dp IS NOT NULL)
@@ -777,7 +777,7 @@ const server = serve({
               SELECT id,
                 COALESCE(NULLIF(discord_username, ''), username) AS username,
                 family_name, bdo_class, alt_class, gear_ap, gear_aap, gear_dp, discord_id,
-                GREATEST(COALESCE(gear_ap, 0), COALESCE(gear_aap, 0)) + COALESCE(gear_dp, 0) AS gs
+                (COALESCE(gear_ap, 0) + COALESCE(gear_aap, 0)) / 2.0 + COALESCE(gear_dp, 0) AS gs
               FROM users
               WHERE role IN ('member', 'officer', 'admin')
                 AND (gear_ap IS NOT NULL OR gear_aap IS NOT NULL OR gear_dp IS NOT NULL)
