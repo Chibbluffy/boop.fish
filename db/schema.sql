@@ -291,6 +291,26 @@ CREATE INDEX IF NOT EXISTS idx_payout_history_user ON payout_history(user_id);
 CREATE INDEX IF NOT EXISTS idx_payout_history_date ON payout_history(created_at DESC);
 
 -- ============================================================
+-- QUOTES  (imported from Nadeko bot export)
+-- keyword   = top-level tag from the YAML (e.g. "DOTITOXIC")
+-- nadeko_id = original alphanumeric id from Nadeko (unique)
+-- author_discord_id stored as text — Discord snowflakes exceed int range
+-- ============================================================
+CREATE TABLE IF NOT EXISTS quotes (
+  id                UUID         PRIMARY KEY DEFAULT gen_random_uuid(),
+  keyword           VARCHAR(255) NOT NULL,
+  nadeko_id         VARCHAR(20)  UNIQUE,
+  author_name       VARCHAR(100),
+  author_discord_id VARCHAR(20),
+  text              TEXT         NOT NULL,
+  created_at        TIMESTAMPTZ  NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_quotes_keyword ON quotes(keyword);
+-- Migration for existing installs:
+-- CREATE TABLE IF NOT EXISTS quotes ( ... );   -- run full block above
+-- CREATE INDEX IF NOT EXISTS idx_quotes_keyword ON quotes(keyword);
+
+-- ============================================================
 -- GRANTS  (run as superuser; replace 'boop' with your app user)
 -- ============================================================
 GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO boop;
