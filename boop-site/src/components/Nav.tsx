@@ -298,6 +298,16 @@ export default function Nav({ route }: NavProps) {
               );
             })}
 
+            {user && (
+              <a href="#/quotes"
+                className={`shrink-0 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors whitespace-nowrap ${
+                  route === "quotes" ? "bg-slate-800 text-white" : "text-slate-400 hover:text-white hover:bg-slate-800/60"
+                }`}
+              >
+                Quotes
+              </a>
+            )}
+
             <div className="flex-1" />
 
             {user && isOfficerOrAdmin(user) && (
@@ -455,6 +465,16 @@ export default function Nav({ route }: NavProps) {
                   </div>
                 );
               })}
+
+              {user && (
+                <a href="#/quotes" onClick={() => setMobileOpen(false)}
+                  className={`block px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${
+                    route === "quotes" ? "bg-slate-800 text-white" : "text-slate-400 hover:text-white hover:bg-slate-800/60"
+                  }`}
+                >
+                  Quotes
+                </a>
+              )}
 
               {user && isOfficerOrAdmin(user) && (
                 <a href="#/manage" onClick={() => setMobileOpen(false)}

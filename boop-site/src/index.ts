@@ -1230,6 +1230,36 @@ const server = serve({
       },
     },
 
+    // ── Quotes ───────────────────────────────────────────────────────────────
+
+    "/api/quotes/keywords": {
+      async GET(req) {
+        const user = await authenticate(req);
+        if (!user) return err("Unauthorized", 401);
+        const rows = await sql`
+          SELECT keyword, COUNT(*)::int AS count
+          FROM quotes
+          GROUP BY keyword
+          ORDER BY keyword ASC
+        `;
+        return json(rows);
+      },
+    },
+
+    "/api/quotes/keyword/:keyword": {
+      async GET(req) {
+        const user = await authenticate(req);
+        if (!user) return err("Unauthorized", 401);
+        const rows = await sql`
+          SELECT id, nadeko_id, author_name, text
+          FROM quotes
+          WHERE keyword = ${req.params.keyword}
+          ORDER BY created_at ASC
+        `;
+        return json(rows);
+      },
+    },
+
     // Serve public sound files
     "/sounds/*": async req => {
       const url = new URL(req.url);
