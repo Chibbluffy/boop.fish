@@ -11,12 +11,13 @@ function looksLikeImage(text: string): boolean {
   );
 }
 
-function QuoteImage({ src }: { src: string }) {
+function QuoteImage({ src, refreshed }: { src: string; refreshed: string | undefined }) {
   const [failed, setFailed] = useState(false);
-  if (failed) return <span className="text-xs text-slate-600 italic">Image unavailable (expired link)</span>;
+  const url = refreshed ?? src;
+  if (failed) return <span className="text-xs text-slate-600 italic">Image unavailable</span>;
   return (
     <img
-      src={src}
+      src={url}
       loading="lazy"
       alt="quote"
       className="max-w-sm max-h-72 rounded-lg border border-slate-800/60 object-contain bg-slate-900/60"
@@ -27,23 +28,36 @@ function QuoteImage({ src }: { src: string }) {
 
 function ChevronRight({ open }: { open: boolean }) {
   return (
-    <svg
-      className={`w-3 h-3 shrink-0 transition-transform ${open ? "rotate-90" : ""}`}
-      viewBox="0 0 6 10" fill="none"
-    >
+    <svg className={`w-3 h-3 shrink-0 transition-transform ${open ? "rotate-90" : ""}`} viewBox="0 0 6 10" fill="none">
       <path d="M1 1l4 4-4 4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
     </svg>
   );
 }
 
+async function refreshImageUrls(urls: string[]): Promise<Record<string, string>> {
+  if (!urls.length) return {};
+  const res = await fetch("/api/quotes/refresh-urls", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${getToken() ?? ""}`,
+    },
+    body: JSON.stringify({ urls }),
+  });
+  if (!res.ok) return {};
+  return res.json();
+}
+
 export default function Quotes() {
   const user = useAuth();
-  const [keywords, setKeywords]       = useState<KeywordRow[]>([]);
-  const [loading, setLoading]         = useState(true);
-  const [search, setSearch]           = useState("");
-  const [openKws, setOpenKws]         = useState<Set<string>>(new Set());
-  const [loadingKws, setLoadingKws]   = useState<Set<string>>(new Set());
-  const [cache, setCache]             = useState<Record<string, Quote[]>>({});
+  const [keywords, setKeywords]         = useState<KeywordRow[]>([]);
+  const [loading, setLoading]           = useState(true);
+  const [search, setSearch]             = useState("");
+  const [openKws, setOpenKws]           = useState<Set<string>>(new Set());
+  const [loadingKws, setLoadingKws]     = useState<Set<string>>(new Set());
+  const [cache, setCache]               = useState<Record<string, Quote[]>>({});
+  // original URL → refreshed URL, accumulated across all opened keywords
+  const [urlMap, setUrlMap]             = useState<Record<string, string>>({});
   const [expandedQuotes, setExpandedQuotes] = useState<Set<string>>(new Set());
 
   useEffect(() => {
@@ -90,6 +104,13 @@ export default function Quotes() {
         });
         const quotes: Quote[] = await res.json();
         setCache(prev => ({ ...prev, [keyword]: quotes }));
+
+        // Batch-refresh all Discord image URLs for this keyword in one API call
+        const imageUrls = quotes.map(q => q.text).filter(looksLikeImage);
+        if (imageUrls.length) {
+          const fresh = await refreshImageUrls(imageUrls);
+          setUrlMap(prev => ({ ...prev, ...fresh }));
+        }
       } finally {
         setLoadingKws(prev => { const s = new Set(prev); s.delete(keyword); return s; });
       }
@@ -180,7 +201,6 @@ export default function Quotes() {
                         <div className="px-10 py-4 text-xs text-slate-600">Loading quotes…</div>
                       ) : quotes ? (
                         <>
-                          {/* Expand / collapse all */}
                           <div className="px-10 py-2 flex items-center justify-between border-b border-slate-800/40">
                             <span className="text-xs text-slate-700">{quotes.length} quote{quotes.length !== 1 ? "s" : ""}</span>
                             <button
@@ -191,10 +211,10 @@ export default function Quotes() {
                             </button>
                           </div>
 
-                          {/* Quote rows */}
                           <div className="divide-y divide-slate-800/30">
                             {quotes.map(quote => {
                               const isExpanded = expandedQuotes.has(quote.id);
+                              const isImg      = looksLikeImage(quote.text);
                               return (
                                 <div key={quote.id}>
                                   <button
@@ -207,16 +227,18 @@ export default function Quotes() {
                                     <span className="font-mono text-xs text-violet-400/70 w-14 shrink-0">
                                       {quote.nadeko_id ?? "—"}
                                     </span>
-                                    <span className="text-xs text-slate-400">
-                                      {quote.author_name ?? <span className="text-slate-600 italic">unknown</span>}
+                                    <span className="text-xs text-slate-400 flex-1">
+                                      {quote.author_name ?? <span className="italic text-slate-600">unknown</span>}
                                     </span>
+                                    {isImg && (
+                                      <span className="text-[10px] text-slate-700 shrink-0">img</span>
+                                    )}
                                   </button>
 
-                                  {/* Quote content */}
                                   {isExpanded && (
                                     <div className="px-16 pb-4 pt-1">
-                                      {looksLikeImage(quote.text) ? (
-                                        <QuoteImage src={quote.text} />
+                                      {isImg ? (
+                                        <QuoteImage src={quote.text} refreshed={urlMap[quote.text]} />
                                       ) : (
                                         <p className="text-sm text-slate-300 whitespace-pre-wrap break-words leading-relaxed">
                                           {quote.text}

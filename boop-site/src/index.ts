@@ -1246,6 +1246,43 @@ const server = serve({
       },
     },
 
+    "/api/quotes/refresh-urls": {
+      async POST(req) {
+        const user = await authenticate(req);
+        if (!user) return err("Unauthorized", 401);
+
+        const { urls } = await req.json() as { urls: string[] };
+        if (!Array.isArray(urls) || urls.length === 0) return json({});
+
+        const botToken = process.env.DISCORD_BOT_TOKEN;
+        if (!botToken) return json({});
+
+        // Discord accepts up to 50 URLs per request
+        const map: Record<string, string> = {};
+        for (let i = 0; i < urls.length; i += 50) {
+          const batch = urls.slice(i, i + 50);
+          try {
+            const res = await fetch("https://discord.com/api/v10/attachments/refresh-urls", {
+              method: "POST",
+              headers: {
+                Authorization: `Bot ${botToken}`,
+                "Content-Type": "application/json",
+              },
+              body: JSON.stringify({ attachment_urls: batch }),
+            });
+            if (!res.ok) continue;
+            const data = await res.json() as { refreshed_urls: { original: string; refreshed: string }[] };
+            for (const { original, refreshed } of data.refreshed_urls) {
+              map[original] = refreshed;
+            }
+          } catch {
+            // partial failure is fine — unmapped URLs fall back to original
+          }
+        }
+        return json(map);
+      },
+    },
+
     "/api/quotes/keyword/:keyword": {
       async GET(req) {
         const user = await authenticate(req);
