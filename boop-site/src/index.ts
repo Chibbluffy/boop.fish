@@ -1246,6 +1246,47 @@ const server = serve({
       },
     },
 
+    "/api/discord/resolve-users": {
+      async POST(req) {
+        const user = await authenticate(req);
+        if (!user) return err("Unauthorized", 401);
+
+        const { ids } = await req.json() as { ids: string[] };
+        if (!Array.isArray(ids) || ids.length === 0) return json({});
+
+        const result: Record<string, string> = {};
+
+        // Check our own users table first
+        const known = await sql`
+          SELECT discord_id, COALESCE(NULLIF(discord_username, ''), username) AS display_name
+          FROM users
+          WHERE discord_id = ANY(${ids})
+        `;
+        for (const row of known) result[row.discord_id] = row.display_name;
+
+        // Fetch remaining IDs from Discord guild members API
+        const missing = ids.filter(id => !result[id]);
+        const botToken = process.env.DISCORD_BOT_TOKEN;
+        const guildId  = process.env.DISCORD_GUILD_ID;
+
+        if (missing.length && botToken && guildId) {
+          await Promise.all(missing.map(async id => {
+            try {
+              const res = await fetch(
+                `https://discord.com/api/v10/guilds/${guildId}/members/${id}`,
+                { headers: { Authorization: `Bot ${botToken}` } }
+              );
+              if (!res.ok) return;
+              const member = await res.json() as { nick?: string; user: { username: string; global_name?: string } };
+              result[id] = member.nick ?? member.user.global_name ?? member.user.username;
+            } catch { /* leave unresolved */ }
+          }));
+        }
+
+        return json(result);
+      },
+    },
+
     "/api/quotes/refresh-urls": {
       async POST(req) {
         const user = await authenticate(req);
