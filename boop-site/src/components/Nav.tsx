@@ -299,12 +299,12 @@ export default function Nav({ route }: NavProps) {
             })}
 
             {user && (
-              <a href="#/quotes"
+              <a href="#/archive"
                 className={`shrink-0 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors whitespace-nowrap ${
-                  route === "quotes" ? "bg-slate-800 text-white" : "text-slate-400 hover:text-white hover:bg-slate-800/60"
+                  route === "archive" ? "bg-slate-800 text-white" : "text-slate-400 hover:text-white hover:bg-slate-800/60"
                 }`}
               >
-                Quotes
+                Archive
               </a>
             )}
 
@@ -467,12 +467,12 @@ export default function Nav({ route }: NavProps) {
               })}
 
               {user && (
-                <a href="#/quotes" onClick={() => setMobileOpen(false)}
+                <a href="#/archive" onClick={() => setMobileOpen(false)}
                   className={`block px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${
-                    route === "quotes" ? "bg-slate-800 text-white" : "text-slate-400 hover:text-white hover:bg-slate-800/60"
+                    route === "archive" ? "bg-slate-800 text-white" : "text-slate-400 hover:text-white hover:bg-slate-800/60"
                   }`}
                 >
-                  Quotes
+                  Archive
                 </a>
               )}
 

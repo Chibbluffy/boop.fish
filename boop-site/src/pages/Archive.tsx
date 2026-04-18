@@ -163,7 +163,7 @@ async function resolveUsers(ids: string[]): Promise<Record<string, string>> {
   return res.json();
 }
 
-export default function Quotes() {
+export default function Archive() {
   const user = useAuth();
   const [keywords, setKeywords]         = useState<KeywordRow[]>([]);
   const [loading, setLoading]           = useState(true);
@@ -266,7 +266,7 @@ export default function Quotes() {
 
         {/* Header */}
         <div className="mb-7">
-          <h1 className="text-2xl font-black text-white tracking-tight mb-1">Quotes</h1>
+          <h1 className="text-2xl font-black text-white tracking-tight mb-1">Archive</h1>
           <p className="text-slate-500 text-sm">
             {keywords.length.toLocaleString()} keywords &middot; {totalQuotes.toLocaleString()} total quotes
           </p>

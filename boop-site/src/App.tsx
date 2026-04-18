@@ -24,9 +24,9 @@ import GuildDirectory from "./pages/GuildDirectory";
 import PayoutTracker from "./pages/PayoutTracker";
 import RandomChooser from "./pages/RandomChooser";
 import DiceRoller from "./pages/DiceRoller";
-import Quotes from "./pages/Quotes";
+import Archive from "./pages/Archive";
 
-type Route = "home" | "class-roller" | "shuffler" | "employee" | "frogs" | "wall" | "submit-wall" | "calendar" | "nodewar" | "shrine" | "auth" | "manage" | "ribbit-leaderboard" | "gear-leaderboard" | "guild-directory" | "payout-tracker" | "random-chooser" | "dice-roller" | "quotes";
+type Route = "home" | "class-roller" | "shuffler" | "employee" | "frogs" | "wall" | "submit-wall" | "calendar" | "nodewar" | "shrine" | "auth" | "manage" | "ribbit-leaderboard" | "gear-leaderboard" | "guild-directory" | "payout-tracker" | "random-chooser" | "dice-roller" | "archive";
 
 function parseHash(): Route {
   const h = location.hash.replace(/^#\/?/, "").split("/")[0].split("?")[0];
@@ -59,7 +59,7 @@ function parseHash(): Route {
     case "payout-tracker":     return "payout-tracker";
     case "random-chooser":     return "random-chooser";
     case "dice-roller":        return "dice-roller";
-    case "quotes":             return "quotes";
+    case "archive":            return "archive";
     default:
       return "home";
   }
@@ -122,7 +122,7 @@ export function App() {
         {route === "payout-tracker"     && <PayoutTracker />}
         {route === "random-chooser"     && <RandomChooser />}
         {route === "dice-roller"        && <DiceRoller />}
-        {route === "quotes"             && <Quotes />}
+        {route === "archive"            && <Archive />}
       </main>
     </div>
   );
