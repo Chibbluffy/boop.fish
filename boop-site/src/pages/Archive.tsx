@@ -180,6 +180,7 @@ export default function Archive() {
   const [expandedQuotes, setExpandedQuotes] = useState<Set<string>>(new Set());
   const [searchResults, setSearchResults]   = useState<SearchGroup[] | null>(null);
   const [searchLoading, setSearchLoading]   = useState(false);
+  const [searchMode, setSearchMode]         = useState<"key" | "full">("key");
 
   useEffect(() => {
     fetch("/api/quotes/keywords", {
@@ -190,8 +191,9 @@ export default function Archive() {
       .catch(() => setLoading(false));
   }, []);
 
-  // Debounced full-text search
+  // Debounced full-content search (server-side)
   useEffect(() => {
+    if (searchMode !== "full") { setSearchResults(null); return; }
     const q = search.trim();
     if (!q) { setSearchResults(null); return; }
 
@@ -204,7 +206,6 @@ export default function Archive() {
         const data: SearchGroup[] = await res.json();
         setSearchResults(data);
 
-        // Populate cache + batch-resolve images and mentions
         const allTexts   = data.flatMap(g => g.quotes.map(q => q.text));
         const imageUrls  = extractImageUrls(allTexts);
         const mentionIds = extractMentionIds(allTexts);
@@ -226,10 +227,10 @@ export default function Archive() {
       } finally {
         setSearchLoading(false);
       }
-    }, 300);
+    }, 150);
 
     return () => clearTimeout(timer);
-  }, [search]);
+  }, [search, searchMode]);
 
   if (!user) {
     return (
@@ -317,26 +318,48 @@ export default function Archive() {
         <div className="mb-4">
           <input
             type="text"
-            placeholder="Search keywords, quotes, usernames…"
+            placeholder={searchMode === "key" ? "Filter keywords…" : "Search keywords, quotes, usernames…"}
             value={search}
             onChange={e => setSearch(e.target.value)}
             className="w-full bg-slate-900 border border-slate-700/60 rounded-lg px-4 py-2.5 text-sm text-white placeholder-slate-600 focus:outline-none focus:border-violet-500 transition-colors"
           />
-          {search && (
-            <p className="text-xs text-slate-600 mt-1.5 ml-1">
-              {searchLoading
-                ? "Searching…"
-                : searchResults
-                  ? `${searchResults.reduce((s, g) => s + g.quotes.length, 0)} quote${searchResults.reduce((s, g) => s + g.quotes.length, 0) !== 1 ? "s" : ""} in ${searchResults.length} keyword${searchResults.length !== 1 ? "s" : ""}`
-                  : ""}
-            </p>
-          )}
+          <div className="flex items-center gap-4 mt-2 ml-1">
+            {(["key", "full"] as const).map(mode => (
+              <label key={mode} className="flex items-center gap-1.5 cursor-pointer select-none">
+                <input
+                  type="radio"
+                  name="searchMode"
+                  value={mode}
+                  checked={searchMode === mode}
+                  onChange={() => { setSearchMode(mode); setSearchResults(null); }}
+                  className="accent-violet-500"
+                />
+                <span className="text-xs text-slate-500">
+                  {mode === "key" ? "Key only" : "Search all content"}
+                </span>
+              </label>
+            ))}
+            {search && searchMode === "full" && (
+              <span className="text-xs text-slate-600 ml-auto">
+                {searchLoading
+                  ? "Searching…"
+                  : searchResults
+                    ? `${searchResults.reduce((s, g) => s + g.quotes.length, 0)} quote${searchResults.reduce((s, g) => s + g.quotes.length, 0) !== 1 ? "s" : ""} in ${searchResults.length} keyword${searchResults.length !== 1 ? "s" : ""}`
+                    : ""}
+              </span>
+            )}
+            {search && searchMode === "key" && (
+              <span className="text-xs text-slate-600 ml-auto">
+                {keywords.filter(k => k.keyword.toLowerCase().includes(search.toLowerCase())).length} match{keywords.filter(k => k.keyword.toLowerCase().includes(search.toLowerCase())).length !== 1 ? "es" : ""}
+              </span>
+            )}
+          </div>
         </div>
 
         {/* Keyword list */}
         {loading ? (
           <div className="text-slate-600 text-sm py-12 text-center">Loading…</div>
-        ) : searchResults !== null ? (
+        ) : searchResults !== null && searchMode === "full" ? (
           /* ── Search results mode ── */
           <div className="space-y-1">
             {searchResults.length === 0 ? (
@@ -413,9 +436,12 @@ export default function Archive() {
             })}
           </div>
         ) : (
-          /* ── Browse mode ── */
+          /* ── Browse / key-only filter mode ── */
           <div className="space-y-1">
-            {keywords.map(({ keyword, count }) => {
+            {(searchMode === "key" && search.trim()
+              ? keywords.filter(k => k.keyword.toLowerCase().includes(search.toLowerCase()))
+              : keywords
+            ).map(({ keyword, count }) => {
               const isOpen        = openKws.has(keyword);
               const isLoadingThis = loadingKws.has(keyword);
               const quotes        = cache[keyword];
