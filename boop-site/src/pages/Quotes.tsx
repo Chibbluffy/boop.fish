@@ -4,11 +4,17 @@ import { useAuth, getToken } from "../lib/auth";
 type KeywordRow = { keyword: string; count: number };
 type Quote = { id: string; nadeko_id: string | null; author_name: string | null; text: string };
 
-function looksLikeImage(text: string): boolean {
-  return /^https?:\/\//.test(text) && (
-    text.includes("cdn.discordapp.com") ||
-    /\.(png|jpe?g|gif|webp)(\?|$)/i.test(text)
-  );
+const IMAGE_EXTENSIONS = /\.(png|jpe?g|gif|webp|avif|bmp)$/i;
+const TRUSTED_IMAGE_HOSTS = new Set(["cdn.discordapp.com", "media.discordapp.net"]);
+
+function looksLikeImage(url: string): boolean {
+  if (!url.startsWith("https://")) return false;
+  try {
+    const { hostname, pathname } = new URL(url);
+    return TRUSTED_IMAGE_HOSTS.has(hostname) || IMAGE_EXTENSIONS.test(pathname);
+  } catch {
+    return false;
+  }
 }
 
 function QuoteImage({ src, refreshed }: { src: string; refreshed: string | undefined }) {
@@ -41,7 +47,7 @@ function CopyButton({ text }: { text: string }) {
     <button
       onClick={copy}
       title="Copy ID"
-      className="shrink-0 px-3 py-2.5 text-slate-700 hover:text-slate-300 transition-colors"
+      className="shrink-0 p-1 text-slate-600 hover:text-slate-300 transition-colors"
     >
       {copied ? (
         <svg className="w-3.5 h-3.5 text-green-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
@@ -335,26 +341,22 @@ export default function Quotes() {
                               const hasImg     = containsImage(quote.text);
                               return (
                                 <div key={quote.id}>
-                                  <div className="flex items-center">
-                                    <button
-                                      onClick={() => toggleQuote(quote.id)}
-                                      className="flex-1 flex items-center gap-3 px-10 py-2.5 hover:bg-slate-800/30 transition-colors text-left group"
-                                    >
-                                      <span className="text-slate-700 group-hover:text-slate-500 transition-colors">
-                                        <ChevronRight open={isExpanded} />
-                                      </span>
-                                      <span className="font-mono text-xs text-violet-400/70 w-14 shrink-0">
-                                        {quote.nadeko_id ?? "—"}
-                                      </span>
-                                      <span className="text-xs text-slate-400 flex-1">
-                                        {quote.author_name ?? <span className="italic text-slate-600">unknown</span>}
-                                      </span>
-                                      {hasImg && (
-                                        <span className="text-[10px] text-slate-700 shrink-0">img</span>
-                                      )}
-                                    </button>
-                                    {quote.nadeko_id && (
-                                      <CopyButton text={quote.nadeko_id} />
+                                  <div
+                                    onClick={() => toggleQuote(quote.id)}
+                                    className="flex items-center gap-3 px-10 py-2.5 hover:bg-slate-800/30 transition-colors cursor-pointer group"
+                                  >
+                                    <span className="text-slate-700 group-hover:text-slate-500 transition-colors">
+                                      <ChevronRight open={isExpanded} />
+                                    </span>
+                                    <span className="font-mono text-xs text-violet-400/70 shrink-0">
+                                      {quote.nadeko_id ?? "—"}
+                                    </span>
+                                    {quote.nadeko_id && <CopyButton text={quote.nadeko_id} />}
+                                    <span className="text-xs text-slate-400 flex-1">
+                                      {quote.author_name ?? <span className="italic text-slate-600">unknown</span>}
+                                    </span>
+                                    {hasImg && (
+                                      <span className="text-[10px] text-slate-700 shrink-0">img</span>
                                     )}
                                   </div>
 
