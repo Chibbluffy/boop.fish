@@ -344,56 +344,70 @@ export default function Archive() {
                 No results for &ldquo;{search}&rdquo;
               </div>
             ) : searchResults.map(({ keyword, quotes }) => {
+              const isOpen  = openKws.has(keyword);
               const allOpen = quotes.length > 0 && quotes.every(q => expandedQuotes.has(q.id));
               return (
                 <div key={keyword} className="rounded-xl overflow-hidden border border-slate-800/50">
-                  <div className="w-full flex items-center gap-3 px-4 py-3 bg-slate-900 text-left">
+                  <button
+                    onClick={() => toggleKeyword(keyword)}
+                    className="w-full flex items-center gap-3 px-4 py-3 bg-slate-900 hover:bg-slate-800/70 transition-colors text-left group"
+                  >
+                    <span className="text-slate-500 group-hover:text-slate-400 transition-colors">
+                      <ChevronRight open={isOpen} />
+                    </span>
                     <span className="font-mono text-sm font-semibold text-slate-200 flex-1 tracking-wide">
                       {keyword}
                     </span>
-                    <button
-                      onClick={() => toggleExpandAll(keyword)}
-                      className="text-xs text-slate-600 hover:text-slate-300 transition-colors"
-                    >
-                      {allOpen ? "Collapse all" : "Expand all"}
-                    </button>
                     <span className="text-[11px] font-bold px-2 py-0.5 rounded-full bg-slate-800 text-slate-500 border border-slate-700/50">
                       {quotes.length}
                     </span>
-                  </div>
-                  <div className="border-t border-slate-800/50 bg-slate-950/60 divide-y divide-slate-800/30">
-                    {quotes.map(quote => {
-                      const isExpanded = expandedQuotes.has(quote.id);
-                      const hasImg     = containsImage(quote.text);
-                      return (
-                        <div key={quote.id}>
-                          <div
-                            onClick={() => toggleQuote(quote.id)}
-                            className="flex items-center gap-3 px-10 py-2.5 hover:bg-slate-800/30 transition-colors cursor-pointer group"
-                          >
-                            <span className="text-slate-700 group-hover:text-slate-500 transition-colors">
-                              <ChevronRight open={isExpanded} />
-                            </span>
-                            <span className="font-mono text-xs text-violet-400/70 shrink-0">
-                              {quote.nadeko_id ?? "—"}
-                            </span>
-                            {quote.nadeko_id && <CopyButton text={quote.nadeko_id} />}
-                            <span className="text-xs text-slate-400 flex-1">
-                              {quote.author_name ?? <span className="italic text-slate-600">unknown</span>}
-                            </span>
-                            {hasImg && (
-                              <span className="text-[10px] text-slate-700 shrink-0">img</span>
-                            )}
-                          </div>
-                          {isExpanded && (
-                            <div className="px-16 pb-4 pt-1">
-                              {renderText(quote.text, userMap, urlMap)}
+                  </button>
+                  {isOpen && (
+                    <div className="border-t border-slate-800/50 bg-slate-950/60">
+                      <div className="px-10 py-2 flex items-center justify-between border-b border-slate-800/40">
+                        <span className="text-xs text-slate-700">{quotes.length} quote{quotes.length !== 1 ? "s" : ""}</span>
+                        <button
+                          onClick={() => toggleExpandAll(keyword)}
+                          className="text-xs text-slate-600 hover:text-slate-300 transition-colors"
+                        >
+                          {allOpen ? "Collapse all" : "Expand all"}
+                        </button>
+                      </div>
+                      <div className="divide-y divide-slate-800/30">
+                        {quotes.map(quote => {
+                          const isExpanded = expandedQuotes.has(quote.id);
+                          const hasImg     = containsImage(quote.text);
+                          return (
+                            <div key={quote.id}>
+                              <div
+                                onClick={() => toggleQuote(quote.id)}
+                                className="flex items-center gap-3 px-10 py-2.5 hover:bg-slate-800/30 transition-colors cursor-pointer group"
+                              >
+                                <span className="text-slate-700 group-hover:text-slate-500 transition-colors">
+                                  <ChevronRight open={isExpanded} />
+                                </span>
+                                <span className="font-mono text-xs text-violet-400/70 shrink-0">
+                                  {quote.nadeko_id ?? "—"}
+                                </span>
+                                {quote.nadeko_id && <CopyButton text={quote.nadeko_id} />}
+                                <span className="text-xs text-slate-400 flex-1">
+                                  {quote.author_name ?? <span className="italic text-slate-600">unknown</span>}
+                                </span>
+                                {hasImg && (
+                                  <span className="text-[10px] text-slate-700 shrink-0">img</span>
+                                )}
+                              </div>
+                              {isExpanded && (
+                                <div className="px-16 pb-4 pt-1">
+                                  {renderText(quote.text, userMap, urlMap)}
+                                </div>
+                              )}
                             </div>
-                          )}
-                        </div>
-                      );
-                    })}
-                  </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
                 </div>
               );
             })}
