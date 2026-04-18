@@ -65,30 +65,68 @@ function ChevronRight({ open }: { open: boolean }) {
   );
 }
 
-const MENTION_RE = /<@!?(\d+)>/g;
+// Splits on mentions and URLs so we can handle each segment type
+const SEGMENT_RE = /(<@!?\d+>|https?:\/\/\S+)/g;
 
 function extractMentionIds(texts: string[]): string[] {
   const ids = new Set<string>();
   for (const t of texts) {
-    for (const m of t.matchAll(MENTION_RE)) ids.add(m[1]);
+    for (const m of t.matchAll(/<@!?(\d+)>/g)) ids.add(m[1]);
   }
   return [...ids];
 }
 
-function renderText(text: string, userMap: Record<string, string>): React.ReactNode {
-  const parts = text.split(/(<@!?\d+>)/g);
-  return parts.map((part, i) => {
-    const match = part.match(/^<@!?(\d+)>$/);
-    if (match) {
-      const name = userMap[match[1]] ?? match[1];
-      return (
-        <span key={i} className="inline-block px-1 py-0.5 rounded bg-indigo-500/20 text-indigo-300 font-medium text-[0.8em]">
+function extractImageUrls(texts: string[]): string[] {
+  const urls = new Set<string>();
+  for (const t of texts) {
+    for (const m of t.matchAll(/https?:\/\/\S+/g)) {
+      if (looksLikeImage(m[0])) urls.add(m[0]);
+    }
+  }
+  return [...urls];
+}
+
+function containsImage(text: string): boolean {
+  return /https?:\/\/\S+/.test(text) && looksLikeImage(text.match(/https?:\/\/\S+/)?.[0] ?? "");
+}
+
+function renderText(text: string, userMap: Record<string, string>, urlMap: Record<string, string>): React.ReactNode {
+  const rawParts = text.split(SEGMENT_RE);
+  const blocks: React.ReactNode[] = [];
+  let inline: React.ReactNode[] = [];
+  let k = 0;
+
+  function flushInline() {
+    const trimmed = inline.filter(n => n !== "" && n != null);
+    if (trimmed.length) {
+      blocks.push(
+        <p key={k++} className="text-sm text-slate-300 whitespace-pre-wrap break-words leading-relaxed">
+          {trimmed}
+        </p>
+      );
+    }
+    inline = [];
+  }
+
+  for (const part of rawParts) {
+    const mention = part.match(/^<@!?(\d+)>$/);
+    if (mention) {
+      const name = userMap[mention[1]] ?? mention[1];
+      inline.push(
+        <span key={k++} className="inline-block px-1 py-0.5 rounded bg-indigo-500/20 text-indigo-300 font-medium text-[0.8em]">
           @{name}
         </span>
       );
+    } else if (/^https?:\/\//.test(part) && looksLikeImage(part)) {
+      flushInline();
+      blocks.push(<QuoteImage key={k++} src={part} refreshed={urlMap[part]} />);
+    } else if (part) {
+      inline.push(part);
     }
-    return part;
-  });
+  }
+  flushInline();
+
+  return <div className="flex flex-col gap-2">{blocks}</div>;
 }
 
 async function refreshImageUrls(urls: string[]): Promise<Record<string, string>> {
@@ -179,8 +217,8 @@ export default function Quotes() {
         setCache(prev => ({ ...prev, [keyword]: quotes }));
 
         // Batch-refresh image URLs and resolve user mentions in parallel
-        const texts     = quotes.map(q => q.text);
-        const imageUrls = texts.filter(looksLikeImage);
+        const texts      = quotes.map(q => q.text);
+        const imageUrls  = extractImageUrls(texts);
         const mentionIds = extractMentionIds(texts);
 
         await Promise.all([
@@ -294,7 +332,7 @@ export default function Quotes() {
                           <div className="divide-y divide-slate-800/30">
                             {quotes.map(quote => {
                               const isExpanded = expandedQuotes.has(quote.id);
-                              const isImg      = looksLikeImage(quote.text);
+                              const hasImg     = containsImage(quote.text);
                               return (
                                 <div key={quote.id}>
                                   <div className="flex items-center">
@@ -311,7 +349,7 @@ export default function Quotes() {
                                       <span className="text-xs text-slate-400 flex-1">
                                         {quote.author_name ?? <span className="italic text-slate-600">unknown</span>}
                                       </span>
-                                      {isImg && (
+                                      {hasImg && (
                                         <span className="text-[10px] text-slate-700 shrink-0">img</span>
                                       )}
                                     </button>
@@ -322,13 +360,7 @@ export default function Quotes() {
 
                                   {isExpanded && (
                                     <div className="px-16 pb-4 pt-1">
-                                      {isImg ? (
-                                        <QuoteImage src={quote.text} refreshed={urlMap[quote.text]} />
-                                      ) : (
-                                        <p className="text-sm text-slate-300 whitespace-pre-wrap break-words leading-relaxed">
-                                          {renderText(quote.text, userMap)}
-                                        </p>
-                                      )}
+                                      {renderText(quote.text, userMap, urlMap)}
                                     </div>
                                   )}
                                 </div>
