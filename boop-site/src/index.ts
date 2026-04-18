@@ -1324,6 +1324,54 @@ const server = serve({
       },
     },
 
+    "/api/quotes/search": {
+      async GET(req) {
+        const user = await authenticate(req);
+        if (!user) return err("Unauthorized", 401);
+
+        const q = new URL(req.url).searchParams.get("q")?.trim();
+        if (!q) return json([]);
+
+        const pattern = `%${q}%`;
+
+        // Find discord IDs whose username matches the query (for mention resolution)
+        const matchingUsers = await sql`
+          SELECT discord_id FROM users
+          WHERE discord_id IS NOT NULL
+            AND (discord_username ILIKE ${pattern} OR username ILIKE ${pattern})
+        `;
+        const matchingIds = matchingUsers.map((r: { discord_id: string }) => r.discord_id);
+
+        const rows = matchingIds.length > 0
+          ? await sql`
+              SELECT keyword, id, nadeko_id, author_name, text
+              FROM quotes
+              WHERE keyword ILIKE ${pattern}
+                 OR text ILIKE ${pattern}
+                 OR author_name ILIKE ${pattern}
+                 OR text ~ ${`<@!?(${matchingIds.join("|")})>`}
+              ORDER BY keyword ASC, created_at ASC
+            `
+          : await sql`
+              SELECT keyword, id, nadeko_id, author_name, text
+              FROM quotes
+              WHERE keyword ILIKE ${pattern}
+                 OR text ILIKE ${pattern}
+                 OR author_name ILIKE ${pattern}
+              ORDER BY keyword ASC, created_at ASC
+            `;
+
+        // Group by keyword
+        const groups: Record<string, { keyword: string; quotes: typeof rows }> = {};
+        for (const row of rows) {
+          if (!groups[row.keyword]) groups[row.keyword] = { keyword: row.keyword, quotes: [] };
+          groups[row.keyword].quotes.push(row);
+        }
+
+        return json(Object.values(groups));
+      },
+    },
+
     "/api/quotes/keyword/:keyword": {
       async GET(req) {
         const user = await authenticate(req);
