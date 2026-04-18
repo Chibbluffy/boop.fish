@@ -214,12 +214,6 @@ export default function Archive() {
           for (const group of data) next[group.keyword] = group.quotes;
           return next;
         });
-        // Auto-expand all matching quote rows
-        setExpandedQuotes(prev => {
-          const next = new Set(prev);
-          for (const group of data) for (const q of group.quotes) next.add(q.id);
-          return next;
-        });
 
         await Promise.all([
           imageUrls.length
