@@ -77,5 +77,38 @@ export function useAuth() {
     return () => window.removeEventListener(EVENT, handler);
   }, []);
 
+  // Validate stored token on mount — clears + redirects if session is no longer valid
+  useEffect(() => {
+    const token = getToken();
+    if (!token) return;
+    fetch("/api/auth/me", { headers: { Authorization: `Bearer ${token}` } })
+      .then(r => {
+        if (r.status === 401) {
+          clearSession();
+          location.hash = "#/auth";
+        }
+      })
+      .catch(() => {}); // network error — leave session alone, may be transient
+  }, []);
+
   return user;
+}
+
+/**
+ * Drop-in fetch wrapper that automatically attaches the auth token
+ * and clears the session + redirects to login on 401.
+ */
+export async function apiFetch(url: string, options?: RequestInit): Promise<Response> {
+  const res = await fetch(url, {
+    ...options,
+    headers: {
+      Authorization: `Bearer ${getToken() ?? ""}`,
+      ...options?.headers,
+    },
+  });
+  if (res.status === 401) {
+    clearSession();
+    location.hash = "#/auth";
+  }
+  return res;
 }

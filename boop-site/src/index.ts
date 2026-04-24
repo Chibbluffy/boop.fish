@@ -288,14 +288,6 @@ const server = serve({
       async GET(req) {
         const user = await authenticate(req);
         if (!user) return err("Unauthorized", 401);
-        return json({ user });
-      },
-    },
-
-    "/api/auth/me": {
-      async GET(req) {
-        const user = await authenticate(req);
-        if (!user) return err("Unauthorized", 401);
         const [full] = await sql`
           SELECT id, username, email, role, character_name, family_name, discord_name,
                  discord_id, discord_username, discord_avatar, ribbit_count, bdo_class,
