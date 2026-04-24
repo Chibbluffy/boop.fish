@@ -189,6 +189,7 @@ export default function GearLeaderboard() {
       ) : (
         <>
           <div className="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden">
+            <div className="overflow-x-auto">
             <table className="w-full">
               <thead className="border-b border-slate-800">
                 <tr>
@@ -253,6 +254,7 @@ export default function GearLeaderboard() {
                 ))}
               </tbody>
             </table>
+            </div>
           </div>
 
           {sorted.length > 25 && (
