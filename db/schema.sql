@@ -311,6 +311,33 @@ CREATE INDEX IF NOT EXISTS idx_quotes_keyword ON quotes(keyword);
 -- CREATE INDEX IF NOT EXISTS idx_quotes_keyword ON quotes(keyword);
 
 -- ============================================================
+-- FISHING
+-- ============================================================
+CREATE TABLE IF NOT EXISTS fishing_profile (
+  discord_id      TEXT PRIMARY KEY,
+  active_rod      TEXT NOT NULL DEFAULT 'rod_starter',
+  active_float    TEXT,
+  active_bait     TEXT,
+  mystical_active INTEGER NOT NULL DEFAULT 0
+);
+
+CREATE TABLE IF NOT EXISTS fishing_inventory (
+  discord_id TEXT    NOT NULL,
+  item_id    TEXT    NOT NULL,
+  quantity   INTEGER NOT NULL DEFAULT 0,
+  PRIMARY KEY (discord_id, item_id)
+);
+
+CREATE TABLE IF NOT EXISTS fish_records (
+  discord_id  TEXT        NOT NULL,
+  fish_name   TEXT        NOT NULL,
+  record_kg   REAL        NOT NULL,
+  catch_count INTEGER     NOT NULL DEFAULT 0,
+  caught_at   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  PRIMARY KEY (discord_id, fish_name)
+);
+
+-- ============================================================
 -- GRANTS  (run as superuser; replace 'boop' with your app user)
 -- ============================================================
 GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO boop;
