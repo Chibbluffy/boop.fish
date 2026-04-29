@@ -84,15 +84,14 @@ export default function Home() {
                   Frogs →
                 </a>
               ) : (
-                <a href="#/auth"
-                  className="px-6 py-3 rounded-xl bg-violet-600 hover:bg-violet-500 text-white font-black text-sm transition-all active:scale-95 shadow-lg shadow-violet-900/30">
-                  Join the Guild →
-                </a>
+                <div className="flex flex-col gap-2">
+                  <a href="#/auth"
+                    className="px-6 py-3 rounded-xl bg-violet-600 hover:bg-violet-500 text-white font-black text-sm transition-all active:scale-95 shadow-lg shadow-violet-900/30 inline-flex items-center gap-2">
+                    Login with Discord →
+                  </a>
+                  <p className="text-xs text-slate-500 pl-1">Members only — Discord login required</p>
+                </div>
               )}
-              <a href="#/wall"
-                className="px-6 py-3 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 font-semibold text-sm transition-all active:scale-95">
-                Wall of Shame
-              </a>
             </div>
           </div>
 
@@ -107,6 +106,42 @@ export default function Home() {
           </div>
         </div>
       </section>
+
+      {/* ── Member feature teaser (logged-out only) ── */}
+      {!user && (
+        <section className="max-w-7xl mx-auto px-6 pb-16">
+          <div className="border-t border-slate-800/60 pt-16">
+            <p className="text-xs font-bold text-slate-600 uppercase tracking-widest mb-3 text-center">
+              Members get access to
+            </p>
+            <p className="text-slate-500 text-sm text-center mb-10 max-w-sm mx-auto">
+              Log in with Discord to unlock guild tools, stats, and more.
+            </p>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 max-w-4xl mx-auto">
+              <div className="p-5 rounded-2xl border border-slate-800 bg-slate-900/40 flex flex-col gap-2">
+                <span className="text-lg">⚔️</span>
+                <p className="font-bold text-white text-sm">Gear Leaderboard</p>
+                <p className="text-xs text-slate-500 leading-relaxed">See how your gear score stacks up against other guild members.</p>
+              </div>
+              <div className="p-5 rounded-2xl border border-slate-800 bg-slate-900/40 flex flex-col gap-2">
+                <span className="text-lg">🕌</span>
+                <p className="font-bold text-white text-sm">Black Shrine</p>
+                <p className="text-xs text-slate-500 leading-relaxed">Sign up for Black Shrine runs and track your spots.</p>
+              </div>
+              <div className="p-5 rounded-2xl border border-slate-800 bg-slate-900/40 flex flex-col gap-2">
+                <span className="text-lg">📅</span>
+                <p className="font-bold text-white text-sm">Guild Calendar</p>
+                <p className="text-xs text-slate-500 leading-relaxed">Stay on top of guild events, node wars, and schedules.</p>
+              </div>
+              <div className="p-5 rounded-2xl border border-slate-800 bg-slate-900/40 flex flex-col gap-2">
+                <span className="text-lg">📋</span>
+                <p className="font-bold text-white text-sm">Callouts</p>
+                <p className="text-xs text-slate-500 leading-relaxed">Hall of Fame, Wall of Shame, and member submissions.</p>
+              </div>
+            </div>
+          </div>
+        </section>
+      )}
 
       {/* ── Announcements ── */}
       {all.length > 0 && (
