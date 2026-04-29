@@ -33,7 +33,7 @@ const NAV_GROUPS = [
   {
     key: "callouts",
     label: "Callouts",
-    memberOnly: false,
+    memberOnly: true,
     items: [
       { label: "Hall of Fame", href: "#/employee",    route: "employee",    officerOnly: false },
       { label: "Wall of Shame",href: "#/wall",        route: "wall",        officerOnly: false },
