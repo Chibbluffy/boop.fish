@@ -1218,23 +1218,22 @@ const server = serve({
         const user = await authenticate(req);
         if (!user || user.role === "pending") return err("Forbidden", 403);
 
-        const mine   = await sql`SELECT utc_slot FROM shrine_availability WHERE user_id = ${user.id}`;
-        const others = await sql`
-          SELECT sa.utc_slot,
-                 COALESCE(u.character_name, u.username) AS display_name
+        const mine    = await sql`SELECT utc_slot FROM shrine_availability WHERE user_id = ${user.id}`;
+        const members = await sql`
+          SELECT u.id,
+                 COALESCE(u.character_name, u.username) AS display_name,
+                 array_agg(sa.utc_slot ORDER BY sa.utc_slot) AS slots
           FROM   shrine_availability sa
           JOIN   users u ON u.id = sa.user_id
           WHERE  sa.user_id != ${user.id}
+          GROUP  BY u.id, u.character_name, u.username
+          ORDER  BY display_name
         `;
 
-        const counts: Record<number, number>   = {};
-        const names:  Record<number, string[]> = {};
-        for (const row of others) {
-          counts[row.utc_slot] = (counts[row.utc_slot] ?? 0) + 1;
-          names[row.utc_slot]  = [...(names[row.utc_slot] ?? []), row.display_name];
-        }
-
-        return json({ mine: mine.map(r => r.utc_slot), counts, names });
+        return json({
+          mine: mine.map(r => r.utc_slot),
+          members: members.map(r => ({ id: r.id, display_name: r.display_name, slots: r.slots })),
+        });
       },
 
       async PUT(req) {
