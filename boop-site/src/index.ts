@@ -1464,7 +1464,11 @@ const server = serve({
       async GET(req) {
         const user = await authenticate(req);
         if (!requireRole(user, "officer")) return err("Forbidden", 403);
-        return json(await sql`SELECT * FROM event_templates ORDER BY name`);
+        const rows = await sql`SELECT * FROM event_templates ORDER BY name`;
+        return json(rows.map(r => ({
+          ...r,
+          roles: Array.isArray(r.roles) ? r.roles : (r.roles ? JSON.parse(r.roles as string) : []),
+        })));
       },
       async POST(req) {
         const user = await authenticate(req);
@@ -1477,7 +1481,7 @@ const server = serve({
                   ${channel_id ?? null}, ${JSON.stringify(roles ?? [])}::jsonb, ${user!.id})
           RETURNING *
         `;
-        return json(t, 201);
+        return json({ ...t, roles: Array.isArray(t.roles) ? t.roles : (t.roles ? JSON.parse(t.roles as string) : []) }, 201);
       },
     },
 
@@ -1497,7 +1501,7 @@ const server = serve({
           WHERE id = ${req.params.id}
           RETURNING *
         `;
-        return json(updated);
+        return json({ ...updated, roles: Array.isArray(updated.roles) ? updated.roles : (updated.roles ? JSON.parse(updated.roles as string) : []) });
       },
       async DELETE(req) {
         const user = await authenticate(req);

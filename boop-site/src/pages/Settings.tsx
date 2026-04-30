@@ -735,7 +735,8 @@ function TemplatesSection() {
   function startEdit(t: EventTemplate) {
     setEditId(t.id);
     setForm({ name: t.name, description: t.description ?? "" });
-    setRoles(t.roles.map(r => ({ name: r.name, cap: r.cap != null ? String(r.cap) : "", emoji: r.emoji ?? "" })));
+    const safeRoles = Array.isArray(t.roles) ? t.roles : [];
+    setRoles(safeRoles.map(r => ({ name: r.name, cap: r.cap != null ? String(r.cap) : "", emoji: r.emoji ?? "" })));
   }
 
   function addRole() { setRoles(prev => [...prev, { name: "", cap: "", emoji: "" }]); }
@@ -845,7 +846,7 @@ function TemplatesSection() {
                   <p className="font-bold text-white">{t.name}</p>
                   {t.description && <p className="text-xs text-slate-400 mt-0.5">{t.description}</p>}
                   <div className="flex flex-wrap gap-1.5 mt-2">
-                    {t.roles.map((r, i) => (
+                    {(Array.isArray(t.roles) ? t.roles : []).map((r, i) => (
                       <span key={i} className="text-xs px-2 py-0.5 rounded-full bg-slate-800 text-slate-300 border border-slate-700">
                         {r.emoji && <span className="mr-1">{r.emoji}</span>}{r.name}{r.cap != null ? ` (${r.cap})` : ""}
                       </span>
