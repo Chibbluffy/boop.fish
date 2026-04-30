@@ -215,20 +215,25 @@ export default function ShrineAvailability() {
           </div>
         )}
 
-        {/* Legend */}
-        <div className="mb-5 flex items-center gap-5 text-xs text-slate-500 flex-wrap">
-          <span className="flex items-center gap-1.5">
-            <span className="w-3 h-3 rounded-sm bg-violet-700 inline-block" />
-            Your availability
-          </span>
-          <span className="flex items-center gap-1.5">
-            <span className="w-3 h-3 rounded-sm bg-teal-500/50 inline-block" />
-            Others available (brighter = more)
-          </span>
-          <span className="flex items-center gap-1.5">
-            <span className="w-3 h-3 rounded-sm bg-violet-500 ring-1 ring-inset ring-teal-400/50 inline-block" />
-            Overlap
-          </span>
+        {/* Legend + hint */}
+        <div className="mb-5 flex items-center justify-between flex-wrap gap-3">
+          <div className="flex items-center gap-5 text-xs text-slate-500 flex-wrap">
+            <span className="flex items-center gap-1.5">
+              <span className="w-3 h-3 rounded-sm bg-violet-700 inline-block" />
+              Your availability
+            </span>
+            <span className="flex items-center gap-1.5">
+              <span className="w-3 h-3 rounded-sm bg-teal-500/50 inline-block" />
+              Others available (brighter = more)
+            </span>
+            <span className="flex items-center gap-1.5">
+              <span className="w-3 h-3 rounded-sm bg-violet-500 ring-1 ring-inset ring-teal-400/50 inline-block" />
+              Overlap
+            </span>
+          </div>
+          <p className="text-xs text-slate-600">
+            Hover a teal cell to see who's available · Changes save automatically
+          </p>
         </div>
 
         {/* Grid */}
@@ -278,10 +283,6 @@ export default function ShrineAvailability() {
           </div>
         </div>
 
-        {/* Footer hint */}
-        <p className="mt-5 text-xs text-slate-600 text-center">
-          Hover over a teal cell to see who's available. Your changes save automatically.
-        </p>
 
       </div>
     </div>
