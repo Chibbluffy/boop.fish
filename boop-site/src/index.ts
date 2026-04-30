@@ -1486,7 +1486,7 @@ const server = serve({
         const user = await authenticate(req);
         if (!requireRole(user, "officer")) return err("Forbidden", 403);
         const { name, description, total_cap, channel_id, roles } = await req.json();
-        await sql`
+        const [updated] = await sql`
           UPDATE event_templates SET
             name        = COALESCE(${name        ?? null}, name),
             description = COALESCE(${description ?? null}, description),
@@ -1495,8 +1495,9 @@ const server = serve({
             roles       = COALESCE(${roles ? JSON.stringify(roles) : null}::jsonb, roles),
             updated_at  = NOW()
           WHERE id = ${req.params.id}
+          RETURNING *
         `;
-        return json({ ok: true });
+        return json(updated);
       },
       async DELETE(req) {
         const user = await authenticate(req);
@@ -1510,20 +1511,44 @@ const server = serve({
       async GET(req) {
         const user = await authenticate(req);
         if (!user || user.role === "pending") return err("Forbidden", 403);
-        return json(await sql`SELECT * FROM class_emojis ORDER BY class_name`);
+        const rows = await sql`SELECT class_name, emoji_id, emoji_name, animated FROM class_emojis`;
+        const result: Record<string, string> = {};
+        for (const r of rows) {
+          if (r.emoji_id && r.emoji_name) {
+            result[r.class_name] = `<${r.animated ? "a" : ""}:${r.emoji_name}:${r.emoji_id}>`;
+          } else if (r.emoji_name) {
+            result[r.class_name] = r.emoji_name;
+          }
+        }
+        return json(result);
       },
       async PUT(req) {
         const user = await authenticate(req);
         if (!requireRole(user, "officer")) return err("Forbidden", 403);
-        const { mappings } = await req.json();
-        for (const m of mappings as Array<{ class_name: string; emoji_id: string | null; emoji_name: string | null; animated: boolean }>) {
-          await sql`
-            INSERT INTO class_emojis (class_name, emoji_id, emoji_name, animated)
-            VALUES (${m.class_name}, ${m.emoji_id ?? null}, ${m.emoji_name ?? null}, ${m.animated ?? false})
-            ON CONFLICT (class_name) DO UPDATE SET
-              emoji_id = EXCLUDED.emoji_id, emoji_name = EXCLUDED.emoji_name,
-              animated = EXCLUDED.animated, updated_at = NOW()
-          `;
+        const emojis: Record<string, string> = await req.json();
+        for (const [className, value] of Object.entries(emojis)) {
+          if (!value?.trim()) {
+            await sql`DELETE FROM class_emojis WHERE class_name = ${className}`;
+            continue;
+          }
+          // Parse <a:name:id> or <:name:id> or plain emoji/text
+          const match = value.trim().match(/^<(a)?:([^:]+):(\d+)>$/);
+          if (match) {
+            const animated = !!match[1], name = match[2], id = match[3];
+            await sql`
+              INSERT INTO class_emojis (class_name, emoji_id, emoji_name, animated)
+              VALUES (${className}, ${id}, ${name}, ${animated})
+              ON CONFLICT (class_name) DO UPDATE SET
+                emoji_id = ${id}, emoji_name = ${name}, animated = ${animated}, updated_at = NOW()
+            `;
+          } else {
+            await sql`
+              INSERT INTO class_emojis (class_name, emoji_id, emoji_name, animated)
+              VALUES (${className}, NULL, ${value.trim()}, false)
+              ON CONFLICT (class_name) DO UPDATE SET
+                emoji_id = NULL, emoji_name = ${value.trim()}, animated = false, updated_at = NOW()
+            `;
+          }
         }
         return json({ ok: true });
       },

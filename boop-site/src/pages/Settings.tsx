@@ -778,7 +778,8 @@ function TemplatesSection() {
     if (editId === id) setEditId(null);
   }
 
-  const inp = "w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white placeholder-slate-600 focus:outline-none focus:border-violet-500 transition-colors";
+  const inp    = "w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white placeholder-slate-600 focus:outline-none focus:border-violet-500 transition-colors";
+  const roleInp = "bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white placeholder-slate-600 focus:outline-none focus:border-violet-500 transition-colors";
 
   return (
     <div>
@@ -809,10 +810,10 @@ function TemplatesSection() {
               <div className="flex flex-col gap-2">
                 {roles.map((r, i) => (
                   <div key={i} className="flex gap-2 items-center">
-                    <input value={r.name} onChange={e => patchRole(i, "name", e.target.value)} placeholder="Role name" className={`${inp} flex-[2]`} />
-                    <input value={r.cap} onChange={e => patchRole(i, "cap", e.target.value)} placeholder="Cap" type="number" min={0} className={`${inp} w-20`} />
-                    <input value={r.emoji} onChange={e => patchRole(i, "emoji", e.target.value)} placeholder="Emoji ID" className={`${inp} w-32`} />
-                    <button onClick={() => removeRole(i)} className="text-slate-600 hover:text-red-400 transition-colors text-lg leading-none px-1">×</button>
+                    <input value={r.name} onChange={e => patchRole(i, "name", e.target.value)} placeholder="Role name" className={`${roleInp} flex-1 min-w-0`} />
+                    <input value={r.cap} onChange={e => patchRole(i, "cap", e.target.value)} placeholder="Cap" type="number" min={0} className={`${roleInp} w-20`} />
+                    <input value={r.emoji} onChange={e => patchRole(i, "emoji", e.target.value)} placeholder="Emoji" className={`${roleInp} w-28`} />
+                    <button onClick={() => removeRole(i)} className="shrink-0 text-slate-600 hover:text-red-400 transition-colors text-lg leading-none px-1">×</button>
                   </div>
                 ))}
                 <button onClick={addRole} className="self-start text-xs text-violet-400 hover:text-violet-300 transition-colors">+ Add role</button>
