@@ -26,6 +26,7 @@ interface EventSignup {
   attended: boolean | null;
   attended_role: string | null;
   attended_class: string | null;
+  gear_score: number | null;
 }
 
 interface EventItem {
@@ -325,6 +326,30 @@ function EventForm({
   );
 }
 
+// Renders a string that may contain Discord emoji syntax like <a:name:id> or <:name:id>
+function EmojiText({ text }: { text: string }) {
+  const parts = text.split(/(<a?:[^:>]+:\d+>)/g);
+  return (
+    <>
+      {parts.map((part, i) => {
+        const m = part.match(/^<(a?):([^:>]+):(\d+)>$/);
+        if (m) {
+          const [, anim, name, id] = m;
+          return (
+            <img
+              key={i}
+              src={`https://cdn.discordapp.com/emojis/${id}.${anim ? "gif" : "webp"}?size=32`}
+              alt={name}
+              className="inline w-5 h-5 align-middle"
+            />
+          );
+        }
+        return <span key={i}>{part}</span>;
+      })}
+    </>
+  );
+}
+
 // ── Event Detail ──────────────────────────────────────────────────────────────
 function EventDetail({
   event, isOfficer, onBack, onRefresh,
@@ -334,20 +359,22 @@ function EventDetail({
   onBack: () => void;
   onRefresh: () => void;
 }) {
-  const [tab, setTab] = useState<"signups" | "attendance">("signups");
+  const [tab, setTab]         = useState<"signups" | "attendance">("signups");
   const [working, setWorking] = useState<string | null>(null);
+  const [draggingId, setDraggingId] = useState<string | null>(null);
+  const [dragOver, setDragOver]     = useState<string | null>(null);
 
   const accepted  = event.signups.filter(s => s.status === "accepted");
   const bench     = event.signups.filter(s => s.status === "bench");
   const tentative = event.signups.filter(s => s.status === "tentative");
   const absent    = event.signups.filter(s => s.status === "absent");
 
-  async function setStatus(id: string, status: SignupStatus) {
-    setWorking(id);
-    await apiFetch(`/api/events/${event.id}/signups/${id}`, {
+  async function moveSignup(signupId: string, role_id: string | null, role_name: string | null, status: SignupStatus) {
+    setWorking(signupId);
+    await apiFetch(`/api/events/${event.id}/signups/${signupId}/move`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ status }),
+      body: JSON.stringify({ role_id, role_name, status }),
     }).catch(() => {});
     onRefresh();
     setWorking(null);
@@ -381,21 +408,50 @@ function EventDetail({
     onRefresh();
   }
 
-  function SignupRow({ s, showControls }: { s: EventSignup; showControls: boolean }) {
+  function handleDrop(bucketKey: string, role_id: string | null, role_name: string | null, status: SignupStatus) {
+    setDragOver(null);
+    if (!draggingId) return;
+    const s = event.signups.find(x => x.id === draggingId);
+    if (!s) return;
+    // Skip if already in this bucket
+    if (s.status === status && s.role_id === role_id) return;
+    moveSignup(draggingId, role_id, role_name, status);
+    setDraggingId(null);
+  }
+
+  function dropProps(bucketKey: string, role_id: string | null, role_name: string | null, status: SignupStatus) {
+    if (!isOfficer) return {};
+    return {
+      onDragOver:  (e: React.DragEvent) => { e.preventDefault(); setDragOver(bucketKey); },
+      onDragLeave: (e: React.DragEvent) => { if (!e.currentTarget.contains(e.relatedTarget as Node)) setDragOver(null); },
+      onDrop:      (e: React.DragEvent) => { e.preventDefault(); handleDrop(bucketKey, role_id, role_name, status); },
+    };
+  }
+
+  function SignupRow({ s }: { s: EventSignup }) {
     const busy = working === s.id;
+    const isDragging = draggingId === s.id;
     return (
-      <div className={`flex items-center gap-3 py-1.5 px-3 rounded-lg text-sm ${busy ? "opacity-50" : ""}`}>
+      <div
+        draggable={isOfficer}
+        onDragStart={() => { setDraggingId(s.id); }}
+        onDragEnd={() => setDraggingId(null)}
+        className={`flex items-center gap-2 py-2 px-3 rounded-lg text-sm select-none
+          ${busy || isDragging ? "opacity-40" : ""}
+          ${isOfficer ? "cursor-grab active:cursor-grabbing" : ""}`}
+      >
+        {isOfficer && <span className="text-slate-700 text-xs shrink-0">⠿</span>}
         <span className="text-slate-600 text-xs w-5 text-right shrink-0">{s.signup_order}</span>
-        <span className="font-semibold text-white truncate flex-1">{s.discord_name}</span>
+        <span className="font-semibold text-white truncate flex-1 min-w-0">{s.discord_name}</span>
         {s.bdo_class && <span className="text-xs text-slate-400 shrink-0">{s.bdo_class}</span>}
-        {showControls && isOfficer && (
-          <div className="flex gap-1 shrink-0 ml-auto">
-            {s.status !== "bench"     && <button onClick={() => setStatus(s.id, "bench")}     className="text-[10px] px-1.5 py-0.5 rounded bg-slate-700 text-slate-400 hover:text-white">Bench</button>}
-            {s.status !== "tentative" && <button onClick={() => setStatus(s.id, "tentative")} className="text-[10px] px-1.5 py-0.5 rounded bg-slate-700 text-slate-400 hover:text-white">Tent.</button>}
-            {s.status !== "absent"    && <button onClick={() => setStatus(s.id, "absent")}    className="text-[10px] px-1.5 py-0.5 rounded bg-slate-700 text-slate-400 hover:text-white">Absent</button>}
-            {s.status !== "accepted"  && <button onClick={() => setStatus(s.id, "accepted")}  className="text-[10px] px-1.5 py-0.5 rounded bg-violet-700 text-violet-200 hover:bg-violet-600">Accept</button>}
-            <button onClick={() => removeSignup(s.id)} className="text-[10px] px-1.5 py-0.5 rounded bg-red-900/40 text-red-400 hover:bg-red-800/60">✕</button>
-          </div>
+        {s.gear_score != null && (
+          <span className="text-[10px] text-teal-500 font-bold shrink-0 tabular-nums">{s.gear_score} GS</span>
+        )}
+        {isOfficer && (
+          <button
+            onClick={() => removeSignup(s.id)}
+            className="shrink-0 text-[10px] px-1.5 py-0.5 rounded bg-red-900/30 text-red-500 hover:bg-red-800/60 transition-colors"
+          >✕</button>
         )}
       </div>
     );
@@ -407,6 +463,18 @@ function EventDetail({
     signups: accepted.filter(s => s.role_id === role.id),
   }));
   const noRole = accepted.filter(s => !s.role_id || !event.roles.find(r => r.id === s.role_id));
+
+  function BucketHeader({ emoji, name, count, cap }: { emoji?: string | null; name: string; count: number; cap?: number | null }) {
+    return (
+      <p className="text-xs font-black text-slate-400 uppercase tracking-widest mb-2 flex items-center gap-1.5">
+        {emoji && <EmojiText text={emoji} />}
+        {name}
+        <span className="font-normal text-slate-600">
+          ({count}{cap ? `/${cap}` : ""})
+        </span>
+      </p>
+    );
+  }
 
   return (
     <div>
@@ -458,58 +526,72 @@ function EventDetail({
 
       {/* Signups tab */}
       {tab === "signups" && (
-        <div className="flex flex-col gap-4">
-          {/* Role groups */}
-          {grouped.map(({ role, signups }) => (
-            <div key={role.id} className="bg-slate-900/40 border border-slate-800 rounded-2xl p-4">
-              <p className="text-xs font-black text-slate-400 uppercase tracking-widest mb-2">
-                {role.emoji && <span className="mr-1">{role.emoji}</span>}
-                {role.name}
-                {role.soft_cap && <span className="ml-1 font-normal text-slate-600">({signups.length}/{role.soft_cap})</span>}
-                {!role.soft_cap && <span className="ml-1 font-normal text-slate-600">({signups.length})</span>}
-              </p>
-              {signups.length === 0 ? (
-                <p className="text-slate-700 text-xs italic">No signups yet</p>
-              ) : signups.map(s => <SignupRow key={s.id} s={s} showControls />)}
-            </div>
-          ))}
-
-          {/* No-role accepted */}
-          {noRole.length > 0 && (
-            <div className="bg-slate-900/40 border border-slate-800 rounded-2xl p-4">
-              <p className="text-xs font-black text-slate-400 uppercase tracking-widest mb-2">No role assigned ({noRole.length})</p>
-              {noRole.map(s => <SignupRow key={s.id} s={s} showControls />)}
-            </div>
+        <>
+          {isOfficer && draggingId && (
+            <p className="text-xs text-violet-400 text-center mb-3 animate-pulse">Drag to a bucket to move</p>
           )}
+          <div className="flex flex-col gap-3">
+            {/* Role buckets */}
+            {grouped.map(({ role, signups: rs }) => {
+              const key = `role:${role.id}`;
+              const over = dragOver === key;
+              return (
+                <div
+                  key={role.id}
+                  {...dropProps(key, role.id, role.name, "accepted")}
+                  className={`rounded-2xl p-4 border transition-colors ${over
+                    ? "bg-violet-900/30 border-violet-500"
+                    : "bg-slate-900/40 border-slate-800"}`}
+                >
+                  <BucketHeader emoji={role.emoji} name={role.name} count={rs.length} cap={role.soft_cap} />
+                  {rs.length === 0
+                    ? <p className={`text-xs italic ${over ? "text-violet-400" : "text-slate-700"}`}>
+                        {over ? "Drop here" : "No signups yet"}
+                      </p>
+                    : rs.map(s => <SignupRow key={s.id} s={s} />)}
+                </div>
+              );
+            })}
 
-          {/* Bench */}
-          {bench.length > 0 && (
-            <div className="bg-slate-900/40 border border-slate-800 rounded-2xl p-4">
-              <p className="text-xs font-black text-slate-500 uppercase tracking-widest mb-2">Bench ({bench.length})</p>
-              {bench.map(s => <SignupRow key={s.id} s={s} showControls />)}
-            </div>
-          )}
+            {/* No-role accepted */}
+            {noRole.length > 0 && (
+              <div className="bg-slate-900/40 border border-slate-800 rounded-2xl p-4">
+                <BucketHeader name="No role assigned" count={noRole.length} />
+                {noRole.map(s => <SignupRow key={s.id} s={s} />)}
+              </div>
+            )}
 
-          {/* Tentative */}
-          {tentative.length > 0 && (
-            <div className="bg-slate-900/40 border border-slate-800 rounded-2xl p-4">
-              <p className="text-xs font-black text-slate-500 uppercase tracking-widest mb-2">Tentative ({tentative.length})</p>
-              {tentative.map(s => <SignupRow key={s.id} s={s} showControls />)}
-            </div>
-          )}
+            {/* Status buckets — always show when dragging so you can drop into them */}
+            {[
+              { key: "bench",     label: "Bench",     list: bench,     status: "bench"     as SignupStatus },
+              { key: "tentative", label: "Tentative", list: tentative, status: "tentative" as SignupStatus },
+              { key: "absent",    label: "Absent",    list: absent,    status: "absent"    as SignupStatus },
+            ].map(({ key, label, list, status }) => {
+              const over = dragOver === key;
+              if (list.length === 0 && !draggingId) return null;
+              return (
+                <div
+                  key={key}
+                  {...dropProps(key, null, null, status)}
+                  className={`rounded-2xl p-4 border transition-colors ${over
+                    ? "bg-slate-700/40 border-slate-500"
+                    : "bg-slate-900/40 border-slate-800"}`}
+                >
+                  <BucketHeader name={label} count={list.length} />
+                  {list.length === 0
+                    ? <p className={`text-xs italic ${over ? "text-slate-300" : "text-slate-700"}`}>
+                        {over ? "Drop here" : "Empty"}
+                      </p>
+                    : list.map(s => <SignupRow key={s.id} s={s} />)}
+                </div>
+              );
+            })}
 
-          {/* Absent */}
-          {absent.length > 0 && (
-            <div className="bg-slate-900/40 border border-slate-800 rounded-2xl p-4">
-              <p className="text-xs font-black text-slate-500 uppercase tracking-widest mb-2">Absent ({absent.length})</p>
-              {absent.map(s => <SignupRow key={s.id} s={s} showControls />)}
-            </div>
-          )}
-
-          {event.signups.length === 0 && (
-            <p className="text-slate-500 text-sm text-center py-12">No signups yet.</p>
-          )}
-        </div>
+            {event.signups.length === 0 && (
+              <p className="text-slate-500 text-sm text-center py-12">No signups yet.</p>
+            )}
+          </div>
+        </>
       )}
 
       {/* Attendance tab */}
@@ -521,22 +603,21 @@ function EventDetail({
           {event.signups.filter(s => s.status !== "absent").map(s => (
             <div key={s.id} className="grid grid-cols-[2rem_1fr_1fr_7rem_6rem] gap-3 items-center px-4 py-2.5 border-b border-slate-800/50 text-sm last:border-0">
               <span className="text-slate-600 text-xs">{s.signup_order}</span>
-              <span className="font-semibold text-white truncate">{s.discord_name}</span>
+              <div className="min-w-0">
+                <span className="font-semibold text-white truncate block">{s.discord_name}</span>
+                {s.gear_score != null && <span className="text-[10px] text-teal-500 font-bold tabular-nums">{s.gear_score} GS</span>}
+              </div>
               <span className="text-slate-400 text-xs truncate">{s.attended_class ?? s.bdo_class ?? "—"}</span>
               <span className="text-slate-400 text-xs truncate">{s.attended_role ?? s.role_name ?? "—"}</span>
               <div className="flex gap-2">
                 <button
                   onClick={() => markAttended(s.id, true)}
                   className={`text-xs px-2 py-0.5 rounded font-semibold transition-colors ${s.attended === true ? "bg-teal-600 text-white" : "bg-slate-800 text-slate-500 hover:text-white"}`}
-                >
-                  ✓
-                </button>
+                >✓</button>
                 <button
                   onClick={() => markAttended(s.id, false)}
                   className={`text-xs px-2 py-0.5 rounded font-semibold transition-colors ${s.attended === false ? "bg-red-700 text-white" : "bg-slate-800 text-slate-500 hover:text-white"}`}
-                >
-                  ✕
-                </button>
+                >✕</button>
               </div>
             </div>
           ))}

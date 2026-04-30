@@ -1344,8 +1344,17 @@ const server = serve({
           WHERE e.id = ${req.params.id}
         `;
         if (!event) return err("Not found", 404);
-        const roles   = await sql`SELECT * FROM event_roles   WHERE event_id = ${event.id} ORDER BY display_order`;
-        const signups = await sql`SELECT * FROM event_signups WHERE event_id = ${event.id} ORDER BY signup_order`;
+        const roles   = await sql`SELECT * FROM event_roles WHERE event_id = ${event.id} ORDER BY display_order`;
+        const signups = await sql`
+          SELECT es.*,
+            CASE WHEN u.gear_ap IS NOT NULL OR u.gear_aap IS NOT NULL OR u.gear_dp IS NOT NULL
+                 THEN GREATEST(COALESCE(u.gear_ap, 0), COALESCE(u.gear_aap, 0)) + COALESCE(u.gear_dp, 0)
+                 ELSE NULL END AS gear_score
+          FROM event_signups es
+          LEFT JOIN users u ON u.discord_id = es.discord_id
+          WHERE es.event_id = ${event.id}
+          ORDER BY es.signup_order
+        `;
         return json({ ...event, roles, signups });
       },
       async PATCH(req) {
@@ -1462,6 +1471,24 @@ const server = serve({
         const user  = isBot ? null : await authenticate(req);
         if (!isBot && !requireRole(user, "officer")) return err("Forbidden", 403);
         await sql`DELETE FROM event_signups WHERE id = ${req.params.signupId} AND event_id = ${req.params.id}`;
+        await sql`UPDATE events SET updated_at = NOW() WHERE id = ${req.params.id}`;
+        await sql`SELECT pg_notify('event_updated', ${req.params.id}::text)`;
+        return json({ ok: true });
+      },
+    },
+
+    "/api/events/:id/signups/:signupId/move": {
+      async PATCH(req) {
+        const user = await authenticate(req);
+        if (!requireRole(user, "officer")) return err("Forbidden", 403);
+        const { role_id, role_name, status } = await req.json();
+        await sql`
+          UPDATE event_signups SET
+            role_id   = ${role_id   ?? null},
+            role_name = ${role_name ?? null},
+            status    = ${status}
+          WHERE id = ${req.params.signupId} AND event_id = ${req.params.id}
+        `;
         await sql`UPDATE events SET updated_at = NOW() WHERE id = ${req.params.id}`;
         await sql`SELECT pg_notify('event_updated', ${req.params.id}::text)`;
         return json({ ok: true });
