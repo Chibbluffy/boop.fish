@@ -191,10 +191,6 @@ export default function ShrineAvailability() {
     const member = members.find(m => m.id === selectedId);
     const grid = Array.from({ length: 168 }, () => ({ mine: false, count: 0, names: [] as string[] }));
     if (!member) return grid;
-    for (const utcSlot of mySlots) {
-      const loc = utcToLocal[utcSlot];
-      if (loc) grid[loc.day * 24 + loc.hour].mine = true;
-    }
     for (const utcSlot of member.slots) {
       const loc = utcToLocal[utcSlot];
       if (loc) {
@@ -204,7 +200,7 @@ export default function ShrineAvailability() {
       }
     }
     return grid;
-  }, [selectedId, members, mySlots, utcToLocal]);
+  }, [selectedId, members, utcToLocal]);
 
   // ── Drag interaction ────────────────────────────────────────────────────────
   function toggleCell(day: number, hour: number, mode: "add" | "remove") {
@@ -436,22 +432,9 @@ export default function ShrineAvailability() {
 
             {selectedMember && (
               <>
-                <div className="mb-5 flex flex-col gap-2 text-xs text-slate-300">
-                  <p className="text-white text-sm font-semibold mb-1">
-                    {selectedMember.display_name}'s schedule — in your timezone
-                  </p>
-                  <div className="flex items-center gap-2">
-                    <span className="w-3 h-3 rounded-sm bg-teal-500/60 shrink-0 inline-block" />
-                    <span>{selectedMember.display_name} is free</span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <span className="w-3 h-3 rounded-sm bg-violet-700 shrink-0 inline-block" />
-                    <span>You are free (they are not)</span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <span className="w-3 h-3 rounded-sm bg-violet-500 ring-1 ring-inset ring-teal-400/50 shrink-0 inline-block" />
-                    <span>You are both free — potential overlap</span>
-                  </div>
+                <div className="mb-5 flex items-center gap-2 text-xs text-slate-300">
+                  <span className="w-3 h-3 rounded-sm bg-teal-500/60 shrink-0 inline-block" />
+                  <span>{selectedMember.display_name}'s available times — shown in your timezone</span>
                 </div>
                 <AvailGrid rows={memberGrid} />
               </>
