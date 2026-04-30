@@ -280,11 +280,11 @@ export default function ShrineAvailability() {
         {/* Header */}
         <div className="mb-6">
           <div className="flex items-center justify-between flex-wrap gap-3 mb-1">
-            <h1 className="text-2xl font-black text-white">Black Shrine Availabilities</h1>
+            <h1 className="text-2xl font-black text-white">General Availability</h1>
             {saving && <span className="text-xs text-slate-400 animate-pulse">Saving…</span>}
           </div>
           <p className="text-sm text-slate-300">
-            Mark when you're free each week.
+            A loose, general idea of when you're usually around each week — not a strict commitment.
             {user.timezone
               ? <> Times shown in <span className="text-slate-200">{user.timezone}</span>.</>
               : " Times shown in your browser's local timezone."}

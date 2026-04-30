@@ -13,7 +13,7 @@ const NAV_GROUPS = [
       { label: "Calendar",         href: "#/calendar",         route: "calendar",         officerOnly: false },
       { label: "Guild Directory",  href: "#/guild-directory",  route: "guild-directory",   officerOnly: false },
       { label: "Black Shrine",          href: "#/shrine",               route: "shrine",               officerOnly: false },
-      { label: "Shrine Availabilities", href: "#/shrine-availability",  route: "shrine-availability",  officerOnly: false },
+      { label: "General Availability",  href: "#/shrine-availability",  route: "shrine-availability",  officerOnly: false },
       { label: "Gear Leaderboard", href: "#/gear-leaderboard", route: "gear-leaderboard",  officerOnly: false },
       { label: "Nodewar",          href: "#/nodewar",          route: "nodewar",           officerOnly: false },
     ],
