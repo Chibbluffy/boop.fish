@@ -69,6 +69,52 @@ interface EventTemplate {
 }
 
 interface Channel { id: string; name: string; }
+interface GuildEmoji { id: string; name: string; animated: boolean; }
+
+function emojiUrl(e: GuildEmoji) {
+  return `https://cdn.discordapp.com/emojis/${e.id}.${e.animated ? "gif" : "webp"}?size=32`;
+}
+function emojiStr(e: GuildEmoji) {
+  return `<${e.animated ? "a" : ""}:${e.name}:${e.id}>`;
+}
+
+function EmojiSelect({ value, emojis, onChange, className }: {
+  value: string;
+  emojis: GuildEmoji[];
+  onChange: (val: string) => void;
+  className?: string;
+}) {
+  const curId = value.match(/:(\d+)>/)?.[1] ?? "";
+  const cur   = emojis.find(e => e.id === curId);
+
+  if (emojis.length === 0) {
+    return (
+      <input value={value} onChange={e => onChange(e.target.value)} placeholder="<:name:id>"
+        className={className ?? "bg-slate-800/60 border border-slate-700 text-white rounded-xl px-3 py-2 text-sm w-28 focus:outline-none focus:border-violet-500"} />
+    );
+  }
+
+  return (
+    <div className="flex items-center gap-1">
+      {cur
+        ? <img src={emojiUrl(cur)} alt={cur.name} className="w-6 h-6 object-contain shrink-0 rounded" />
+        : <span className="w-6 h-6 flex items-center justify-center text-slate-700 shrink-0">—</span>
+      }
+      <select
+        value={curId}
+        onChange={e => {
+          if (!e.target.value) { onChange(""); return; }
+          const picked = emojis.find(em => em.id === e.target.value);
+          if (picked) onChange(emojiStr(picked));
+        }}
+        className="bg-slate-800/60 border border-slate-700 text-white rounded-xl px-2 py-2 text-sm w-32 focus:outline-none focus:border-violet-500"
+      >
+        <option value="">— none —</option>
+        {emojis.map(e => <option key={e.id} value={e.id}>{e.animated ? "[GIF] " : ""}{e.name}</option>)}
+      </select>
+    </div>
+  );
+}
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 function fmtDate(d: string) {
@@ -101,11 +147,12 @@ function blankForm() {
 
 // ── Event Form ────────────────────────────────────────────────────────────────
 function EventForm({
-  initial, templates, channels, onSave, onPublish, onCancel,
+  initial, templates, channels, guildEmojis, onSave, onPublish, onCancel,
 }: {
   initial?: EventDetail | EventItem;
   templates: EventTemplate[];
   channels: Channel[];
+  guildEmojis: GuildEmoji[];
   onSave: (data: ReturnType<typeof blankForm>, publish: boolean) => Promise<void>;
   onPublish?: () => Promise<void>;
   onCancel: () => void;
@@ -238,7 +285,7 @@ function EventForm({
             {form.roles.map((r, i) => (
               <div key={i} className="flex items-center gap-2">
                 <input className={`${inp} flex-1`} placeholder="Role name (e.g. Offense)" value={r.name} onChange={e => updateRole(i, "name", e.target.value)} />
-                <input className="bg-slate-800/60 border border-slate-700 text-white rounded-xl px-3 py-2 text-sm w-20 focus:outline-none focus:border-violet-500" placeholder="Emoji" value={r.emoji} onChange={e => updateRole(i, "emoji", e.target.value)} />
+                <EmojiSelect value={r.emoji} emojis={guildEmojis} onChange={v => updateRole(i, "emoji", v)} />
                 <input type="number" min="0" className="bg-slate-800/60 border border-slate-700 text-white rounded-xl px-3 py-2 text-sm w-20 focus:outline-none focus:border-violet-500" placeholder="Cap" value={r.soft_cap} onChange={e => updateRole(i, "soft_cap", e.target.value)} />
                 <button onClick={() => removeRole(i)} className="text-slate-600 hover:text-red-400 transition-colors text-sm px-1">✕</button>
               </div>
@@ -505,7 +552,7 @@ function EventDetail({
 // ── Templates Section ─────────────────────────────────────────────────────────
 type TplRoleEntry = { name: string; soft_cap: string; emoji: string };
 
-function TemplatesSection({ channels }: { channels: Channel[] }) {
+function TemplatesSection({ channels, guildEmojis }: { channels: Channel[]; guildEmojis: GuildEmoji[] }) {
   const [templates, setTemplates] = useState<EventTemplate[]>([]);
   const [loading, setLoading]     = useState(true);
   const [editId, setEditId]       = useState<string | null>(null);
@@ -627,7 +674,7 @@ function TemplatesSection({ channels }: { channels: Channel[] }) {
                   <div key={i} className="flex gap-2 items-center">
                     <input value={r.name} onChange={e => patchRole(i, "name", e.target.value)} placeholder="Role name" className={`${rinp} flex-1 min-w-0`} />
                     <input value={r.soft_cap} onChange={e => patchRole(i, "soft_cap", e.target.value)} placeholder="Cap" type="number" min={0} className={`${rinp} w-20`} />
-                    <input value={r.emoji} onChange={e => patchRole(i, "emoji", e.target.value)} placeholder="Emoji" className={`${rinp} w-28`} />
+                    <EmojiSelect value={r.emoji} emojis={guildEmojis} onChange={v => patchRole(i, "emoji", v)} />
                     <button onClick={() => removeRole(i)} className="shrink-0 text-slate-600 hover:text-red-400 transition-colors text-lg leading-none px-1">×</button>
                   </div>
                 ))}
@@ -688,9 +735,10 @@ export default function Events() {
   const [events, setEvents]       = useState<EventItem[]>([]);
   const [detail, setDetail]       = useState<EventDetail | null>(null);
   const [editing, setEditing]     = useState<EventDetail | EventItem | null>(null);
-  const [templates, setTemplates] = useState<EventTemplate[]>([]);
-  const [channels, setChannels]   = useState<Channel[]>([]);
-  const [loading, setLoading]     = useState(true);
+  const [templates, setTemplates]   = useState<EventTemplate[]>([]);
+  const [channels, setChannels]     = useState<Channel[]>([]);
+  const [guildEmojis, setGuildEmojis] = useState<GuildEmoji[]>([]);
+  const [loading, setLoading]       = useState(true);
   const [filter, setFilter]       = useState<"upcoming" | "all" | "closed">("upcoming");
 
   const loadEvents = useCallback(async () => {
@@ -705,6 +753,9 @@ export default function Events() {
     if (isOfficer) {
       apiFetch("/api/event-templates").then(r => r.json()).then(setTemplates).catch(() => {});
       apiFetch("/api/discord/channels").then(r => r.json()).then(setChannels).catch(() => {});
+      apiFetch("/api/discord/emojis").then(r => r.json()).then(d => {
+        setGuildEmojis((Array.isArray(d) ? d : []).filter((e: any) => e.id && e.name).sort((a: GuildEmoji, b: GuildEmoji) => a.name.localeCompare(b.name)));
+      }).catch(() => {});
     }
   }, [user, isOfficer, loadEvents]);
 
@@ -805,7 +856,7 @@ export default function Events() {
 
         {/* ── Templates tab ── */}
         {isOfficer && mainTab === "templates" && view === "list" && (
-          <TemplatesSection channels={channels} />
+          <TemplatesSection channels={channels} guildEmojis={guildEmojis} />
         )}
 
         {/* ── Events tab ── */}
@@ -875,6 +926,7 @@ export default function Events() {
                   initial={editing ?? undefined}
                   templates={templates}
                   channels={channels}
+                  guildEmojis={guildEmojis}
                   onSave={saveForm}
                   onCancel={() => { setView("list"); setEditing(null); }}
                 />
