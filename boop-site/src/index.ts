@@ -1291,13 +1291,13 @@ const server = serve({
       async POST(req) {
         const user = await authenticate(req);
         if (!requireRole(user, "officer")) return err("Forbidden", 403);
-        const { title, description, event_date, event_time, total_cap, channel_id, status, roles } = await req.json();
+        const { title, description, event_date, event_time, event_timezone, total_cap, channel_id, status, roles } = await req.json();
         if (!title?.trim() || !event_date || !event_time) return err("title, event_date, and event_time are required");
         const eventStatus = status === "active" ? "active" : "draft";
         const [event] = await sql`
-          INSERT INTO events (title, description, event_date, event_time, total_cap, channel_id, status, created_by)
+          INSERT INTO events (title, description, event_date, event_time, event_timezone, total_cap, channel_id, status, created_by)
           VALUES (${title.trim()}, ${description ?? null}, ${event_date}, ${event_time},
-                  ${total_cap ?? 25}, ${channel_id ?? null}, ${eventStatus}, ${user!.id})
+                  ${event_timezone ?? null}, ${total_cap ?? 25}, ${channel_id ?? null}, ${eventStatus}, ${user!.id})
           RETURNING *
         `;
         if (Array.isArray(roles)) {
@@ -1354,17 +1354,18 @@ const server = serve({
           await sql`UPDATE events SET message_id = ${body.message_id}, updated_at = NOW() WHERE id = ${req.params.id}`;
           return json({ ok: true });
         }
-        const { title, description, event_date, event_time, total_cap, channel_id, status, roles } = body;
+        const { title, description, event_date, event_time, event_timezone, total_cap, channel_id, status, roles } = body;
         await sql`
           UPDATE events SET
-            title       = COALESCE(${title       ?? null}, title),
-            description = COALESCE(${description ?? null}, description),
-            event_date  = COALESCE(${event_date  ?? null}::date, event_date),
-            event_time  = COALESCE(${event_time  ?? null}::time, event_time),
-            total_cap   = COALESCE(${total_cap   ?? null}, total_cap),
-            channel_id  = COALESCE(${channel_id  ?? null}, channel_id),
-            status      = COALESCE(${status      ?? null}, status),
-            updated_at  = NOW()
+            title          = COALESCE(${title          ?? null}, title),
+            description    = COALESCE(${description    ?? null}, description),
+            event_date     = COALESCE(${event_date     ?? null}::date, event_date),
+            event_time     = COALESCE(${event_time     ?? null}::time, event_time),
+            event_timezone = COALESCE(${event_timezone ?? null}, event_timezone),
+            total_cap      = COALESCE(${total_cap      ?? null}, total_cap),
+            channel_id     = COALESCE(${channel_id     ?? null}, channel_id),
+            status         = COALESCE(${status         ?? null}, status),
+            updated_at     = NOW()
           WHERE id = ${req.params.id}
         `;
         if (Array.isArray(roles)) {
@@ -1579,7 +1580,7 @@ const server = serve({
       async GET(req) {
         const user = await authenticate(req);
         if (!requireRole(user, "officer")) return err("Forbidden", 403);
-        const guildId = process.env.DISCORD_GUILD_ID;
+        const guildId = process.env.DISCORD_CLASS_EMOJI_GUILD_ID ?? process.env.DISCORD_GUILD_ID;
         const token   = process.env.DISCORD_BOT_TOKEN;
         if (!guildId || !token) return err("Discord bot token not configured", 500);
         const res = await fetch(`https://discord.com/api/v10/guilds/${guildId}/emojis`, {

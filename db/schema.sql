@@ -309,9 +309,10 @@ CREATE TABLE IF NOT EXISTS events (
   id           UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
   title        TEXT        NOT NULL,
   description  TEXT,
-  event_date   DATE        NOT NULL,
-  event_time   TIME        NOT NULL,
-  total_cap    INTEGER     NOT NULL DEFAULT 25,
+  event_date     DATE        NOT NULL,
+  event_time     TIME        NOT NULL,
+  event_timezone VARCHAR(50),
+  total_cap      INTEGER     NOT NULL DEFAULT 25,
   channel_id   VARCHAR(20),
   message_id   VARCHAR(20),
   status       VARCHAR(20) NOT NULL DEFAULT 'draft'
