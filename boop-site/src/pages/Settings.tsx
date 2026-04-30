@@ -5,7 +5,7 @@ import GuildDirectory from "./GuildDirectory";
 import PayoutTracker from "./PayoutTracker";
 import { TIMEZONES } from "../lib/timezones";
 
-type SectionId = "members" | "roster" | "announcements" | "wall" | "shrine" | "directory" | "payout";
+type SectionId = "members" | "roster" | "announcements" | "wall" | "shrine" | "directory" | "payout" | "templates" | "class-emojis";
 
 const SIDEBAR = [
   {
@@ -28,6 +28,13 @@ const SIDEBAR = [
     items: [
       { id: "shrine" as SectionId, label: "Black Shrine",    icon: "⛩️", desc: "Team builder" },
       { id: "payout" as SectionId, label: "Payout Tracker",  icon: "💰", desc: "Tier management" },
+    ],
+  },
+  {
+    group: "Events",
+    items: [
+      { id: "templates"    as SectionId, label: "Event Templates", icon: "📋", desc: "Reusable event presets" },
+      { id: "class-emojis" as SectionId, label: "Class Emojis",    icon: "🎭", desc: "Discord emoji mapping" },
     ],
   },
 ];
@@ -698,9 +705,233 @@ function RosterSection() {
   );
 }
 
+// ── Event Templates section ───────────────────────────────────────────────────
+
+type EventTemplate = {
+  id: string; name: string; description: string | null;
+  roles: Array<{ name: string; cap: number | null; emoji: string | null }>;
+  created_at: string;
+};
+
+function TemplatesSection() {
+  const [templates, setTemplates] = useState<EventTemplate[]>([]);
+  const [loading, setLoading]     = useState(true);
+  const [editId, setEditId]       = useState<string | null>(null);
+  const [form, setForm]           = useState({ name: "", description: "" });
+  const [roles, setRoles]         = useState<Array<{ name: string; cap: string; emoji: string }>>([]);
+  const [saving, setSaving]       = useState(false);
+
+  useEffect(() => {
+    fetch("/api/event-templates", { headers: authH() })
+      .then(r => r.json()).then(d => { setTemplates(d); setLoading(false); }).catch(() => setLoading(false));
+  }, []);
+
+  function startNew() {
+    setEditId("new");
+    setForm({ name: "", description: "" });
+    setRoles([{ name: "Main", cap: "", emoji: "" }]);
+  }
+
+  function startEdit(t: EventTemplate) {
+    setEditId(t.id);
+    setForm({ name: t.name, description: t.description ?? "" });
+    setRoles(t.roles.map(r => ({ name: r.name, cap: r.cap != null ? String(r.cap) : "", emoji: r.emoji ?? "" })));
+  }
+
+  function addRole() { setRoles(prev => [...prev, { name: "", cap: "", emoji: "" }]); }
+  function removeRole(i: number) { setRoles(prev => prev.filter((_, idx) => idx !== i)); }
+  function patchRole(i: number, field: string, val: string) {
+    setRoles(prev => prev.map((r, idx) => idx === i ? { ...r, [field]: val } : r));
+  }
+
+  async function save() {
+    if (!form.name.trim()) return;
+    setSaving(true);
+    const payload = {
+      name: form.name.trim(),
+      description: form.description.trim() || null,
+      roles: roles.filter(r => r.name.trim()).map(r => ({
+        name: r.name.trim(),
+        cap: r.cap ? parseInt(r.cap) : null,
+        emoji: r.emoji.trim() || null,
+      })),
+    };
+    const isNew = editId === "new";
+    const res = await fetch(isNew ? "/api/event-templates" : `/api/event-templates/${editId}`, {
+      method: isNew ? "POST" : "PATCH",
+      headers: { "Content-Type": "application/json", ...authH() },
+      body: JSON.stringify(payload),
+    });
+    if (res.ok) {
+      const row = await res.json();
+      if (isNew) setTemplates(prev => [...prev, row]);
+      else setTemplates(prev => prev.map(t => t.id === editId ? row : t));
+      setEditId(null);
+    }
+    setSaving(false);
+  }
+
+  async function remove(id: string) {
+    if (!confirm("Delete this template?")) return;
+    await fetch(`/api/event-templates/${id}`, { method: "DELETE", headers: authH() });
+    setTemplates(prev => prev.filter(t => t.id !== id));
+    if (editId === id) setEditId(null);
+  }
+
+  const inp = "w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white placeholder-slate-600 focus:outline-none focus:border-violet-500 transition-colors";
+
+  return (
+    <div>
+      <div className="flex items-start justify-between mb-6">
+        <div>
+          <h2 className="text-2xl font-black text-white">Event Templates</h2>
+          <p className="text-slate-500 text-sm mt-0.5">Reusable role configurations for quick event creation.</p>
+        </div>
+        {editId === null && (
+          <button onClick={startNew}
+            className="px-4 py-2 rounded-lg bg-violet-600 hover:bg-violet-500 text-white font-bold text-sm transition-colors">
+            + New Template
+          </button>
+        )}
+      </div>
+
+      {editId !== null && (
+        <div className="bg-slate-900/60 border border-slate-800 rounded-2xl p-5 mb-6">
+          <h3 className="font-black text-white mb-4 text-sm uppercase tracking-widest text-slate-400">
+            {editId === "new" ? "New Template" : "Edit Template"}
+          </h3>
+          <div className="flex flex-col gap-3">
+            <input value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} placeholder="Template name" className={inp} />
+            <input value={form.description} onChange={e => setForm(f => ({ ...f, description: e.target.value }))} placeholder="Description (optional)" className={inp} />
+
+            <div>
+              <p className="text-xs font-semibold text-slate-400 uppercase tracking-widest mb-2">Roles</p>
+              <div className="flex flex-col gap-2">
+                {roles.map((r, i) => (
+                  <div key={i} className="flex gap-2 items-center">
+                    <input value={r.name} onChange={e => patchRole(i, "name", e.target.value)} placeholder="Role name" className={`${inp} flex-[2]`} />
+                    <input value={r.cap} onChange={e => patchRole(i, "cap", e.target.value)} placeholder="Cap" type="number" min={0} className={`${inp} w-20`} />
+                    <input value={r.emoji} onChange={e => patchRole(i, "emoji", e.target.value)} placeholder="Emoji ID" className={`${inp} w-32`} />
+                    <button onClick={() => removeRole(i)} className="text-slate-600 hover:text-red-400 transition-colors text-lg leading-none px-1">×</button>
+                  </div>
+                ))}
+                <button onClick={addRole} className="self-start text-xs text-violet-400 hover:text-violet-300 transition-colors">+ Add role</button>
+              </div>
+            </div>
+
+            <div className="flex gap-2 mt-1">
+              <button onClick={save} disabled={!form.name.trim() || saving}
+                className="px-5 py-2 rounded-lg bg-violet-600 hover:bg-violet-500 disabled:opacity-30 text-white font-bold text-sm transition-colors">
+                {saving ? "Saving…" : "Save"}
+              </button>
+              <button onClick={() => setEditId(null)}
+                className="px-4 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 text-sm transition-colors">
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {loading ? <p className="text-slate-500 text-center py-12">Loading…</p> : templates.length === 0 ? (
+        <p className="text-slate-600 text-center py-12">No templates yet.</p>
+      ) : (
+        <div className="flex flex-col gap-3">
+          {templates.map(t => (
+            <div key={t.id} className="bg-slate-900/60 border border-slate-800 rounded-xl p-4">
+              <div className="flex items-start justify-between gap-3">
+                <div className="flex-1 min-w-0">
+                  <p className="font-bold text-white">{t.name}</p>
+                  {t.description && <p className="text-xs text-slate-400 mt-0.5">{t.description}</p>}
+                  <div className="flex flex-wrap gap-1.5 mt-2">
+                    {t.roles.map((r, i) => (
+                      <span key={i} className="text-xs px-2 py-0.5 rounded-full bg-slate-800 text-slate-300 border border-slate-700">
+                        {r.emoji && <span className="mr-1">{r.emoji}</span>}{r.name}{r.cap != null ? ` (${r.cap})` : ""}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+                <div className="shrink-0 flex gap-1">
+                  <button onClick={() => startEdit(t)} className="px-2.5 py-1.5 rounded-lg text-xs text-slate-500 hover:text-white hover:bg-slate-800 transition-colors">Edit</button>
+                  <button onClick={() => remove(t.id)} className="px-2.5 py-1.5 rounded-lg text-xs text-slate-700 hover:text-red-400 hover:bg-slate-800 transition-colors">Delete</button>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Class Emojis section ──────────────────────────────────────────────────────
+
+const BDO_CLASSES = [
+  "Warrior","Sorceress","Ranger","Berserker","Tamer","Musa","Maehwa",
+  "Valkyrie","Kunoichi","Ninja","Wizard","Witch","Dark Knight","Striker",
+  "Mystic","Lahn","Archer","Shai","Guardian","Hashashin","Nova","Sage",
+  "Corsair","Drakania","Woosa","Maegu","Scholar","Dosa","Deadeye","Legionary","Spiritborn",
+];
+
+function ClassEmojisSection() {
+  const [emojis, setEmojis]   = useState<Record<string, string>>({});
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving]   = useState(false);
+  const [saved, setSaved]     = useState(false);
+
+  useEffect(() => {
+    fetch("/api/class-emojis", { headers: authH() })
+      .then(r => r.json()).then(d => { setEmojis(d); setLoading(false); }).catch(() => setLoading(false));
+  }, []);
+
+  async function saveAll() {
+    setSaving(true);
+    const res = await fetch("/api/class-emojis", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json", ...authH() },
+      body: JSON.stringify(emojis),
+    });
+    if (res.ok) { setSaved(true); setTimeout(() => setSaved(false), 1500); }
+    setSaving(false);
+  }
+
+  const inp = "w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white placeholder-slate-600 focus:outline-none focus:border-violet-500 transition-colors font-mono";
+
+  return (
+    <div>
+      <div className="flex items-start justify-between mb-6">
+        <div>
+          <h2 className="text-2xl font-black text-white">Class Emojis</h2>
+          <p className="text-slate-500 text-sm mt-0.5">Map BDO classes to Discord emoji IDs shown in event embeds.</p>
+        </div>
+        <button onClick={saveAll} disabled={saving}
+          className={`px-4 py-2 rounded-lg font-bold text-sm transition-colors ${saved ? "bg-green-600/20 text-green-400 border border-green-500/30" : "bg-violet-600 hover:bg-violet-500 disabled:opacity-30 text-white"}`}>
+          {saving ? "Saving…" : saved ? "Saved ✓" : "Save All"}
+        </button>
+      </div>
+
+      {loading ? <p className="text-slate-500 text-center py-12">Loading…</p> : (
+        <div className="grid grid-cols-2 gap-3">
+          {BDO_CLASSES.map(cls => (
+            <div key={cls} className="flex items-center gap-3">
+              <span className="text-sm text-slate-300 w-32 shrink-0">{cls}</span>
+              <input
+                value={emojis[cls] ?? ""}
+                onChange={e => setEmojis(prev => ({ ...prev, [cls]: e.target.value }))}
+                placeholder="<:name:id> or emoji"
+                className={inp}
+              />
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── Main Settings page ────────────────────────────────────────────────────────
 
-const VALID_SECTIONS: SectionId[] = ["members", "roster", "announcements", "wall", "shrine", "directory", "payout"];
+const VALID_SECTIONS: SectionId[] = ["members", "roster", "announcements", "wall", "shrine", "directory", "payout", "templates", "class-emojis"];
 
 function getSectionFromHash(): SectionId {
   const sub = location.hash.replace(/^#\/?/, "").split("/")[1] ?? "";
@@ -779,6 +1010,8 @@ export default function Settings() {
         {section === "shrine"        && <ShrineSection />}
         {section === "directory"     && <GuildDirectory />}
         {section === "payout"        && <PayoutTracker />}
+        {section === "templates"     && <TemplatesSection />}
+        {section === "class-emojis"  && <ClassEmojisSection />}
       </div>
     </div>
   );

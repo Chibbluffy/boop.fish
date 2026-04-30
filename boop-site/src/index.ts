@@ -1268,6 +1268,298 @@ const server = serve({
       },
     },
 
+    // ── Events ───────────────────────────────────────────────────────────────
+
+    "/api/events": {
+      async GET(req) {
+        const user = await authenticate(req);
+        if (!user || user.role === "pending") return err("Forbidden", 403);
+        const rows = await sql`
+          SELECT e.*, u.username AS created_by_name,
+            COUNT(es.id) FILTER (WHERE es.status = 'accepted')  AS accepted_count,
+            COUNT(es.id) FILTER (WHERE es.status = 'bench')     AS bench_count,
+            COUNT(es.id) FILTER (WHERE es.status = 'tentative') AS tentative_count,
+            COUNT(es.id) FILTER (WHERE es.status = 'absent')    AS absent_count
+          FROM events e
+          LEFT JOIN users u ON u.id = e.created_by
+          LEFT JOIN event_signups es ON es.event_id = e.id
+          GROUP BY e.id, u.username
+          ORDER BY e.event_date DESC, e.event_time DESC
+        `;
+        return json(rows);
+      },
+      async POST(req) {
+        const user = await authenticate(req);
+        if (!requireRole(user, "officer")) return err("Forbidden", 403);
+        const { title, description, event_date, event_time, total_cap, channel_id, roles } = await req.json();
+        if (!title?.trim() || !event_date || !event_time) return err("title, event_date, and event_time are required");
+        const [event] = await sql`
+          INSERT INTO events (title, description, event_date, event_time, total_cap, channel_id, created_by)
+          VALUES (${title.trim()}, ${description ?? null}, ${event_date}, ${event_time},
+                  ${total_cap ?? 25}, ${channel_id ?? null}, ${user!.id})
+          RETURNING *
+        `;
+        if (Array.isArray(roles)) {
+          for (let i = 0; i < roles.length; i++) {
+            const r = roles[i];
+            await sql`
+              INSERT INTO event_roles (event_id, name, emoji, soft_cap, display_order)
+              VALUES (${event.id}, ${r.name}, ${r.emoji ?? null}, ${r.soft_cap ?? null}, ${i})
+            `;
+          }
+        }
+        return json(event, 201);
+      },
+    },
+
+    "/api/events/bot-pending": {
+      async GET(req) {
+        if (req.headers.get("Authorization") !== `Bot ${process.env.DISCORD_BOT_TOKEN}`) return err("Forbidden", 403);
+        const rows = await sql`
+          SELECT e.*,
+            COALESCE(json_agg(json_build_object(
+              'id', er.id, 'name', er.name, 'emoji', er.emoji,
+              'soft_cap', er.soft_cap, 'display_order', er.display_order
+            ) ORDER BY er.display_order) FILTER (WHERE er.id IS NOT NULL), '[]') AS roles
+          FROM events e
+          LEFT JOIN event_roles er ON er.event_id = e.id
+          WHERE e.status = 'active' AND e.message_id IS NULL
+          GROUP BY e.id
+        `;
+        return json(rows);
+      },
+    },
+
+    "/api/events/:id": {
+      async GET(req) {
+        const user = await authenticate(req);
+        if (!user || user.role === "pending") return err("Forbidden", 403);
+        const [event] = await sql`
+          SELECT e.*, u.username AS created_by_name
+          FROM events e LEFT JOIN users u ON u.id = e.created_by
+          WHERE e.id = ${req.params.id}
+        `;
+        if (!event) return err("Not found", 404);
+        const roles   = await sql`SELECT * FROM event_roles   WHERE event_id = ${event.id} ORDER BY display_order`;
+        const signups = await sql`SELECT * FROM event_signups WHERE event_id = ${event.id} ORDER BY signup_order`;
+        return json({ ...event, roles, signups });
+      },
+      async PATCH(req) {
+        const isBot = req.headers.get("Authorization") === `Bot ${process.env.DISCORD_BOT_TOKEN}`;
+        const user  = isBot ? null : await authenticate(req);
+        if (!isBot && !requireRole(user, "officer")) return err("Forbidden", 403);
+        const body = await req.json();
+        if (isBot && body.message_id !== undefined) {
+          await sql`UPDATE events SET message_id = ${body.message_id}, updated_at = NOW() WHERE id = ${req.params.id}`;
+          return json({ ok: true });
+        }
+        const { title, description, event_date, event_time, total_cap, channel_id, status, roles } = body;
+        await sql`
+          UPDATE events SET
+            title       = COALESCE(${title       ?? null}, title),
+            description = COALESCE(${description ?? null}, description),
+            event_date  = COALESCE(${event_date  ?? null}::date, event_date),
+            event_time  = COALESCE(${event_time  ?? null}::time, event_time),
+            total_cap   = COALESCE(${total_cap   ?? null}, total_cap),
+            channel_id  = COALESCE(${channel_id  ?? null}, channel_id),
+            status      = COALESCE(${status      ?? null}, status),
+            updated_at  = NOW()
+          WHERE id = ${req.params.id}
+        `;
+        if (Array.isArray(roles)) {
+          await sql`DELETE FROM event_roles WHERE event_id = ${req.params.id}`;
+          for (let i = 0; i < roles.length; i++) {
+            const r = roles[i];
+            await sql`
+              INSERT INTO event_roles (event_id, name, emoji, soft_cap, display_order)
+              VALUES (${req.params.id}, ${r.name}, ${r.emoji ?? null}, ${r.soft_cap ?? null}, ${i})
+            `;
+          }
+        }
+        return json({ ok: true });
+      },
+      async DELETE(req) {
+        const user = await authenticate(req);
+        if (!requireRole(user, "officer")) return err("Forbidden", 403);
+        await sql`DELETE FROM events WHERE id = ${req.params.id}`;
+        return json({ ok: true });
+      },
+    },
+
+    "/api/events/:id/signups": {
+      async GET(req) {
+        const user = await authenticate(req);
+        if (!user || user.role === "pending") return err("Forbidden", 403);
+        const rows = await sql`SELECT * FROM event_signups WHERE event_id = ${req.params.id} ORDER BY signup_order`;
+        return json(rows);
+      },
+    },
+
+    "/api/events/:id/bot-signup": {
+      async POST(req) {
+        if (req.headers.get("Authorization") !== `Bot ${process.env.DISCORD_BOT_TOKEN}`) return err("Forbidden", 403);
+        const { discord_id, discord_name, role_id, role_name, bdo_class, status } = await req.json();
+        const existing = await sql`SELECT id FROM event_signups WHERE event_id = ${req.params.id} AND discord_id = ${discord_id}`;
+        if (existing.length > 0) {
+          await sql`
+            UPDATE event_signups SET role_id = ${role_id}, role_name = ${role_name},
+              bdo_class = ${bdo_class}, status = ${status}
+            WHERE event_id = ${req.params.id} AND discord_id = ${discord_id}
+          `;
+        } else {
+          const [{ next_order }] = await sql`
+            SELECT COALESCE(MAX(signup_order), 0) + 1 AS next_order FROM event_signups WHERE event_id = ${req.params.id}
+          `;
+          await sql`
+            INSERT INTO event_signups (event_id, discord_id, discord_name, role_id, role_name, bdo_class, signup_order, status)
+            VALUES (${req.params.id}, ${discord_id}, ${discord_name}, ${role_id}, ${role_name}, ${bdo_class}, ${next_order}, ${status})
+          `;
+        }
+        await sql`UPDATE events SET updated_at = NOW() WHERE id = ${req.params.id}`;
+        return json({ ok: true });
+      },
+    },
+
+    "/api/events/:id/bot-withdraw": {
+      async DELETE(req) {
+        if (req.headers.get("Authorization") !== `Bot ${process.env.DISCORD_BOT_TOKEN}`) return err("Forbidden", 403);
+        const { discord_id } = await req.json();
+        await sql`DELETE FROM event_signups WHERE event_id = ${req.params.id} AND discord_id = ${discord_id}`;
+        await sql`UPDATE events SET updated_at = NOW() WHERE id = ${req.params.id}`;
+        return json({ ok: true });
+      },
+    },
+
+    "/api/events/:id/signups/:signupId": {
+      async PATCH(req) {
+        const isBot = req.headers.get("Authorization") === `Bot ${process.env.DISCORD_BOT_TOKEN}`;
+        const user  = isBot ? null : await authenticate(req);
+        if (!isBot && !requireRole(user, "officer")) return err("Forbidden", 403);
+        const { role_id, role_name, bdo_class, status, attended, attended_role, attended_class } = await req.json();
+        await sql`
+          UPDATE event_signups SET
+            role_id        = COALESCE(${role_id        ?? null}, role_id),
+            role_name      = COALESCE(${role_name      ?? null}, role_name),
+            bdo_class      = COALESCE(${bdo_class      ?? null}, bdo_class),
+            status         = COALESCE(${status         ?? null}, status),
+            attended       = COALESCE(${attended       ?? null}, attended),
+            attended_role  = COALESCE(${attended_role  ?? null}, attended_role),
+            attended_class = COALESCE(${attended_class ?? null}, attended_class)
+          WHERE id = ${req.params.signupId} AND event_id = ${req.params.id}
+        `;
+        await sql`UPDATE events SET updated_at = NOW() WHERE id = ${req.params.id}`;
+        return json({ ok: true });
+      },
+      async DELETE(req) {
+        const isBot = req.headers.get("Authorization") === `Bot ${process.env.DISCORD_BOT_TOKEN}`;
+        const user  = isBot ? null : await authenticate(req);
+        if (!isBot && !requireRole(user, "officer")) return err("Forbidden", 403);
+        await sql`DELETE FROM event_signups WHERE id = ${req.params.signupId} AND event_id = ${req.params.id}`;
+        await sql`UPDATE events SET updated_at = NOW() WHERE id = ${req.params.id}`;
+        return json({ ok: true });
+      },
+    },
+
+    "/api/event-templates": {
+      async GET(req) {
+        const user = await authenticate(req);
+        if (!requireRole(user, "officer")) return err("Forbidden", 403);
+        return json(await sql`SELECT * FROM event_templates ORDER BY name`);
+      },
+      async POST(req) {
+        const user = await authenticate(req);
+        if (!requireRole(user, "officer")) return err("Forbidden", 403);
+        const { name, description, total_cap, channel_id, roles } = await req.json();
+        if (!name?.trim()) return err("name required");
+        const [t] = await sql`
+          INSERT INTO event_templates (name, description, total_cap, channel_id, roles, created_by)
+          VALUES (${name.trim()}, ${description ?? null}, ${total_cap ?? 25},
+                  ${channel_id ?? null}, ${JSON.stringify(roles ?? [])}::jsonb, ${user!.id})
+          RETURNING *
+        `;
+        return json(t, 201);
+      },
+    },
+
+    "/api/event-templates/:id": {
+      async PATCH(req) {
+        const user = await authenticate(req);
+        if (!requireRole(user, "officer")) return err("Forbidden", 403);
+        const { name, description, total_cap, channel_id, roles } = await req.json();
+        await sql`
+          UPDATE event_templates SET
+            name        = COALESCE(${name        ?? null}, name),
+            description = COALESCE(${description ?? null}, description),
+            total_cap   = COALESCE(${total_cap   ?? null}, total_cap),
+            channel_id  = COALESCE(${channel_id  ?? null}, channel_id),
+            roles       = COALESCE(${roles ? JSON.stringify(roles) : null}::jsonb, roles),
+            updated_at  = NOW()
+          WHERE id = ${req.params.id}
+        `;
+        return json({ ok: true });
+      },
+      async DELETE(req) {
+        const user = await authenticate(req);
+        if (!requireRole(user, "officer")) return err("Forbidden", 403);
+        await sql`DELETE FROM event_templates WHERE id = ${req.params.id}`;
+        return json({ ok: true });
+      },
+    },
+
+    "/api/class-emojis": {
+      async GET(req) {
+        const user = await authenticate(req);
+        if (!user || user.role === "pending") return err("Forbidden", 403);
+        return json(await sql`SELECT * FROM class_emojis ORDER BY class_name`);
+      },
+      async PUT(req) {
+        const user = await authenticate(req);
+        if (!requireRole(user, "officer")) return err("Forbidden", 403);
+        const { mappings } = await req.json();
+        for (const m of mappings as Array<{ class_name: string; emoji_id: string | null; emoji_name: string | null; animated: boolean }>) {
+          await sql`
+            INSERT INTO class_emojis (class_name, emoji_id, emoji_name, animated)
+            VALUES (${m.class_name}, ${m.emoji_id ?? null}, ${m.emoji_name ?? null}, ${m.animated ?? false})
+            ON CONFLICT (class_name) DO UPDATE SET
+              emoji_id = EXCLUDED.emoji_id, emoji_name = EXCLUDED.emoji_name,
+              animated = EXCLUDED.animated, updated_at = NOW()
+          `;
+        }
+        return json({ ok: true });
+      },
+    },
+
+    "/api/discord/channels": {
+      async GET(req) {
+        const user = await authenticate(req);
+        if (!requireRole(user, "officer")) return err("Forbidden", 403);
+        const guildId = process.env.DISCORD_GUILD_ID;
+        const token   = process.env.DISCORD_BOT_TOKEN;
+        if (!guildId || !token) return err("Discord bot token not configured", 500);
+        const res = await fetch(`https://discord.com/api/v10/guilds/${guildId}/channels`, {
+          headers: { Authorization: `Bot ${token}` },
+        });
+        if (!res.ok) return err("Failed to fetch Discord channels", 502);
+        const all = await res.json() as Array<{ id: string; name: string; type: number }>;
+        return json(all.filter(c => c.type === 0).map(c => ({ id: c.id, name: c.name })).sort((a, b) => a.name.localeCompare(b.name)));
+      },
+    },
+
+    "/api/discord/emojis": {
+      async GET(req) {
+        const user = await authenticate(req);
+        if (!requireRole(user, "officer")) return err("Forbidden", 403);
+        const guildId = process.env.DISCORD_GUILD_ID;
+        const token   = process.env.DISCORD_BOT_TOKEN;
+        if (!guildId || !token) return err("Discord bot token not configured", 500);
+        const res = await fetch(`https://discord.com/api/v10/guilds/${guildId}/emojis`, {
+          headers: { Authorization: `Bot ${token}` },
+        });
+        if (!res.ok) return err("Failed to fetch Discord emojis", 502);
+        return json(await res.json());
+      },
+    },
+
     // ── Quotes ───────────────────────────────────────────────────────────────
 
     "/api/quotes/keywords": {

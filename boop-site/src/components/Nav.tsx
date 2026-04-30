@@ -10,6 +10,7 @@ const NAV_GROUPS = [
     label: "Guild Info",
     memberOnly: true,
     items: [
+      { label: "Events",            href: "#/events",           route: "events",            officerOnly: false },
       { label: "Calendar",         href: "#/calendar",         route: "calendar",         officerOnly: false },
       { label: "Guild Directory",  href: "#/guild-directory",  route: "guild-directory",   officerOnly: false },
       { label: "Black Shrine",          href: "#/shrine",               route: "shrine",               officerOnly: false },

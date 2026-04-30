@@ -26,8 +26,9 @@ import RandomChooser from "./pages/RandomChooser";
 import DiceRoller from "./pages/DiceRoller";
 import Archive from "./pages/Archive";
 import ShrineAvailability from "./pages/ShrineAvailability";
+import Events from "./pages/Events";
 
-type Route = "home" | "class-roller" | "shuffler" | "employee" | "frogs" | "wall" | "submit-wall" | "calendar" | "nodewar" | "shrine" | "availability" | "auth" | "manage" | "ribbit-leaderboard" | "gear-leaderboard" | "guild-directory" | "payout-tracker" | "random-chooser" | "dice-roller" | "archive";
+type Route = "home" | "class-roller" | "shuffler" | "employee" | "frogs" | "wall" | "submit-wall" | "calendar" | "nodewar" | "shrine" | "availability" | "auth" | "manage" | "ribbit-leaderboard" | "gear-leaderboard" | "guild-directory" | "payout-tracker" | "random-chooser" | "dice-roller" | "archive" | "events";
 
 function parseHash(): Route {
   const h = location.hash.replace(/^#\/?/, "").split("/")[0].split("?")[0];
@@ -62,6 +63,7 @@ function parseHash(): Route {
     case "random-chooser":     return "random-chooser";
     case "dice-roller":        return "dice-roller";
     case "archive":            return "archive";
+    case "events":             return "events";
     default:
       return "home";
   }
@@ -126,6 +128,7 @@ export function App() {
         {route === "random-chooser"     && <RandomChooser />}
         {route === "dice-roller"        && <DiceRoller />}
         {route === "archive"            && <Archive />}
+        {route === "events"             && <Events />}
       </main>
     </div>
   );

@@ -303,6 +303,77 @@ CREATE INDEX IF NOT EXISTS idx_payout_history_user ON payout_history(user_id);
 CREATE INDEX IF NOT EXISTS idx_payout_history_date ON payout_history(created_at DESC);
 
 -- ============================================================
+-- EVENTS  (node war / guild event signup system)
+-- ============================================================
+CREATE TABLE IF NOT EXISTS events (
+  id           UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+  title        TEXT        NOT NULL,
+  description  TEXT,
+  event_date   DATE        NOT NULL,
+  event_time   TIME        NOT NULL,
+  total_cap    INTEGER     NOT NULL DEFAULT 25,
+  channel_id   VARCHAR(20),
+  message_id   VARCHAR(20),
+  status       VARCHAR(20) NOT NULL DEFAULT 'draft'
+               CHECK (status IN ('draft', 'active', 'closed')),
+  created_by   UUID        REFERENCES users(id) ON DELETE SET NULL,
+  created_at   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at   TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_events_status ON events(status);
+CREATE INDEX IF NOT EXISTS idx_events_date   ON events(event_date DESC);
+
+CREATE TABLE IF NOT EXISTS event_roles (
+  id            UUID         PRIMARY KEY DEFAULT gen_random_uuid(),
+  event_id      UUID         NOT NULL REFERENCES events(id) ON DELETE CASCADE,
+  name          VARCHAR(100) NOT NULL,
+  emoji         VARCHAR(100),
+  soft_cap      INTEGER,
+  display_order INTEGER      NOT NULL DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS idx_event_roles_event ON event_roles(event_id);
+
+CREATE TABLE IF NOT EXISTS event_signups (
+  id             UUID         PRIMARY KEY DEFAULT gen_random_uuid(),
+  event_id       UUID         NOT NULL REFERENCES events(id) ON DELETE CASCADE,
+  discord_id     VARCHAR(20)  NOT NULL,
+  discord_name   VARCHAR(100) NOT NULL,
+  role_id        UUID         REFERENCES event_roles(id) ON DELETE SET NULL,
+  role_name      VARCHAR(100),
+  bdo_class      VARCHAR(50),
+  signup_order   INTEGER      NOT NULL,
+  status         VARCHAR(20)  NOT NULL DEFAULT 'accepted'
+                 CHECK (status IN ('accepted', 'bench', 'tentative', 'absent')),
+  attended       BOOLEAN,
+  attended_role  VARCHAR(100),
+  attended_class VARCHAR(50),
+  signed_up_at   TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
+  UNIQUE (event_id, discord_id)
+);
+CREATE INDEX IF NOT EXISTS idx_event_signups_event ON event_signups(event_id);
+
+CREATE TABLE IF NOT EXISTS event_templates (
+  id          UUID         PRIMARY KEY DEFAULT gen_random_uuid(),
+  name        VARCHAR(100) NOT NULL,
+  description TEXT,
+  total_cap   INTEGER      NOT NULL DEFAULT 25,
+  channel_id  VARCHAR(20),
+  roles       JSONB        NOT NULL DEFAULT '[]',
+  created_by  UUID         REFERENCES users(id) ON DELETE SET NULL,
+  created_at  TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
+  updated_at  TIMESTAMPTZ  NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS class_emojis (
+  id          UUID         PRIMARY KEY DEFAULT gen_random_uuid(),
+  class_name  VARCHAR(50)  NOT NULL UNIQUE,
+  emoji_id    VARCHAR(20),
+  emoji_name  VARCHAR(100),
+  animated    BOOLEAN      NOT NULL DEFAULT false,
+  updated_at  TIMESTAMPTZ  NOT NULL DEFAULT NOW()
+);
+
+-- ============================================================
 -- QUOTES  (imported from Nadeko bot export)
 -- keyword   = top-level tag from the YAML (e.g. "DOTITOXIC")
 -- nadeko_id = original alphanumeric id from Nadeko (unique)
