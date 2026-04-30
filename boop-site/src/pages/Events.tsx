@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback } from "react";
+import React, { useEffect, useState, useCallback, useRef } from "react";
 import { useAuth, apiFetch, isOfficerOrAdmin } from "../lib/auth";
 import { BDO_CLASSES } from "../lib/bdo-classes";
 import { TIMEZONES } from "../lib/timezones";
@@ -26,7 +26,9 @@ interface EventSignup {
   attended: boolean | null;
   attended_role: string | null;
   attended_class: string | null;
-  gear_score: number | null;
+  gear_ap:  number | null;
+  gear_aap: number | null;
+  gear_dp:  number | null;
 }
 
 interface EventItem {
@@ -326,7 +328,7 @@ function EventForm({
   );
 }
 
-// Renders a string that may contain Discord emoji syntax like <a:name:id> or <:name:id>
+// Renders a string containing Discord emoji syntax like <a:name:id> or <:name:id> as images
 function EmojiText({ text }: { text: string }) {
   const parts = text.split(/(<a?:[^:>]+:\d+>)/g);
   return (
@@ -335,16 +337,13 @@ function EmojiText({ text }: { text: string }) {
         const m = part.match(/^<(a?):([^:>]+):(\d+)>$/);
         if (m) {
           const [, anim, name, id] = m;
-          return (
-            <img
-              key={i}
-              src={`https://cdn.discordapp.com/emojis/${id}.${anim ? "gif" : "webp"}?size=32`}
-              alt={name}
-              className="inline w-5 h-5 align-middle"
-            />
-          );
+          const animated = anim === "a";
+          const src = animated
+            ? `https://cdn.discordapp.com/emojis/${id}.gif`
+            : `https://cdn.discordapp.com/emojis/${id}.png?size=32`;
+          return <img key={i} src={src} alt={name} className="inline w-5 h-5 align-middle" />;
         }
-        return <span key={i}>{part}</span>;
+        return part ? <span key={i}>{part}</span> : null;
       })}
     </>
   );
@@ -361,7 +360,9 @@ function EventDetail({
 }) {
   const [tab, setTab]         = useState<"signups" | "attendance">("signups");
   const [working, setWorking] = useState<string | null>(null);
-  const [draggingId, setDraggingId] = useState<string | null>(null);
+  // Use a ref for the drag ID so onDragStart doesn't trigger a re-render (which breaks the drag ghost)
+  const draggingRef             = useRef<string | null>(null);
+  const [isDragging, setIsDragging] = useState(false);
   const [dragOver, setDragOver]     = useState<string | null>(null);
 
   const accepted  = event.signups.filter(s => s.status === "accepted");
@@ -408,48 +409,67 @@ function EventDetail({
     onRefresh();
   }
 
-  function handleDrop(bucketKey: string, role_id: string | null, role_name: string | null, status: SignupStatus) {
-    setDragOver(null);
-    if (!draggingId) return;
-    const s = event.signups.find(x => x.id === draggingId);
-    if (!s) return;
-    // Skip if already in this bucket
-    if (s.status === status && s.role_id === role_id) return;
-    moveSignup(draggingId, role_id, role_name, status);
-    setDraggingId(null);
+  function handleDragStart(id: string) {
+    draggingRef.current = id;
+    // Defer the state update so the drag ghost renders before the re-render
+    setTimeout(() => setIsDragging(true), 0);
   }
 
-  function dropProps(bucketKey: string, role_id: string | null, role_name: string | null, status: SignupStatus) {
+  function handleDragEnd() {
+    draggingRef.current = null;
+    setIsDragging(false);
+    setDragOver(null);
+  }
+
+  function handleDrop(role_id: string | null, role_name: string | null, status: SignupStatus) {
+    const id = draggingRef.current;
+    draggingRef.current = null;
+    setIsDragging(false);
+    setDragOver(null);
+    if (!id) return;
+    const s = event.signups.find(x => x.id === id);
+    if (!s) return;
+    if (s.status === status && s.role_id === role_id) return;
+    moveSignup(id, role_id, role_name, status);
+  }
+
+  function bucketDropProps(bucketKey: string, role_id: string | null, role_name: string | null, status: SignupStatus) {
     if (!isOfficer) return {};
     return {
       onDragOver:  (e: React.DragEvent) => { e.preventDefault(); setDragOver(bucketKey); },
-      onDragLeave: (e: React.DragEvent) => { if (!e.currentTarget.contains(e.relatedTarget as Node)) setDragOver(null); },
-      onDrop:      (e: React.DragEvent) => { e.preventDefault(); handleDrop(bucketKey, role_id, role_name, status); },
+      onDragLeave: (e: React.DragEvent) => {
+        if (!e.currentTarget.contains(e.relatedTarget as Node)) setDragOver(null);
+      },
+      onDrop: (e: React.DragEvent) => { e.preventDefault(); handleDrop(role_id, role_name, status); },
     };
   }
 
   function SignupRow({ s }: { s: EventSignup }) {
-    const busy = working === s.id;
-    const isDragging = draggingId === s.id;
+    const busy        = working === s.id;
+    const thisRowDrag = draggingRef.current === s.id && isDragging;
+    const hasGear     = s.gear_ap != null || s.gear_aap != null || s.gear_dp != null;
     return (
       <div
         draggable={isOfficer}
-        onDragStart={() => { setDraggingId(s.id); }}
-        onDragEnd={() => setDraggingId(null)}
-        className={`flex items-center gap-2 py-2 px-3 rounded-lg text-sm select-none
-          ${busy || isDragging ? "opacity-40" : ""}
-          ${isOfficer ? "cursor-grab active:cursor-grabbing" : ""}`}
+        onDragStart={() => handleDragStart(s.id)}
+        onDragEnd={handleDragEnd}
+        className={`flex items-center gap-2 py-2 px-3 rounded-lg text-sm
+          ${busy || thisRowDrag ? "opacity-40" : ""}
+          ${isOfficer ? "cursor-grab" : ""}`}
       >
-        {isOfficer && <span className="text-slate-700 text-xs shrink-0">⠿</span>}
-        <span className="text-slate-600 text-xs w-5 text-right shrink-0">{s.signup_order}</span>
-        <span className="font-semibold text-white truncate flex-1 min-w-0">{s.discord_name}</span>
-        {s.bdo_class && <span className="text-xs text-slate-400 shrink-0">{s.bdo_class}</span>}
-        {s.gear_score != null && (
-          <span className="text-[10px] text-teal-500 font-bold shrink-0 tabular-nums">{s.gear_score} GS</span>
+        {isOfficer && <span className="text-slate-700 text-xs shrink-0 pointer-events-none select-none">⠿</span>}
+        <span className="text-slate-600 text-xs w-5 text-right shrink-0 select-none">{s.signup_order}</span>
+        <span className="font-semibold text-white truncate flex-1 min-w-0 select-none">{s.discord_name}</span>
+        {s.bdo_class && <span className="text-xs text-slate-400 shrink-0 select-none">{s.bdo_class}</span>}
+        {hasGear && (
+          <span className="text-[10px] text-teal-600 shrink-0 tabular-nums select-none whitespace-nowrap">
+            {s.gear_ap ?? "—"}/{s.gear_aap ?? "—"}/{s.gear_dp ?? "—"}
+          </span>
         )}
         {isOfficer && (
           <button
-            onClick={() => removeSignup(s.id)}
+            draggable={false}
+            onClick={e => { e.stopPropagation(); removeSignup(s.id); }}
             className="shrink-0 text-[10px] px-1.5 py-0.5 rounded bg-red-900/30 text-red-500 hover:bg-red-800/60 transition-colors"
           >✕</button>
         )}
@@ -526,72 +546,67 @@ function EventDetail({
 
       {/* Signups tab */}
       {tab === "signups" && (
-        <>
-          {isOfficer && draggingId && (
-            <p className="text-xs text-violet-400 text-center mb-3 animate-pulse">Drag to a bucket to move</p>
-          )}
-          <div className="flex flex-col gap-3">
-            {/* Role buckets */}
-            {grouped.map(({ role, signups: rs }) => {
-              const key = `role:${role.id}`;
-              const over = dragOver === key;
-              return (
-                <div
-                  key={role.id}
-                  {...dropProps(key, role.id, role.name, "accepted")}
-                  className={`rounded-2xl p-4 border transition-colors ${over
-                    ? "bg-violet-900/30 border-violet-500"
-                    : "bg-slate-900/40 border-slate-800"}`}
-                >
-                  <BucketHeader emoji={role.emoji} name={role.name} count={rs.length} cap={role.soft_cap} />
-                  {rs.length === 0
-                    ? <p className={`text-xs italic ${over ? "text-violet-400" : "text-slate-700"}`}>
-                        {over ? "Drop here" : "No signups yet"}
-                      </p>
-                    : rs.map(s => <SignupRow key={s.id} s={s} />)}
-                </div>
-              );
-            })}
-
-            {/* No-role accepted */}
-            {noRole.length > 0 && (
-              <div className="bg-slate-900/40 border border-slate-800 rounded-2xl p-4">
-                <BucketHeader name="No role assigned" count={noRole.length} />
-                {noRole.map(s => <SignupRow key={s.id} s={s} />)}
+        <div className="flex flex-col gap-3">
+          {/* Role buckets */}
+          {grouped.map(({ role, signups: rs }) => {
+            const key  = `role:${role.id}`;
+            const over = dragOver === key;
+            return (
+              <div
+                key={role.id}
+                {...bucketDropProps(key, role.id, role.name, "accepted")}
+                className={`rounded-2xl p-4 border transition-colors ${over
+                  ? "bg-violet-900/30 border-violet-500"
+                  : "bg-slate-900/40 border-slate-800"}`}
+              >
+                <BucketHeader emoji={role.emoji} name={role.name} count={rs.length} cap={role.soft_cap} />
+                {rs.length === 0
+                  ? <p className={`text-xs italic ${over ? "text-violet-400" : "text-slate-700"}`}>
+                      {over ? "Drop here" : "No signups yet"}
+                    </p>
+                  : rs.map(s => <SignupRow key={s.id} s={s} />)}
               </div>
-            )}
+            );
+          })}
 
-            {/* Status buckets — always show when dragging so you can drop into them */}
-            {[
-              { key: "bench",     label: "Bench",     list: bench,     status: "bench"     as SignupStatus },
-              { key: "tentative", label: "Tentative", list: tentative, status: "tentative" as SignupStatus },
-              { key: "absent",    label: "Absent",    list: absent,    status: "absent"    as SignupStatus },
-            ].map(({ key, label, list, status }) => {
-              const over = dragOver === key;
-              if (list.length === 0 && !draggingId) return null;
-              return (
-                <div
-                  key={key}
-                  {...dropProps(key, null, null, status)}
-                  className={`rounded-2xl p-4 border transition-colors ${over
-                    ? "bg-slate-700/40 border-slate-500"
-                    : "bg-slate-900/40 border-slate-800"}`}
-                >
-                  <BucketHeader name={label} count={list.length} />
-                  {list.length === 0
-                    ? <p className={`text-xs italic ${over ? "text-slate-300" : "text-slate-700"}`}>
-                        {over ? "Drop here" : "Empty"}
-                      </p>
-                    : list.map(s => <SignupRow key={s.id} s={s} />)}
-                </div>
-              );
-            })}
+          {/* No-role accepted */}
+          {noRole.length > 0 && (
+            <div className="bg-slate-900/40 border border-slate-800 rounded-2xl p-4">
+              <BucketHeader name="No role assigned" count={noRole.length} />
+              {noRole.map(s => <SignupRow key={s.id} s={s} />)}
+            </div>
+          )}
 
-            {event.signups.length === 0 && (
-              <p className="text-slate-500 text-sm text-center py-12">No signups yet.</p>
-            )}
-          </div>
-        </>
+          {/* Status buckets — always visible for officers so they're stable drop targets */}
+          {[
+            { key: "bench",     label: "Bench",     list: bench,     status: "bench"     as SignupStatus },
+            { key: "tentative", label: "Tentative", list: tentative, status: "tentative" as SignupStatus },
+            { key: "absent",    label: "Absent",    list: absent,    status: "absent"    as SignupStatus },
+          ].map(({ key, label, list, status }) => {
+            if (!isOfficer && list.length === 0) return null;
+            const over = dragOver === key;
+            return (
+              <div
+                key={key}
+                {...bucketDropProps(key, null, null, status)}
+                className={`rounded-2xl p-4 border transition-colors ${over
+                  ? "bg-slate-700/40 border-slate-500"
+                  : "bg-slate-900/40 border-slate-800"}`}
+              >
+                <BucketHeader name={label} count={list.length} />
+                {list.length === 0
+                  ? <p className={`text-xs italic ${over ? "text-slate-300" : "text-slate-700"}`}>
+                      {over ? "Drop here" : "Empty"}
+                    </p>
+                  : list.map(s => <SignupRow key={s.id} s={s} />)}
+              </div>
+            );
+          })}
+
+          {event.signups.length === 0 && (
+            <p className="text-slate-500 text-sm text-center py-12">No signups yet.</p>
+          )}
+        </div>
       )}
 
       {/* Attendance tab */}
@@ -605,7 +620,11 @@ function EventDetail({
               <span className="text-slate-600 text-xs">{s.signup_order}</span>
               <div className="min-w-0">
                 <span className="font-semibold text-white truncate block">{s.discord_name}</span>
-                {s.gear_score != null && <span className="text-[10px] text-teal-500 font-bold tabular-nums">{s.gear_score} GS</span>}
+                {(s.gear_ap != null || s.gear_aap != null || s.gear_dp != null) && (
+                  <span className="text-[10px] text-teal-600 tabular-nums">
+                    {s.gear_ap ?? "—"}/{s.gear_aap ?? "—"}/{s.gear_dp ?? "—"}
+                  </span>
+                )}
               </div>
               <span className="text-slate-400 text-xs truncate">{s.attended_class ?? s.bdo_class ?? "—"}</span>
               <span className="text-slate-400 text-xs truncate">{s.attended_role ?? s.role_name ?? "—"}</span>

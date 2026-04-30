@@ -1346,10 +1346,7 @@ const server = serve({
         if (!event) return err("Not found", 404);
         const roles   = await sql`SELECT * FROM event_roles WHERE event_id = ${event.id} ORDER BY display_order`;
         const signups = await sql`
-          SELECT es.*,
-            CASE WHEN u.gear_ap IS NOT NULL OR u.gear_aap IS NOT NULL OR u.gear_dp IS NOT NULL
-                 THEN GREATEST(COALESCE(u.gear_ap, 0), COALESCE(u.gear_aap, 0)) + COALESCE(u.gear_dp, 0)
-                 ELSE NULL END AS gear_score
+          SELECT es.*, u.gear_ap, u.gear_aap, u.gear_dp
           FROM event_signups es
           LEFT JOIN users u ON u.discord_id = es.discord_id
           WHERE es.event_id = ${event.id}
