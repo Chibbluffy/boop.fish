@@ -54,6 +54,7 @@ function AvailGrid({
   onTouchMove,
   onTouchEnd,
   interactive = false,
+  singleMember = false,
 }: {
   rows: Array<{ mine: boolean; count: number; names: string[] }>;
   onMouseDown?: (day: number, hour: number, e: React.MouseEvent) => void;
@@ -62,8 +63,12 @@ function AvailGrid({
   onTouchMove?: (e: React.TouchEvent) => void;
   onTouchEnd?: () => void;
   interactive?: boolean;
+  singleMember?: boolean;
 }) {
   function cellBg(mine: boolean, count: number): string {
+    if (singleMember) {
+      return count > 0 ? "bg-teal-400" : "bg-slate-800/60";
+    }
     if (mine && count > 0) return "bg-violet-500 ring-1 ring-inset ring-teal-400/50";
     if (mine)       return `bg-violet-700${interactive ? " hover:bg-violet-600" : ""}`;
     if (count >= 5) return "bg-teal-500/80";
@@ -436,7 +441,7 @@ export default function ShrineAvailability() {
                   <span className="w-3 h-3 rounded-sm bg-teal-500/60 shrink-0 inline-block" />
                   <span>{selectedMember.display_name}'s available times — shown in your timezone</span>
                 </div>
-                <AvailGrid rows={memberGrid} />
+                <AvailGrid rows={memberGrid} singleMember />
               </>
             )}
           </>
