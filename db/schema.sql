@@ -276,6 +276,18 @@ CREATE INDEX IF NOT EXISTS idx_shrine_team_members_team   ON shrine_team_members
 CREATE INDEX IF NOT EXISTS idx_shrine_team_members_signup ON shrine_team_members(signup_id);
 
 -- ============================================================
+-- SHRINE AVAILABILITY  (weekly hour-of-week slots, stored in UTC)
+-- utc_slot = day_of_week_mon0 * 24 + hour  (0–167)
+-- ============================================================
+CREATE TABLE IF NOT EXISTS shrine_availability (
+  id        UUID     PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id   UUID     NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  utc_slot  SMALLINT NOT NULL CHECK (utc_slot >= 0 AND utc_slot < 168),
+  UNIQUE (user_id, utc_slot)
+);
+CREATE INDEX IF NOT EXISTS idx_shrine_availability_user ON shrine_availability(user_id);
+
+-- ============================================================
 -- PAYOUT HISTORY  (audit log for tier changes)
 -- ============================================================
 CREATE TABLE IF NOT EXISTS payout_history (

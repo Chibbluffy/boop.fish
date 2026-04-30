@@ -1213,6 +1213,53 @@ const server = serve({
       },
     },
 
+    "/api/shrine/availability": {
+      async GET(req) {
+        const user = await authenticate(req);
+        if (!user || user.role === "pending") return err("Forbidden", 403);
+
+        const mine   = await sql`SELECT utc_slot FROM shrine_availability WHERE user_id = ${user.id}`;
+        const others = await sql`
+          SELECT sa.utc_slot,
+                 COALESCE(u.character_name, u.username) AS display_name
+          FROM   shrine_availability sa
+          JOIN   users u ON u.id = sa.user_id
+          WHERE  sa.user_id != ${user.id}
+        `;
+
+        const counts: Record<number, number>   = {};
+        const names:  Record<number, string[]> = {};
+        for (const row of others) {
+          counts[row.utc_slot] = (counts[row.utc_slot] ?? 0) + 1;
+          names[row.utc_slot]  = [...(names[row.utc_slot] ?? []), row.display_name];
+        }
+
+        return json({ mine: mine.map(r => r.utc_slot), counts, names });
+      },
+
+      async PUT(req) {
+        const user = await authenticate(req);
+        if (!user || user.role === "pending") return err("Forbidden", 403);
+
+        const body = await req.json().catch(() => null);
+        if (!body || !Array.isArray(body.slots)) return err("slots array required");
+
+        const valid = (body.slots as unknown[])
+          .filter((s): s is number => Number.isInteger(s) && (s as number) >= 0 && (s as number) < 168);
+
+        await sql`DELETE FROM shrine_availability WHERE user_id = ${user.id}`;
+        if (valid.length > 0) {
+          await sql`
+            INSERT INTO shrine_availability (user_id, utc_slot)
+            SELECT ${user.id}::uuid, unnest(${valid}::smallint[])
+            ON CONFLICT DO NOTHING
+          `;
+        }
+
+        return json({ ok: true });
+      },
+    },
+
     "/api/shrine/:id": {
       async DELETE(req) {
         const user = await authenticate(req);

@@ -25,8 +25,9 @@ import PayoutTracker from "./pages/PayoutTracker";
 import RandomChooser from "./pages/RandomChooser";
 import DiceRoller from "./pages/DiceRoller";
 import Archive from "./pages/Archive";
+import ShrineAvailability from "./pages/ShrineAvailability";
 
-type Route = "home" | "class-roller" | "shuffler" | "employee" | "frogs" | "wall" | "submit-wall" | "calendar" | "nodewar" | "shrine" | "auth" | "manage" | "ribbit-leaderboard" | "gear-leaderboard" | "guild-directory" | "payout-tracker" | "random-chooser" | "dice-roller" | "archive";
+type Route = "home" | "class-roller" | "shuffler" | "employee" | "frogs" | "wall" | "submit-wall" | "calendar" | "nodewar" | "shrine" | "shrine-availability" | "auth" | "manage" | "ribbit-leaderboard" | "gear-leaderboard" | "guild-directory" | "payout-tracker" | "random-chooser" | "dice-roller" | "archive";
 
 function parseHash(): Route {
   const h = location.hash.replace(/^#\/?/, "").split("/")[0].split("?")[0];
@@ -53,6 +54,7 @@ function parseHash(): Route {
       return "manage";
     case "submit-wall": return "submit-wall";
     case "shrine":             return "shrine";
+    case "shrine-availability": return "shrine-availability";
     case "ribbit-leaderboard": return "ribbit-leaderboard";
     case "gear-leaderboard":   return "gear-leaderboard";
     case "guild-directory":    return "guild-directory";
@@ -116,6 +118,7 @@ export function App() {
         {route === "manage"      && <Settings />}
         {route === "submit-wall" && <SubmitWall />}
         {route === "shrine"             && <BlackShrine key={user?.id ?? "guest"} />}
+        {route === "shrine-availability" && <ShrineAvailability key={user?.id ?? "guest"} />}
         {route === "ribbit-leaderboard" && <RibbitLeaderboard />}
         {route === "gear-leaderboard"   && <GearLeaderboard />}
         {route === "guild-directory"    && <GuildDirectory />}
