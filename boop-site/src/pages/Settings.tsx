@@ -712,7 +712,7 @@ const BDO_CLASSES = [
   "Warrior","Sorceress","Ranger","Berserker","Tamer","Musa","Maehwa",
   "Valkyrie","Kunoichi","Ninja","Wizard","Witch","Dark Knight","Striker",
   "Mystic","Lahn","Archer","Shai","Guardian","Hashashin","Nova","Sage",
-  "Corsair","Drakania","Woosa","Maegu","Scholar","Dosa","Deadeye","Legionary","Spiritborn",
+  "Corsair","Drakania","Woosa","Maegu","Scholar","Dosa","Deadeye",
 ];
 
 type DiscordEmoji = { id: string; name: string; animated: boolean };
