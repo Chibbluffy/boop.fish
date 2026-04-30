@@ -552,9 +552,13 @@ function EventDetail({
 // ── Templates Section ─────────────────────────────────────────────────────────
 type TplRoleEntry = { name: string; soft_cap: string; emoji: string };
 
-function TemplatesSection({ channels, guildEmojis }: { channels: Channel[]; guildEmojis: GuildEmoji[] }) {
-  const [templates, setTemplates] = useState<EventTemplate[]>([]);
-  const [loading, setLoading]     = useState(true);
+function TemplatesSection({ templates, setTemplates, channels, guildEmojis }: {
+  templates: EventTemplate[];
+  setTemplates: React.Dispatch<React.SetStateAction<EventTemplate[]>>;
+  channels: Channel[];
+  guildEmojis: GuildEmoji[];
+}) {
+  const [loading, setLoading] = useState(true);
   const [editId, setEditId]       = useState<string | null>(null);
   const [form, setForm]           = useState({ name: "", description: "", event_time: "", event_timezone: "America/New_York", channel_id: "" });
   const [roles, setRoles]         = useState<TplRoleEntry[]>([]);
@@ -563,10 +567,7 @@ function TemplatesSection({ channels, guildEmojis }: { channels: Channel[]; guil
   function token() { return localStorage.getItem("boop_session") ?? ""; }
   function authH() { return { Authorization: `Bearer ${token()}` }; }
 
-  useEffect(() => {
-    fetch("/api/event-templates", { headers: authH() })
-      .then(r => r.json()).then(d => { setTemplates(d); setLoading(false); }).catch(() => setLoading(false));
-  }, []);
+  useEffect(() => { setLoading(false); }, [templates]);
 
   function startNew() {
     setEditId("new");
@@ -856,7 +857,7 @@ export default function Events() {
 
         {/* ── Templates tab ── */}
         {isOfficer && mainTab === "templates" && view === "list" && (
-          <TemplatesSection channels={channels} guildEmojis={guildEmojis} />
+          <TemplatesSection templates={templates} setTemplates={setTemplates} channels={channels} guildEmojis={guildEmojis} />
         )}
 
         {/* ── Events tab ── */}
