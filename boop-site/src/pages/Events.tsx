@@ -922,6 +922,10 @@ export default function Events() {
             {/* ── Form view ── */}
             {view === "form" && (
               <>
+                <button
+                  onClick={() => { setView("list"); setEditing(null); }}
+                  className="text-slate-500 hover:text-white text-sm mb-4 transition-colors"
+                >← Back to events</button>
                 <h2 className="text-lg font-black text-white mb-6">{editing ? "Edit Event" : "Create Event"}</h2>
                 <EventForm
                   initial={editing ?? undefined}
