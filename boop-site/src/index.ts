@@ -1291,12 +1291,13 @@ const server = serve({
       async POST(req) {
         const user = await authenticate(req);
         if (!requireRole(user, "officer")) return err("Forbidden", 403);
-        const { title, description, event_date, event_time, total_cap, channel_id, roles } = await req.json();
+        const { title, description, event_date, event_time, total_cap, channel_id, status, roles } = await req.json();
         if (!title?.trim() || !event_date || !event_time) return err("title, event_date, and event_time are required");
+        const eventStatus = status === "active" ? "active" : "draft";
         const [event] = await sql`
-          INSERT INTO events (title, description, event_date, event_time, total_cap, channel_id, created_by)
+          INSERT INTO events (title, description, event_date, event_time, total_cap, channel_id, status, created_by)
           VALUES (${title.trim()}, ${description ?? null}, ${event_date}, ${event_time},
-                  ${total_cap ?? 25}, ${channel_id ?? null}, ${user!.id})
+                  ${total_cap ?? 25}, ${channel_id ?? null}, ${eventStatus}, ${user!.id})
           RETURNING *
         `;
         if (Array.isArray(roles)) {
@@ -1473,11 +1474,11 @@ const server = serve({
       async POST(req) {
         const user = await authenticate(req);
         if (!requireRole(user, "officer")) return err("Forbidden", 403);
-        const { name, description, total_cap, channel_id, roles } = await req.json();
+        const { name, description, event_time, total_cap, channel_id, roles } = await req.json();
         if (!name?.trim()) return err("name required");
         const [t] = await sql`
-          INSERT INTO event_templates (name, description, total_cap, channel_id, roles, created_by)
-          VALUES (${name.trim()}, ${description ?? null}, ${total_cap ?? 25},
+          INSERT INTO event_templates (name, description, event_time, total_cap, channel_id, roles, created_by)
+          VALUES (${name.trim()}, ${description ?? null}, ${event_time ?? null}, ${total_cap ?? 25},
                   ${channel_id ?? null}, ${JSON.stringify(roles ?? [])}::jsonb, ${user!.id})
           RETURNING *
         `;
@@ -1489,13 +1490,13 @@ const server = serve({
       async PATCH(req) {
         const user = await authenticate(req);
         if (!requireRole(user, "officer")) return err("Forbidden", 403);
-        const { name, description, total_cap, channel_id, roles } = await req.json();
+        const { name, description, event_time, total_cap, channel_id, roles } = await req.json();
         const [updated] = await sql`
           UPDATE event_templates SET
             name        = COALESCE(${name        ?? null}, name),
-            description = COALESCE(${description ?? null}, description),
-            total_cap   = COALESCE(${total_cap   ?? null}, total_cap),
-            channel_id  = COALESCE(${channel_id  ?? null}, channel_id),
+            description = ${description ?? null},
+            event_time  = ${event_time  ?? null},
+            channel_id  = ${channel_id  ?? null},
             roles       = COALESCE(${roles ? JSON.stringify(roles) : null}::jsonb, roles),
             updated_at  = NOW()
           WHERE id = ${req.params.id}

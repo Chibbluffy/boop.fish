@@ -61,6 +61,7 @@ interface EventTemplate {
   description: string | null;
   total_cap: number;
   channel_id: string | null;
+  event_time: string | null;
   roles: Array<{ name: string; emoji: string | null; soft_cap: number | null }>;
 }
 
@@ -68,7 +69,8 @@ interface Channel { id: string; name: string; }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 function fmtDate(d: string) {
-  return new Date(d + "T00:00:00").toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric", year: "numeric" });
+  // Slice to YYYY-MM-DD in case the DB returns a full ISO timestamp
+  return new Date(String(d).slice(0, 10) + "T12:00:00").toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric", year: "numeric" });
 }
 function fmtTime(t: string) {
   const [h, m] = t.split(":").map(Number);
@@ -97,7 +99,7 @@ function blankForm() {
 function EventForm({
   initial, templates, channels, onSave, onPublish, onCancel,
 }: {
-  initial?: EventItem;
+  initial?: EventDetail | EventItem;
   templates: EventTemplate[];
   channels: Channel[];
   onSave: (data: ReturnType<typeof blankForm>, publish: boolean) => Promise<void>;
@@ -106,16 +108,23 @@ function EventForm({
 }) {
   const [form, setForm] = useState(() => {
     if (initial) {
+      const existingRoles = "roles" in initial && Array.isArray(initial.roles)
+        ? initial.roles.map(r => ({ name: r.name, emoji: r.emoji ?? "", soft_cap: r.soft_cap ? String(r.soft_cap) : "" }))
+        : [] as RoleFormEntry[];
       return {
         title: initial.title, description: initial.description ?? "",
-        event_date: initial.event_date, event_time: initial.event_time.slice(0, 5),
+        event_date: String(initial.event_date).slice(0, 10),
+        event_time: String(initial.event_time).slice(0, 5),
         total_cap: String(initial.total_cap), channel_id: initial.channel_id ?? "",
-        roles: [] as RoleFormEntry[],
+        roles: existingRoles,
       };
     }
     return blankForm();
   });
   const [saving, setSaving] = useState(false);
+
+  const canSave    = !!form.title.trim() && !!form.event_date && !!form.event_time;
+  const canPublish = canSave && !!form.channel_id;
 
   function loadTemplate(id: string) {
     const t = templates.find(t => t.id === id);
@@ -126,6 +135,7 @@ function EventForm({
       description: t.description ?? f.description,
       total_cap: String(t.total_cap),
       channel_id: t.channel_id ?? f.channel_id,
+      event_time: t.event_time ?? f.event_time,
       roles: t.roles.map(r => ({ name: r.name, emoji: r.emoji ?? "", soft_cap: r.soft_cap ? String(r.soft_cap) : "" })),
     }));
   }
@@ -227,18 +237,19 @@ function EventForm({
       </div>
 
       {/* Actions */}
-      <div className="flex gap-3 mt-6">
+      <div className="flex gap-3 mt-6 flex-wrap">
         <button
           onClick={() => submit(false)}
-          disabled={saving}
-          className="px-5 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-white text-sm font-semibold transition-colors disabled:opacity-50"
+          disabled={saving || !canSave}
+          className="px-5 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-white text-sm font-semibold transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
         >
           Save Draft
         </button>
         <button
           onClick={() => submit(true)}
-          disabled={saving}
-          className="px-5 py-2.5 rounded-xl bg-violet-600 hover:bg-violet-500 text-white text-sm font-black transition-colors disabled:opacity-50"
+          disabled={saving || !canPublish}
+          title={!canPublish ? "Title, date, time, and a Discord channel are required to publish" : undefined}
+          className="px-5 py-2.5 rounded-xl bg-violet-600 hover:bg-violet-500 text-white text-sm font-black transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
         >
           {initial?.status === "active" ? "Save & Keep Active" : "Publish to Discord"}
         </button>
@@ -487,7 +498,7 @@ export default function Events() {
   const [view, setView]           = useState<"list" | "form" | "detail">("list");
   const [events, setEvents]       = useState<EventItem[]>([]);
   const [detail, setDetail]       = useState<EventDetail | null>(null);
-  const [editing, setEditing]     = useState<EventItem | null>(null);
+  const [editing, setEditing]     = useState<EventDetail | EventItem | null>(null);
   const [templates, setTemplates] = useState<EventTemplate[]>([]);
   const [channels, setChannels]   = useState<Channel[]>([]);
   const [loading, setLoading]     = useState(true);
@@ -545,7 +556,11 @@ export default function Events() {
     await loadEvents();
   }
 
-  function startEdit(ev: EventItem) { setEditing(ev); setView("form"); }
+  async function startEdit(ev: EventItem) {
+    const data = await apiFetch(`/api/events/${ev.id}`).then(r => r.json()).catch(() => null);
+    setEditing(data ?? ev);
+    setView("form");
+  }
 
   const filtered = events.filter(e => {
     if (filter === "upcoming") return e.status !== "closed";

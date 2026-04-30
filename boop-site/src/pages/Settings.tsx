@@ -709,7 +709,8 @@ function RosterSection() {
 
 type EventTemplate = {
   id: string; name: string; description: string | null;
-  roles: Array<{ name: string; cap: number | null; emoji: string | null }>;
+  event_time: string | null; channel_id: string | null;
+  roles: Array<{ name: string; soft_cap: number | null; emoji: string | null }>;
   created_at: string;
 };
 
@@ -717,8 +718,8 @@ function TemplatesSection() {
   const [templates, setTemplates] = useState<EventTemplate[]>([]);
   const [loading, setLoading]     = useState(true);
   const [editId, setEditId]       = useState<string | null>(null);
-  const [form, setForm]           = useState({ name: "", description: "" });
-  const [roles, setRoles]         = useState<Array<{ name: string; cap: string; emoji: string }>>([]);
+  const [form, setForm]           = useState({ name: "", description: "", event_time: "", channel_id: "" });
+  const [roles, setRoles]         = useState<Array<{ name: string; soft_cap: string; emoji: string }>>([]);
   const [saving, setSaving]       = useState(false);
 
   useEffect(() => {
@@ -728,18 +729,18 @@ function TemplatesSection() {
 
   function startNew() {
     setEditId("new");
-    setForm({ name: "", description: "" });
-    setRoles([{ name: "Main", cap: "", emoji: "" }]);
+    setForm({ name: "", description: "", event_time: "", channel_id: "" });
+    setRoles([{ name: "Main", soft_cap: "", emoji: "" }]);
   }
 
   function startEdit(t: EventTemplate) {
     setEditId(t.id);
-    setForm({ name: t.name, description: t.description ?? "" });
+    setForm({ name: t.name, description: t.description ?? "", event_time: t.event_time ?? "", channel_id: t.channel_id ?? "" });
     const safeRoles = Array.isArray(t.roles) ? t.roles : [];
-    setRoles(safeRoles.map(r => ({ name: r.name, cap: r.cap != null ? String(r.cap) : "", emoji: r.emoji ?? "" })));
+    setRoles(safeRoles.map(r => ({ name: r.name, soft_cap: r.soft_cap != null ? String(r.soft_cap) : "", emoji: r.emoji ?? "" })));
   }
 
-  function addRole() { setRoles(prev => [...prev, { name: "", cap: "", emoji: "" }]); }
+  function addRole() { setRoles(prev => [...prev, { name: "", soft_cap: "", emoji: "" }]); }
   function removeRole(i: number) { setRoles(prev => prev.filter((_, idx) => idx !== i)); }
   function patchRole(i: number, field: string, val: string) {
     setRoles(prev => prev.map((r, idx) => idx === i ? { ...r, [field]: val } : r));
@@ -751,9 +752,11 @@ function TemplatesSection() {
     const payload = {
       name: form.name.trim(),
       description: form.description.trim() || null,
+      event_time:  form.event_time  || null,
+      channel_id:  form.channel_id  || null,
       roles: roles.filter(r => r.name.trim()).map(r => ({
         name: r.name.trim(),
-        cap: r.cap ? parseInt(r.cap) : null,
+        soft_cap: r.soft_cap ? parseInt(r.soft_cap) : null,
         emoji: r.emoji.trim() || null,
       })),
     };
@@ -805,6 +808,16 @@ function TemplatesSection() {
           <div className="flex flex-col gap-3">
             <input value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} placeholder="Template name" className={inp} />
             <input value={form.description} onChange={e => setForm(f => ({ ...f, description: e.target.value }))} placeholder="Description (optional)" className={inp} />
+            <div className="flex gap-3">
+              <div className="flex-1">
+                <label className="text-[10px] text-slate-500 uppercase tracking-widest font-semibold block mb-1">Default Time</label>
+                <input type="time" value={form.event_time} onChange={e => setForm(f => ({ ...f, event_time: e.target.value }))} className={inp} />
+              </div>
+              <div className="flex-1">
+                <label className="text-[10px] text-slate-500 uppercase tracking-widest font-semibold block mb-1">Channel ID</label>
+                <input value={form.channel_id} onChange={e => setForm(f => ({ ...f, channel_id: e.target.value }))} placeholder="Discord channel ID" className={inp} />
+              </div>
+            </div>
 
             <div>
               <p className="text-xs font-semibold text-slate-400 uppercase tracking-widest mb-2">Roles</p>
@@ -812,7 +825,7 @@ function TemplatesSection() {
                 {roles.map((r, i) => (
                   <div key={i} className="flex gap-2 items-center">
                     <input value={r.name} onChange={e => patchRole(i, "name", e.target.value)} placeholder="Role name" className={`${roleInp} flex-1 min-w-0`} />
-                    <input value={r.cap} onChange={e => patchRole(i, "cap", e.target.value)} placeholder="Cap" type="number" min={0} className={`${roleInp} w-20`} />
+                    <input value={r.soft_cap} onChange={e => patchRole(i, "soft_cap", e.target.value)} placeholder="Cap" type="number" min={0} className={`${roleInp} w-20`} />
                     <input value={r.emoji} onChange={e => patchRole(i, "emoji", e.target.value)} placeholder="Emoji" className={`${roleInp} w-28`} />
                     <button onClick={() => removeRole(i)} className="shrink-0 text-slate-600 hover:text-red-400 transition-colors text-lg leading-none px-1">×</button>
                   </div>
@@ -848,7 +861,7 @@ function TemplatesSection() {
                   <div className="flex flex-wrap gap-1.5 mt-2">
                     {(Array.isArray(t.roles) ? t.roles : []).map((r, i) => (
                       <span key={i} className="text-xs px-2 py-0.5 rounded-full bg-slate-800 text-slate-300 border border-slate-700">
-                        {r.emoji && <span className="mr-1">{r.emoji}</span>}{r.name}{r.cap != null ? ` (${r.cap})` : ""}
+                        {r.emoji && <span className="mr-1">{r.emoji}</span>}{r.name}{r.soft_cap != null ? ` (${r.soft_cap})` : ""}
                       </span>
                     ))}
                   </div>
