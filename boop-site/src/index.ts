@@ -1309,6 +1309,9 @@ const server = serve({
             `;
           }
         }
+        if (eventStatus === "active") {
+          await sql`SELECT pg_notify('event_updated', ${event.id}::text)`;
+        }
         return json(event, 201);
       },
     },
@@ -1378,6 +1381,7 @@ const server = serve({
             `;
           }
         }
+        await sql`SELECT pg_notify('event_updated', ${req.params.id}::text)`;
         return json({ ok: true });
       },
       async DELETE(req) {
@@ -1450,6 +1454,7 @@ const server = serve({
           WHERE id = ${req.params.signupId} AND event_id = ${req.params.id}
         `;
         await sql`UPDATE events SET updated_at = NOW() WHERE id = ${req.params.id}`;
+        await sql`SELECT pg_notify('event_updated', ${req.params.id}::text)`;
         return json({ ok: true });
       },
       async DELETE(req) {
@@ -1458,6 +1463,7 @@ const server = serve({
         if (!isBot && !requireRole(user, "officer")) return err("Forbidden", 403);
         await sql`DELETE FROM event_signups WHERE id = ${req.params.signupId} AND event_id = ${req.params.id}`;
         await sql`UPDATE events SET updated_at = NOW() WHERE id = ${req.params.id}`;
+        await sql`SELECT pg_notify('event_updated', ${req.params.id}::text)`;
         return json({ ok: true });
       },
     },
