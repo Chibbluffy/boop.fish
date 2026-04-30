@@ -1475,11 +1475,11 @@ const server = serve({
       async POST(req) {
         const user = await authenticate(req);
         if (!requireRole(user, "officer")) return err("Forbidden", 403);
-        const { name, description, event_time, total_cap, channel_id, roles } = await req.json();
+        const { name, description, event_time, event_timezone, total_cap, channel_id, roles } = await req.json();
         if (!name?.trim()) return err("name required");
         const [t] = await sql`
-          INSERT INTO event_templates (name, description, event_time, total_cap, channel_id, roles, created_by)
-          VALUES (${name.trim()}, ${description ?? null}, ${event_time ?? null}, ${total_cap ?? 25},
+          INSERT INTO event_templates (name, description, event_time, event_timezone, total_cap, channel_id, roles, created_by)
+          VALUES (${name.trim()}, ${description ?? null}, ${event_time ?? null}, ${event_timezone ?? null}, ${total_cap ?? 25},
                   ${channel_id ?? null}, ${JSON.stringify(roles ?? [])}::jsonb, ${user!.id})
           RETURNING *
         `;
@@ -1491,13 +1491,14 @@ const server = serve({
       async PATCH(req) {
         const user = await authenticate(req);
         if (!requireRole(user, "officer")) return err("Forbidden", 403);
-        const { name, description, event_time, total_cap, channel_id, roles } = await req.json();
+        const { name, description, event_time, event_timezone, total_cap, channel_id, roles } = await req.json();
         const [updated] = await sql`
           UPDATE event_templates SET
-            name        = COALESCE(${name        ?? null}, name),
-            description = ${description ?? null},
-            event_time  = ${event_time  ?? null},
-            channel_id  = ${channel_id  ?? null},
+            name           = COALESCE(${name        ?? null}, name),
+            description    = ${description    ?? null},
+            event_time     = ${event_time     ?? null},
+            event_timezone = ${event_timezone ?? null},
+            channel_id     = ${channel_id     ?? null},
             roles       = COALESCE(${roles ? JSON.stringify(roles) : null}::jsonb, roles),
             updated_at  = NOW()
           WHERE id = ${req.params.id}

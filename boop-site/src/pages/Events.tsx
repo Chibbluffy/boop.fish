@@ -64,6 +64,7 @@ interface EventTemplate {
   total_cap: number;
   channel_id: string | null;
   event_time: string | null;
+  event_timezone: string | null;
   roles: Array<{ name: string; emoji: string | null; soft_cap: number | null }>;
 }
 
@@ -140,6 +141,7 @@ function EventForm({
       total_cap: String(t.total_cap),
       channel_id: t.channel_id ?? f.channel_id,
       event_time: t.event_time ?? f.event_time,
+      event_timezone: t.event_timezone ?? f.event_timezone,
       roles: t.roles.map(r => ({ name: r.name, emoji: r.emoji ?? "", soft_cap: r.soft_cap ? String(r.soft_cap) : "" })),
     }));
   }
@@ -507,7 +509,7 @@ function TemplatesSection({ channels }: { channels: Channel[] }) {
   const [templates, setTemplates] = useState<EventTemplate[]>([]);
   const [loading, setLoading]     = useState(true);
   const [editId, setEditId]       = useState<string | null>(null);
-  const [form, setForm]           = useState({ name: "", description: "", event_time: "", channel_id: "" });
+  const [form, setForm]           = useState({ name: "", description: "", event_time: "", event_timezone: "America/New_York", channel_id: "" });
   const [roles, setRoles]         = useState<TplRoleEntry[]>([]);
   const [saving, setSaving]       = useState(false);
 
@@ -521,13 +523,13 @@ function TemplatesSection({ channels }: { channels: Channel[] }) {
 
   function startNew() {
     setEditId("new");
-    setForm({ name: "", description: "", event_time: "", channel_id: "" });
+    setForm({ name: "", description: "", event_time: "", event_timezone: "America/New_York", channel_id: "" });
     setRoles([{ name: "Main", soft_cap: "", emoji: "" }]);
   }
 
   function startEdit(t: EventTemplate) {
     setEditId(t.id);
-    setForm({ name: t.name, description: t.description ?? "", event_time: t.event_time ?? "", channel_id: t.channel_id ?? "" });
+    setForm({ name: t.name, description: t.description ?? "", event_time: t.event_time ?? "", event_timezone: t.event_timezone ?? "America/New_York", channel_id: t.channel_id ?? "" });
     const safe = Array.isArray(t.roles) ? t.roles : [];
     setRoles(safe.map(r => ({ name: r.name, soft_cap: r.soft_cap != null ? String(r.soft_cap) : "", emoji: r.emoji ?? "" })));
   }
@@ -543,7 +545,7 @@ function TemplatesSection({ channels }: { channels: Channel[] }) {
     setSaving(true);
     const payload = {
       name: form.name.trim(), description: form.description.trim() || null,
-      event_time: form.event_time || null, channel_id: form.channel_id || null,
+      event_time: form.event_time || null, event_timezone: form.event_timezone || null, channel_id: form.channel_id || null,
       roles: roles.filter(r => r.name.trim()).map(r => ({
         name: r.name.trim(), soft_cap: r.soft_cap ? parseInt(r.soft_cap) : null, emoji: r.emoji.trim() || null,
       })),
@@ -601,16 +603,22 @@ function TemplatesSection({ channels }: { channels: Channel[] }) {
                 <input type="time" value={form.event_time} onChange={e => setForm(f => ({ ...f, event_time: e.target.value }))} className={finp} />
               </div>
               <div>
-                <label className="text-[10px] text-slate-500 uppercase tracking-widest font-semibold block mb-1">Channel</label>
-                {channels.length > 0 ? (
-                  <select value={form.channel_id} onChange={e => setForm(f => ({ ...f, channel_id: e.target.value }))} className={finp}>
-                    <option value="">— select channel —</option>
-                    {channels.map(c => <option key={c.id} value={c.id}>#{c.name}</option>)}
-                  </select>
-                ) : (
-                  <input value={form.channel_id} onChange={e => setForm(f => ({ ...f, channel_id: e.target.value }))} placeholder="Channel ID" className={finp} />
-                )}
+                <label className="text-[10px] text-slate-500 uppercase tracking-widest font-semibold block mb-1">Timezone</label>
+                <select value={form.event_timezone} onChange={e => setForm(f => ({ ...f, event_timezone: e.target.value }))} className={finp}>
+                  {TIMEZONES.map(tz => <option key={tz.value} value={tz.value}>{tz.label}</option>)}
+                </select>
               </div>
+            </div>
+            <div>
+              <label className="text-[10px] text-slate-500 uppercase tracking-widest font-semibold block mb-1">Channel</label>
+              {channels.length > 0 ? (
+                <select value={form.channel_id} onChange={e => setForm(f => ({ ...f, channel_id: e.target.value }))} className={finp}>
+                  <option value="">— select channel —</option>
+                  {channels.map(c => <option key={c.id} value={c.id}>#{c.name}</option>)}
+                </select>
+              ) : (
+                <input value={form.channel_id} onChange={e => setForm(f => ({ ...f, channel_id: e.target.value }))} placeholder="Channel ID" className={finp} />
+              )}
             </div>
             <div>
               <p className="text-xs font-semibold text-slate-400 uppercase tracking-widest mb-2">Roles</p>
