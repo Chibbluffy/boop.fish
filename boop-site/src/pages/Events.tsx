@@ -456,24 +456,24 @@ function EventDetail({
         draggable={isOfficer}
         onDragStart={() => handleDragStart(s.id)}
         onDragEnd={handleDragEnd}
-        className={`flex items-center gap-2 py-2 px-3 rounded-lg text-sm
+        className={`flex items-start gap-1.5 py-1.5 px-2 rounded-lg group
           ${busy || thisRowDrag ? "opacity-40" : ""}
-          ${isOfficer ? "cursor-grab" : ""}`}
+          ${isOfficer ? "cursor-grab hover:bg-slate-800/40" : ""}`}
       >
-        {isOfficer && <span className="text-slate-700 text-xs shrink-0 pointer-events-none select-none">⠿</span>}
-        <span className="text-slate-600 text-xs w-5 text-right shrink-0 select-none">{s.signup_order}</span>
-        <span className="font-semibold text-white truncate flex-1 min-w-0 select-none">{s.discord_name}</span>
-        {s.bdo_class && <span className="text-xs text-slate-400 shrink-0 select-none">{s.bdo_class}</span>}
-        {hasGear && (
-          <span className="text-[10px] text-teal-600 shrink-0 tabular-nums select-none whitespace-nowrap">
-            {s.gear_ap ?? "—"}/{s.gear_aap ?? "—"}/{s.gear_dp ?? "—"}
-          </span>
-        )}
+        {isOfficer && <span className="text-slate-700 text-[10px] mt-0.5 shrink-0 pointer-events-none select-none">⠿</span>}
+        <span className="text-slate-600 text-[10px] w-4 text-right shrink-0 mt-0.5 select-none">{s.signup_order}</span>
+        <div className="flex-1 min-w-0">
+          <p className="font-semibold text-white text-xs truncate select-none leading-snug">{s.discord_name}</p>
+          <div className="flex flex-wrap gap-x-1.5 items-center">
+            {s.bdo_class && <span className="text-[10px] text-slate-400 select-none">{s.bdo_class}</span>}
+            {hasGear && <span className="text-[10px] text-teal-600 tabular-nums select-none">{s.gear_ap ?? "—"}/{s.gear_aap ?? "—"}/{s.gear_dp ?? "—"}</span>}
+          </div>
+        </div>
         {isOfficer && (
           <button
             draggable={false}
             onClick={e => { e.stopPropagation(); removeSignup(s.id); }}
-            className="shrink-0 text-[10px] px-1.5 py-0.5 rounded bg-red-900/30 text-red-500 hover:bg-red-800/60 transition-colors"
+            className="shrink-0 text-[10px] text-red-500/40 hover:text-red-400 transition-colors mt-0.5 opacity-0 group-hover:opacity-100"
           >✕</button>
         )}
       </div>
@@ -550,61 +550,65 @@ function EventDetail({
       {/* Signups tab */}
       {tab === "signups" && (
         <div className="flex flex-col gap-3">
-          {/* Role buckets */}
-          {grouped.map(({ role, signups: rs }) => {
-            const key  = `role:${role.id}`;
-            const over = dragOver === key;
-            return (
-              <div
-                key={role.id}
-                {...bucketDropProps(key, role.id, role.name, "accepted")}
-                className={`rounded-2xl p-4 border transition-colors ${over
-                  ? "bg-violet-900/30 border-violet-500"
-                  : "bg-slate-900/40 border-slate-800"}`}
-              >
-                <BucketHeader emoji={role.emoji} name={role.name} count={rs.length} cap={role.soft_cap} />
-                {rs.length === 0
-                  ? <p className={`text-xs italic ${over ? "text-violet-400" : "text-slate-700"}`}>
-                      {over ? "Drop here" : "No signups yet"}
-                    </p>
-                  : rs.map(s => <SignupRow key={s.id} s={s} />)}
-              </div>
-            );
-          })}
-
-          {/* No-role accepted */}
-          {noRole.length > 0 && (
-            <div className="bg-slate-900/40 border border-slate-800 rounded-2xl p-4">
-              <BucketHeader name="No role assigned" count={noRole.length} />
-              {noRole.map(s => <SignupRow key={s.id} s={s} />)}
+          {/* Role buckets — responsive grid */}
+          {(grouped.length > 0 || noRole.length > 0) && (
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
+              {grouped.map(({ role, signups: rs }) => {
+                const key  = `role:${role.id}`;
+                const over = dragOver === key;
+                return (
+                  <div
+                    key={role.id}
+                    {...bucketDropProps(key, role.id, role.name, "accepted")}
+                    className={`rounded-xl p-3 border transition-colors min-h-[80px] ${over
+                      ? "bg-violet-900/30 border-violet-500"
+                      : "bg-slate-900/40 border-slate-800"}`}
+                  >
+                    <BucketHeader emoji={role.emoji} name={role.name} count={rs.length} cap={role.soft_cap} />
+                    {rs.length === 0
+                      ? <p className={`text-[10px] italic ${over ? "text-violet-400" : "text-slate-700"}`}>
+                          {over ? "Drop here" : "Empty"}
+                        </p>
+                      : rs.map(s => <SignupRow key={s.id} s={s} />)}
+                  </div>
+                );
+              })}
+              {noRole.length > 0 && (
+                <div className="bg-slate-900/40 border border-slate-800 rounded-xl p-3 min-h-[80px]">
+                  <BucketHeader name="No role" count={noRole.length} />
+                  {noRole.map(s => <SignupRow key={s.id} s={s} />)}
+                </div>
+              )}
             </div>
           )}
 
-          {/* Status buckets — always visible for officers so they're stable drop targets */}
-          {[
-            { key: "bench",     label: "Bench",     list: bench,     status: "bench"     as SignupStatus },
-            { key: "tentative", label: "Tentative", list: tentative, status: "tentative" as SignupStatus },
-            { key: "absent",    label: "Absent",    list: absent,    status: "absent"    as SignupStatus },
-          ].map(({ key, label, list, status }) => {
-            if (!isOfficer && list.length === 0) return null;
-            const over = dragOver === key;
-            return (
-              <div
-                key={key}
-                {...bucketDropProps(key, null, null, status)}
-                className={`rounded-2xl p-4 border transition-colors ${over
-                  ? "bg-slate-700/40 border-slate-500"
-                  : "bg-slate-900/40 border-slate-800"}`}
-              >
-                <BucketHeader name={label} count={list.length} />
-                {list.length === 0
-                  ? <p className={`text-xs italic ${over ? "text-slate-300" : "text-slate-700"}`}>
-                      {over ? "Drop here" : "Empty"}
-                    </p>
-                  : list.map(s => <SignupRow key={s.id} s={s} />)}
-              </div>
-            );
-          })}
+          {/* Status buckets — always 3 columns, always visible for officers */}
+          <div className="grid grid-cols-3 gap-3">
+            {[
+              { key: "bench",     label: "Bench",     list: bench,     status: "bench"     as SignupStatus },
+              { key: "tentative", label: "Tentative", list: tentative, status: "tentative" as SignupStatus },
+              { key: "absent",    label: "Absent",    list: absent,    status: "absent"    as SignupStatus },
+            ].map(({ key, label, list, status }) => {
+              if (!isOfficer && list.length === 0) return null;
+              const over = dragOver === key;
+              return (
+                <div
+                  key={key}
+                  {...bucketDropProps(key, null, null, status)}
+                  className={`rounded-xl p-3 border transition-colors min-h-[60px] ${over
+                    ? "bg-slate-700/40 border-slate-500"
+                    : "bg-slate-900/40 border-slate-800"}`}
+                >
+                  <BucketHeader name={label} count={list.length} />
+                  {list.length === 0
+                    ? <p className={`text-[10px] italic ${over ? "text-slate-300" : "text-slate-700"}`}>
+                        {over ? "Drop here" : "Empty"}
+                      </p>
+                    : list.map(s => <SignupRow key={s.id} s={s} />)}
+                </div>
+              );
+            })}
+          </div>
 
           {event.signups.length === 0 && (
             <p className="text-slate-500 text-sm text-center py-12">No signups yet.</p>
