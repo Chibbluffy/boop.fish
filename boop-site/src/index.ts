@@ -1479,12 +1479,13 @@ const server = serve({
           ORDER BY event_date DESC, event_time DESC
         `;
         const signups = events.length === 0 ? [] : await sql`
-          SELECT es.event_id, es.discord_id, es.discord_name, es.attended,
+          SELECT es.event_id, es.discord_id, es.discord_name,
+                 (es.status = 'accepted') AS attended,
                  u.discord_avatar AS avatar_url, u.username
           FROM event_signups es
           LEFT JOIN users u ON u.discord_id = es.discord_id
           WHERE es.event_id = ANY(${events.map((e: any) => e.id)})
-            AND es.status != 'absent'
+            AND es.status IN ('accepted', 'absent')
           ORDER BY es.discord_name
         `;
         return json({ events, signups });

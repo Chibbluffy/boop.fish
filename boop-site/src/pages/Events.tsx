@@ -361,7 +361,6 @@ function EventDetail({
   onBack: () => void;
   onRefresh: () => void;
 }) {
-  const [tab, setTab]         = useState<"signups" | "attendance">("signups");
   const [working, setWorking] = useState<string | null>(null);
   // Use a ref for the drag ID so onDragStart doesn't trigger a re-render (which breaks the drag ghost)
   const draggingRef             = useRef<string | null>(null);
@@ -388,17 +387,6 @@ function EventDetail({
     if (!confirm("Remove this signup?")) return;
     setWorking(id);
     await apiFetch(`/api/events/${event.id}/signups/${id}`, { method: "DELETE" }).catch(() => {});
-    onRefresh();
-    setWorking(null);
-  }
-
-  async function markAttended(id: string, attended: boolean) {
-    setWorking(id);
-    await apiFetch(`/api/events/${event.id}/signups/${id}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ attended }),
-    }).catch(() => {});
     onRefresh();
     setWorking(null);
   }
@@ -436,14 +424,23 @@ function EventDetail({
     moveSignup(id, role_id, role_name, status);
   }
 
-  function bucketDropProps(bucketKey: string, role_id: string | null, role_name: string | null, status: SignupStatus) {
+  function bucketDropProps(bucketKey: string, role_id: string | null, role_name: string | null, status: SignupStatus, preserveRole = false) {
     if (!isOfficer) return {};
     return {
       onDragOver:  (e: React.DragEvent) => { e.preventDefault(); setDragOver(bucketKey); },
       onDragLeave: (e: React.DragEvent) => {
         if (!e.currentTarget.contains(e.relatedTarget as Node)) setDragOver(null);
       },
-      onDrop: (e: React.DragEvent) => { e.preventDefault(); handleDrop(role_id, role_name, status); },
+      onDrop: (e: React.DragEvent) => {
+        e.preventDefault();
+        if (preserveRole) {
+          const id = draggingRef.current;
+          const s = id ? event.signups.find(x => x.id === id) : null;
+          handleDrop(s?.role_id ?? null, s?.role_name ?? null, status);
+        } else {
+          handleDrop(role_id, role_name, status);
+        }
+      },
     };
   }
 
@@ -536,20 +533,8 @@ function EventDetail({
         )}
       </div>
 
-      {/* Tabs */}
-      {isOfficer && (
-        <div className="flex gap-1 mb-6 bg-slate-900/60 border border-slate-800 rounded-xl p-1 w-fit">
-          {(["signups", "attendance"] as const).map(t => (
-            <button key={t} onClick={() => setTab(t)}
-              className={`px-4 py-1.5 rounded-lg text-sm font-semibold transition-colors capitalize ${tab === t ? "bg-violet-600 text-white" : "text-slate-300 hover:text-white"}`}
-            >{t}</button>
-          ))}
-        </div>
-      )}
-
-      {/* Signups tab */}
-      {tab === "signups" && (
-        <div className="flex flex-col gap-3">
+      {/* Signups */}
+      <div className="flex flex-col gap-3">
           {/* Role buckets — responsive grid */}
           {(grouped.length > 0 || noRole.length > 0) && (
             <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
@@ -593,7 +578,7 @@ function EventDetail({
             }
             return (
               <div
-                {...bucketDropProps("bench", null, null, "bench")}
+                {...bucketDropProps("bench", null, null, "bench", true)}
                 className={`rounded-xl p-3 border transition-colors min-h-[60px] ${over ? "bg-slate-700/40 border-slate-500" : "bg-slate-900/40 border-slate-800"}`}
               >
                 <BucketHeader name="Bench" count={bench.length} />
@@ -612,75 +597,57 @@ function EventDetail({
             );
           })()}
 
-          {/* Tentative / Absent */}
-          <div className="grid grid-cols-2 gap-3">
-            {[
-              { key: "tentative", label: "Tentative", list: tentative, status: "tentative" as SignupStatus },
-              { key: "absent",    label: "Absent",    list: absent,    status: "absent"    as SignupStatus },
-            ].map(({ key, label, list, status }) => {
-              if (!isOfficer && list.length === 0) return null;
-              const over = dragOver === key;
-              return (
-                <div
-                  key={key}
-                  {...bucketDropProps(key, null, null, status)}
-                  className={`rounded-xl p-3 border transition-colors min-h-[60px] ${over
-                    ? "bg-slate-700/40 border-slate-500"
-                    : "bg-slate-900/40 border-slate-800"}`}
-                >
-                  <BucketHeader name={label} count={list.length} />
-                  {list.length === 0
-                    ? <p className={`text-[10px] italic ${over ? "text-slate-300" : "text-slate-700"}`}>
-                        {over ? "Drop here" : "Empty"}
-                      </p>
-                    : list.map(s => <SignupRow key={s.id} s={s} />)}
-                </div>
-              );
-            })}
-          </div>
+          {/* Tentative */}
+          {(isOfficer || tentative.length > 0) && (() => {
+            const over = dragOver === "tentative";
+            return (
+              <div
+                {...bucketDropProps("tentative", null, null, "tentative")}
+                className={`rounded-xl p-3 border transition-colors min-h-[60px] ${over ? "bg-slate-700/40 border-slate-500" : "bg-slate-900/40 border-slate-800"}`}
+              >
+                <BucketHeader name="Tentative" count={tentative.length} />
+                {tentative.length === 0
+                  ? <p className={`text-[10px] italic ${over ? "text-slate-300" : "text-slate-700"}`}>{over ? "Drop here" : "Empty"}</p>
+                  : tentative.map(s => <SignupRow key={s.id} s={s} />)}
+              </div>
+            );
+          })()}
+
+          {/* Absent — grouped by the role they wanted, counts as not-attended */}
+          {(isOfficer || absent.length > 0) && (() => {
+            const over = dragOver === "absent";
+            const byRole = new Map<string, typeof absent>();
+            for (const s of absent) {
+              const k = s.role_name ?? "No Role";
+              if (!byRole.has(k)) byRole.set(k, []);
+              byRole.get(k)!.push(s);
+            }
+            return (
+              <div
+                {...bucketDropProps("absent", null, null, "absent", true)}
+                className={`rounded-xl p-3 border transition-colors min-h-[60px] ${over ? "bg-red-900/20 border-red-800/50" : "bg-slate-900/40 border-slate-800"}`}
+              >
+                <BucketHeader name="Absent" count={absent.length} />
+                {absent.length === 0
+                  ? <p className={`text-[10px] italic ${over ? "text-red-400" : "text-slate-700"}`}>{over ? "Drop here" : "Empty"}</p>
+                  : Array.from(byRole.entries()).map(([roleName, members]) => (
+                      <div key={roleName} className="mb-2 last:mb-0">
+                        <div className="text-[10px] text-slate-500 font-semibold uppercase tracking-wide mb-1">
+                          {roleName} ({members.length})
+                        </div>
+                        {members.map(s => <SignupRow key={s.id} s={s} />)}
+                      </div>
+                    ))
+                }
+              </div>
+            );
+          })()}
 
           {event.signups.length === 0 && (
             <p className="text-slate-500 text-sm text-center py-12">No signups yet.</p>
           )}
         </div>
-      )}
 
-      {/* Attendance tab */}
-      {tab === "attendance" && (
-        <div className="bg-slate-900/40 border border-slate-800 rounded-2xl overflow-hidden">
-          <div className="grid grid-cols-[2rem_1fr_1fr_7rem_6rem] gap-3 items-center px-4 py-2 border-b border-slate-800 text-[10px] font-black text-slate-500 uppercase tracking-widest">
-            <span>#</span><span>Name</span><span>Class</span><span>Role</span><span>Attended</span>
-          </div>
-          {event.signups.filter(s => s.status !== "absent").map(s => (
-            <div key={s.id} className="grid grid-cols-[2rem_1fr_1fr_7rem_6rem] gap-3 items-center px-4 py-2.5 border-b border-slate-800/50 text-sm last:border-0">
-              <span className="text-slate-600 text-xs">{s.signup_order}</span>
-              <div className="min-w-0">
-                <span className="font-semibold text-white truncate block">{s.discord_name}</span>
-                {(s.gear_ap != null || s.gear_aap != null || s.gear_dp != null) && (
-                  <span className="text-[10px] text-teal-600 tabular-nums">
-                    {s.gear_ap ?? "—"}/{s.gear_aap ?? "—"}/{s.gear_dp ?? "—"}
-                  </span>
-                )}
-              </div>
-              <span className="text-slate-400 text-xs truncate">{s.attended_class ?? s.bdo_class ?? "—"}</span>
-              <span className="text-slate-400 text-xs truncate">{s.attended_role ?? s.role_name ?? "—"}</span>
-              <div className="flex gap-2">
-                <button
-                  onClick={() => markAttended(s.id, true)}
-                  className={`text-xs px-2 py-0.5 rounded font-semibold transition-colors ${s.attended === true ? "bg-teal-600 text-white" : "bg-slate-800 text-slate-500 hover:text-white"}`}
-                >✓</button>
-                <button
-                  onClick={() => markAttended(s.id, false)}
-                  className={`text-xs px-2 py-0.5 rounded font-semibold transition-colors ${s.attended === false ? "bg-red-700 text-white" : "bg-slate-800 text-slate-500 hover:text-white"}`}
-                >✕</button>
-              </div>
-            </div>
-          ))}
-          {event.signups.filter(s => s.status !== "absent").length === 0 && (
-            <p className="text-slate-500 text-sm text-center py-8">No signups to track.</p>
-          )}
-        </div>
-      )}
     </div>
   );
 }
