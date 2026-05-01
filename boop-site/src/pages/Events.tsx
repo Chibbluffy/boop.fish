@@ -330,23 +330,28 @@ function EventForm({
 
 // Renders a string containing Discord emoji syntax like <a:name:id> or <:name:id> as images
 function EmojiText({ text }: { text: string }) {
-  const parts = text.split(/(<a?:[^:>]+:\d+>)/g);
-  return (
-    <>
-      {parts.map((part, i) => {
-        const m = part.match(/^<(a?):([^:>]+):(\d+)>$/);
-        if (m) {
-          const [, anim, name, id] = m;
-          const animated = anim === "a";
-          const src = animated
-            ? `https://cdn.discordapp.com/emojis/${id}.gif`
-            : `https://cdn.discordapp.com/emojis/${id}.png?size=32`;
-          return <img key={i} src={src} alt={name} className="inline w-5 h-5 align-middle" />;
-        }
-        return part ? <span key={i}>{part}</span> : null;
-      })}
-    </>
-  );
+  const regex = /<(a?):([^:>]+):(\d+)>/g;
+  const nodes: React.ReactNode[] = [];
+  let cursor = 0;
+  let match: RegExpExecArray | null;
+
+  while ((match = regex.exec(text)) !== null) {
+    if (match.index > cursor) {
+      nodes.push(<span key={cursor}>{text.slice(cursor, match.index)}</span>);
+    }
+    const [, anim, name, id] = match;
+    const src = anim === "a"
+      ? `https://cdn.discordapp.com/emojis/${id}.gif`
+      : `https://cdn.discordapp.com/emojis/${id}.png?size=32`;
+    nodes.push(<img key={match.index} src={src} alt={name} title={name} className="inline w-5 h-5 align-middle" />);
+    cursor = match.index + match[0].length;
+  }
+
+  if (cursor < text.length) {
+    nodes.push(<span key={cursor}>{text.slice(cursor)}</span>);
+  }
+
+  return <>{nodes}</>;
 }
 
 // ── Event Detail ──────────────────────────────────────────────────────────────
