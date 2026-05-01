@@ -10,11 +10,6 @@ export default function Auth() {
   const user = useAuth();
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
-  const [showLegacy, setShowLegacy] = useState(false);
-
-  // Legacy password form state
-  const [username, setUsername] = useState("");
-  const [password, setPassword] = useState("");
 
   // On mount — handle Discord callback token or error
   useEffect(() => {
@@ -50,26 +45,6 @@ export default function Auth() {
     const token = localStorage.getItem("boop_session");
     if (token) await fetch("/api/auth/logout", { method: "POST", headers: { Authorization: `Bearer ${token}` } }).catch(() => {});
     clearSession();
-  }
-
-  async function submitLegacy() {
-    if (!username.trim() || !password) return setError("Fill in all fields.");
-    setLoading(true);
-    setError(null);
-    try {
-      const res  = await fetch("/api/auth/login", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ username, password }),
-      });
-      const data = await res.json();
-      if (!res.ok) return setError(data.error ?? "Something went wrong.");
-      saveSession(data.token, data.user);
-    } catch {
-      setError("Could not reach the server.");
-    } finally {
-      setLoading(false);
-    }
   }
 
   // ── Logged in view ───────────────────────────────────────────────────────────
@@ -131,32 +106,6 @@ export default function Auth() {
             <p className="text-sm text-red-400 bg-red-500/10 border border-red-500/20 rounded-lg px-3 py-2">
               {error}
             </p>
-          )}
-
-          {/* Legacy password login — admin fallback */}
-          {!loading && (
-            <div className="border-t border-slate-800 pt-3 mt-1">
-              <button onClick={() => setShowLegacy(v => !v)}
-                className="text-xs text-slate-600 hover:text-slate-400 transition-colors w-full text-center">
-                {showLegacy ? "Hide" : "Sign in with password"}
-              </button>
-
-              {showLegacy && (
-                <div className="flex flex-col gap-3 mt-3">
-                  <input value={username} onChange={e => setUsername(e.target.value)}
-                    placeholder="Username"
-                    className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2.5 text-white placeholder-slate-600 text-sm focus:outline-none focus:border-violet-500 transition-colors" />
-                  <input value={password} onChange={e => setPassword(e.target.value)}
-                    type="password" placeholder="Password"
-                    onKeyDown={e => e.key === "Enter" && submitLegacy()}
-                    className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2.5 text-white placeholder-slate-600 text-sm focus:outline-none focus:border-violet-500 transition-colors" />
-                  <button onClick={submitLegacy} disabled={loading}
-                    className="w-full py-2.5 rounded-xl bg-slate-700 hover:bg-slate-600 disabled:opacity-50 text-white font-semibold text-sm transition-colors">
-                    Sign in
-                  </button>
-                </div>
-              )}
-            </div>
           )}
         </div>
 

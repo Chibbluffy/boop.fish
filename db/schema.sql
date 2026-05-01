@@ -23,6 +23,7 @@ CREATE TABLE IF NOT EXISTS users (
                             CHECK (role IN ('pending', 'friend', 'member', 'officer', 'admin')),
   character_name VARCHAR(100),                 -- in-game name
   ribbit_count  INTEGER     NOT NULL DEFAULT 0, -- 🐸 activity marker
+  boops         INTEGER     NOT NULL DEFAULT 0, -- economy currency
   bdo_class     VARCHAR(50),                    -- saved BDO class (main)
   alt_class     VARCHAR(50),                    -- tagged / alt class
   gear_ap       INTEGER,                        -- saved AP
@@ -57,6 +58,7 @@ CREATE TABLE IF NOT EXISTS users (
 -- ALTER TABLE users ADD COLUMN IF NOT EXISTS discord_username VARCHAR(100);
 -- ALTER TABLE users ADD COLUMN IF NOT EXISTS discord_avatar  TEXT;
 -- ALTER TABLE users ADD COLUMN IF NOT EXISTS gear_image_url  TEXT;
+-- ALTER TABLE users ADD COLUMN IF NOT EXISTS boops           INTEGER NOT NULL DEFAULT 0;
 -- ALTER TABLE users ALTER COLUMN password_hash DROP NOT NULL;
 -- ALTER TABLE users DROP CONSTRAINT IF EXISTS users_role_check;
 -- ALTER TABLE users ADD CONSTRAINT users_role_check CHECK (role IN ('pending', 'friend', 'member', 'officer', 'admin'));
@@ -306,21 +308,24 @@ CREATE INDEX IF NOT EXISTS idx_payout_history_date ON payout_history(created_at 
 -- EVENTS  (node war / guild event signup system)
 -- ============================================================
 CREATE TABLE IF NOT EXISTS events (
-  id           UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
-  title        TEXT        NOT NULL,
-  description  TEXT,
-  event_date     DATE        NOT NULL,
-  event_time     TIME        NOT NULL,
-  event_timezone VARCHAR(50),
-  total_cap      INTEGER     NOT NULL DEFAULT 25,
-  channel_id   VARCHAR(20),
-  message_id   VARCHAR(20),
-  status       VARCHAR(20) NOT NULL DEFAULT 'draft'
-               CHECK (status IN ('draft', 'active', 'closed')),
-  created_by   UUID        REFERENCES users(id) ON DELETE SET NULL,
-  created_at   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  updated_at   TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  id                UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+  title             TEXT        NOT NULL,
+  description       TEXT,
+  event_date        DATE        NOT NULL,
+  event_time        TIME        NOT NULL,
+  event_timezone    VARCHAR(50),
+  total_cap         INTEGER     NOT NULL DEFAULT 25,
+  channel_id        VARCHAR(20),
+  message_id        VARCHAR(20),
+  status            VARCHAR(20) NOT NULL DEFAULT 'draft'
+                    CHECK (status IN ('draft', 'active', 'closed')),
+  calendar_event_id UUID        REFERENCES calendar_events(id) ON DELETE SET NULL,
+  created_by        UUID        REFERENCES users(id) ON DELETE SET NULL,
+  created_at        TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at        TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+-- Migration for existing installs:
+-- ALTER TABLE events ADD COLUMN IF NOT EXISTS calendar_event_id UUID REFERENCES calendar_events(id) ON DELETE SET NULL;
 CREATE INDEX IF NOT EXISTS idx_events_status ON events(status);
 CREATE INDEX IF NOT EXISTS idx_events_date   ON events(event_date DESC);
 

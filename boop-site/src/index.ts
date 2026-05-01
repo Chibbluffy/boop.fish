@@ -5,14 +5,11 @@ import index from "./index.html";
 
 import sql from "./lib/db";
 import {
-  hashPassword,
-  verifyPassword,
   createSession,
   deleteSession,
   authenticate,
   requireRole,
 } from "./lib/auth-server";
-import { sendEmail, passwordResetEmail } from "./lib/email";
 
 const UPLOAD_DIR = join(import.meta.dir, "../../uploads");
 const CACHE_DIR  = join(import.meta.dir, "..", "cache");
@@ -65,49 +62,6 @@ const server = serve({
     },
 
     // ── Auth ────────────────────────────────────────────────────────────────
-
-    "/api/auth/register": {
-      async POST(req) {
-        const { username, password, family_name, discord_name, timezone } = await req.json();
-        if (!username || !password) return err("username and password are required");
-        if (!timezone) return err("timezone is required");
-        if (password.length < 8) return err("Password must be at least 8 characters");
-
-        const exists = await sql`SELECT id FROM users WHERE username = ${username}`;
-        if (exists.length) return err("Username already taken", 409);
-
-        const password_hash = await hashPassword(password);
-        const [user] = await sql`
-          INSERT INTO users (username, password_hash, family_name, discord_name, timezone, role)
-          VALUES (${username}, ${password_hash}, ${family_name ?? null}, ${discord_name ?? null}, ${timezone}, 'member')
-          RETURNING id, username, email, role, character_name, family_name, discord_name,
-                    discord_id, discord_username, discord_avatar,
-                    ribbit_count, bdo_class, alt_class, gear_ap, gear_aap, gear_dp, timezone
-        `;
-        const token = await createSession(user.id);
-        return json({ token, user }, 201);
-      },
-    },
-
-    "/api/auth/login": {
-      async POST(req) {
-        const { username, password } = await req.json();
-        if (!username || !password) return err("username and password are required");
-
-        const [user] = await sql`
-          SELECT id, username, email, password_hash, role, character_name, family_name, discord_name, ribbit_count, bdo_class, alt_class, gear_ap, gear_aap, gear_dp, timezone
-          FROM users WHERE username = ${username}
-        `;
-        if (!user || !user.password_hash) return err("Invalid username or password", 401);
-
-        const ok = await verifyPassword(password, user.password_hash);
-        if (!ok) return err("Invalid username or password", 401);
-
-        const token = await createSession(user.id);
-        const { password_hash: _, ...safeUser } = user;
-        return json({ token, user: safeUser });
-      },
-    },
 
     "/api/auth/logout": {
       async POST(req) {
@@ -201,14 +155,17 @@ const server = serve({
             `;
             user = existing;
           } else {
-            // Create a new account
+            // Create a new account — first user ever becomes admin automatically
             let username = discordUsername;
             const taken = await sql`SELECT id FROM users WHERE username = ${username}`;
             if (taken.length) username = `${discordUsername}_${discordId.slice(-4)}`;
 
+            const [{ count }] = await sql`SELECT COUNT(*)::int AS count FROM users`;
+            const roleToAssign = count === 0 ? "admin" : discordRole;
+
             const [newUser] = await sql`
               INSERT INTO users (username, password_hash, role, discord_id, discord_username, discord_avatar, discord_name)
-              VALUES (${username}, '', ${discordRole}, ${discordId}, ${discordUsername}, ${discordAvatar}, ${discordUsername})
+              VALUES (${username}, '', ${roleToAssign}, ${discordId}, ${discordUsername}, ${discordAvatar}, ${discordUsername})
               RETURNING id, role
             `;
             user = newUser;
@@ -226,61 +183,6 @@ const server = serve({
 
         const sessionToken = await createSession(user.id);
         return Response.redirect(`${siteUrl}/#/auth?token=${sessionToken}`, 302);
-      },
-    },
-
-    "/api/auth/forgot-password": {
-      async POST(req) {
-        const { email } = await req.json();
-        if (!email) return err("email is required");
-
-        // Always return 200 — never reveal whether an email exists
-        const [user] = await sql`SELECT id, username FROM users WHERE email = ${email}`;
-        if (!user) return json({ ok: true });
-
-        // Invalidate any existing reset tokens for this user
-        await sql`DELETE FROM password_reset_tokens WHERE user_id = ${user.id}`;
-
-        // Generate token
-        const bytes = new Uint8Array(32);
-        crypto.getRandomValues(bytes);
-        const token = Array.from(bytes).map(b => b.toString(16).padStart(2, "0")).join("");
-        const expiresAt = new Date(Date.now() + 60 * 60 * 1000); // 1 hour
-
-        await sql`
-          INSERT INTO password_reset_tokens (user_id, token, expires_at)
-          VALUES (${user.id}, ${token}, ${expiresAt})
-        `;
-
-        const baseUrl = process.env.SITE_URL ?? "https://boop.fish";
-        const resetUrl = `${baseUrl}/#/auth?reset=${token}`;
-        const { subject, html, text } = passwordResetEmail(user.username, resetUrl);
-
-        await sendEmail({ to: email, subject, html, text });
-        return json({ ok: true });
-      },
-    },
-
-    "/api/auth/reset-password": {
-      async POST(req) {
-        const { token, password } = await req.json();
-        if (!token || !password) return err("token and password are required");
-        if (password.length < 8) return err("Password must be at least 8 characters");
-
-        const [row] = await sql`
-          SELECT user_id FROM password_reset_tokens
-          WHERE token = ${token} AND expires_at > NOW()
-        `;
-        if (!row) return err("Reset link is invalid or has expired", 400);
-
-        const password_hash = await hashPassword(password);
-        await sql`UPDATE users SET password_hash = ${password_hash} WHERE id = ${row.user_id}`;
-
-        // Single-use: delete the token and all sessions so other devices are logged out
-        await sql`DELETE FROM password_reset_tokens WHERE token = ${token}`;
-        await sql`DELETE FROM sessions WHERE user_id = ${row.user_id}`;
-
-        return json({ ok: true });
       },
     },
 
@@ -1309,6 +1211,13 @@ const server = serve({
             `;
           }
         }
+        // Create a linked calendar event for reminders
+        const [calEvent] = await sql`
+          INSERT INTO calendar_events (title, description, event_date, event_time, event_timezone, created_by)
+          VALUES (${title.trim()}, ${description ?? null}, ${event_date}, ${event_time ?? null}, ${event_timezone ?? null}, ${user!.id})
+          RETURNING id
+        `;
+        await sql`UPDATE events SET calendar_event_id = ${calEvent.id} WHERE id = ${event.id}`;
         if (eventStatus === "active") {
           await sql`SELECT pg_notify('event_updated', ${event.id}::text)`;
         }
@@ -1387,13 +1296,28 @@ const server = serve({
             `;
           }
         }
+        // Keep linked calendar event in sync
+        await sql`
+          UPDATE calendar_events SET
+            title          = COALESCE(${title ?? null}, title),
+            description    = COALESCE(${description ?? null}, description),
+            event_date     = COALESCE(${event_date ?? null}::date, event_date),
+            event_time     = COALESCE(${event_time ?? null}::time, event_time),
+            event_timezone = COALESCE(${event_timezone ?? null}, event_timezone),
+            updated_at     = NOW()
+          WHERE id = (SELECT calendar_event_id FROM events WHERE id = ${req.params.id})
+        `;
         await sql`SELECT pg_notify('event_updated', ${req.params.id}::text)`;
         return json({ ok: true });
       },
       async DELETE(req) {
         const user = await authenticate(req);
         if (!requireRole(user, "officer")) return err("Forbidden", 403);
+        const [evRow] = await sql`SELECT calendar_event_id FROM events WHERE id = ${req.params.id}`;
         await sql`DELETE FROM events WHERE id = ${req.params.id}`;
+        if (evRow?.calendar_event_id) {
+          await sql`DELETE FROM calendar_events WHERE id = ${evRow.calendar_event_id}`;
+        }
         return json({ ok: true });
       },
     },
@@ -1411,23 +1335,38 @@ const server = serve({
       async POST(req) {
         if (req.headers.get("Authorization") !== `Bot ${process.env.DISCORD_BOT_TOKEN}`) return err("Forbidden", 403);
         const { discord_id, discord_name, role_id, role_name, bdo_class, status } = await req.json();
-        const existing = await sql`SELECT id FROM event_signups WHERE event_id = ${req.params.id} AND discord_id = ${discord_id}`;
-        if (existing.length > 0) {
-          await sql`
-            UPDATE event_signups SET role_id = ${role_id}, role_name = ${role_name},
-              bdo_class = ${bdo_class}, status = ${status}
-            WHERE event_id = ${req.params.id} AND discord_id = ${discord_id}
-          `;
-        } else {
-          const [{ next_order }] = await sql`
-            SELECT COALESCE(MAX(signup_order), 0) + 1 AS next_order FROM event_signups WHERE event_id = ${req.params.id}
-          `;
-          await sql`
-            INSERT INTO event_signups (event_id, discord_id, discord_name, role_id, role_name, bdo_class, signup_order, status)
-            VALUES (${req.params.id}, ${discord_id}, ${discord_name}, ${role_id}, ${role_name}, ${bdo_class}, ${next_order}, ${status})
-          `;
+        await sql.begin(async sql => {
+          await sql`SELECT id FROM events WHERE id = ${req.params.id} FOR UPDATE`;
+          const existing = await sql`SELECT id FROM event_signups WHERE event_id = ${req.params.id} AND discord_id = ${discord_id}`;
+          if (existing.length > 0) {
+            await sql`
+              UPDATE event_signups SET role_id = ${role_id}, role_name = ${role_name},
+                bdo_class = ${bdo_class}, status = ${status}
+              WHERE event_id = ${req.params.id} AND discord_id = ${discord_id}
+            `;
+          } else {
+            const [{ next_order }] = await sql`
+              SELECT COALESCE(MAX(signup_order), 0) + 1 AS next_order FROM event_signups WHERE event_id = ${req.params.id}
+            `;
+            await sql`
+              INSERT INTO event_signups (event_id, discord_id, discord_name, role_id, role_name, bdo_class, signup_order, status)
+              VALUES (${req.params.id}, ${discord_id}, ${discord_name}, ${role_id}, ${role_name}, ${bdo_class}, ${next_order}, ${status})
+            `;
+          }
+          await sql`UPDATE events SET updated_at = NOW() WHERE id = ${req.params.id}`;
+        });
+        // Sync calendar interest
+        const [evRowSignup] = await sql`SELECT calendar_event_id FROM events WHERE id = ${req.params.id}`;
+        if (evRowSignup?.calendar_event_id) {
+          const [uRow] = await sql`SELECT id FROM users WHERE discord_id = ${discord_id}`;
+          if (uRow) {
+            if (status !== 'absent') {
+              await sql`INSERT INTO calendar_event_interests (event_id, user_id) VALUES (${evRowSignup.calendar_event_id}, ${uRow.id}) ON CONFLICT DO NOTHING`;
+            } else {
+              await sql`DELETE FROM calendar_event_interests WHERE event_id = ${evRowSignup.calendar_event_id} AND user_id = ${uRow.id}`;
+            }
+          }
         }
-        await sql`UPDATE events SET updated_at = NOW() WHERE id = ${req.params.id}`;
         return json({ ok: true });
       },
     },
@@ -1438,6 +1377,14 @@ const server = serve({
         const { discord_id } = await req.json();
         await sql`DELETE FROM event_signups WHERE event_id = ${req.params.id} AND discord_id = ${discord_id}`;
         await sql`UPDATE events SET updated_at = NOW() WHERE id = ${req.params.id}`;
+        // Remove calendar interest on withdraw
+        const [evRowWd] = await sql`SELECT calendar_event_id FROM events WHERE id = ${req.params.id}`;
+        if (evRowWd?.calendar_event_id) {
+          const [uRowWd] = await sql`SELECT id FROM users WHERE discord_id = ${discord_id}`;
+          if (uRowWd) {
+            await sql`DELETE FROM calendar_event_interests WHERE event_id = ${evRowWd.calendar_event_id} AND user_id = ${uRowWd.id}`;
+          }
+        }
         return json({ ok: true });
       },
     },
@@ -1894,24 +1841,7 @@ async function syncClassSprite() {
 }
 await syncClassSprite();
 
-// ── Bootstrap admin account ───────────────────────────────────────────────────
-const adminUsername = process.env.ADMIN_USERNAME?.trim();
-const adminPassword = process.env.ADMIN_PASSWORD?.trim();
-
-if (adminUsername && adminPassword) {
-  const existing = await sql`SELECT id FROM users WHERE username = ${adminUsername}`;
-  if (!existing.length) {
-    const password_hash = await hashPassword(adminPassword);
-    await sql`
-      INSERT INTO users (username, password_hash, role)
-      VALUES (${adminUsername}, ${password_hash}, 'admin')
-    `;
-    console.log(`✅ Bootstrap admin created: ${adminUsername}`);
-  }
-}
-
-// ── Cleanup expired sessions and reset tokens on startup ─────────────────────
-await sql`DELETE FROM sessions              WHERE expires_at < NOW()`;
-await sql`DELETE FROM password_reset_tokens WHERE expires_at < NOW()`;
+// ── Cleanup expired sessions on startup ──────────────────────────────────────
+await sql`DELETE FROM sessions WHERE expires_at < NOW()`;
 
 console.log(`🚀 Server running at ${server.url}`);
