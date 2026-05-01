@@ -75,7 +75,7 @@ interface Channel { id: string; name: string; }
 interface GuildEmoji { id: string; name: string; animated: boolean; }
 
 function emojiUrl(e: GuildEmoji) {
-  return `https://cdn.discordapp.com/emojis/${e.id}.${e.animated ? "gif" : "webp"}?size=32`;
+  return `/api/discord/emoji-image/${e.id}${e.animated ? "?animated=1" : ""}`;
 }
 function emojiStr(e: GuildEmoji) {
   return `<${e.animated ? "a" : ""}:${e.name}:${e.id}>`;
@@ -340,9 +340,7 @@ function EmojiText({ text }: { text: string }) {
       nodes.push(<span key={cursor}>{text.slice(cursor, match.index)}</span>);
     }
     const [, anim, name, id] = match;
-    const src = anim === "a"
-      ? `https://cdn.discordapp.com/emojis/${id}.gif`
-      : `https://cdn.discordapp.com/emojis/${id}.png?size=32`;
+    const src = `/api/discord/emoji-image/${id}${anim === "a" ? "?animated=1" : ""}`;
     nodes.push(<img key={match.index} src={src} alt={name} title={name} className="inline w-5 h-5 align-middle" />);
     cursor = match.index + match[0].length;
   }

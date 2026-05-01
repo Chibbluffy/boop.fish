@@ -1622,6 +1622,26 @@ const server = serve({
       },
     },
 
+    "/api/discord/emoji-image/:id": {
+      async GET(req) {
+        const token = process.env.DISCORD_BOT_TOKEN;
+        if (!token) return err("Not configured", 500);
+        const animated = new URL(req.url).searchParams.get("animated") === "1";
+        const ext = animated ? "gif" : "png";
+        const upstream = await fetch(
+          `https://cdn.discordapp.com/emojis/${req.params.id}.${ext}?size=64`,
+          { headers: { Authorization: `Bot ${token}` } },
+        );
+        if (!upstream.ok) return new Response(null, { status: 404 });
+        return new Response(upstream.body, {
+          headers: {
+            "Content-Type": upstream.headers.get("Content-Type") ?? (animated ? "image/gif" : "image/png"),
+            "Cache-Control": "public, max-age=604800",
+          },
+        });
+      },
+    },
+
     // ── Quotes ───────────────────────────────────────────────────────────────
 
     "/api/quotes/keywords": {

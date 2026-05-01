@@ -718,7 +718,7 @@ const BDO_CLASSES = [
 type DiscordEmoji = { id: string; name: string; animated: boolean };
 
 function emojiUrl(e: DiscordEmoji) {
-  return `https://cdn.discordapp.com/emojis/${e.id}.${e.animated ? "gif" : "webp"}?size=32`;
+  return `/api/discord/emoji-image/${e.id}${e.animated ? "?animated=1" : ""}`;
 }
 function emojiStr(e: DiscordEmoji) {
   return `<${e.animated ? "a" : ""}:${e.name}:${e.id}>`;
