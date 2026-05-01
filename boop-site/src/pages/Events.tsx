@@ -875,7 +875,10 @@ export default function Events() {
       event_timezone: form.event_timezone || "UTC",
       total_cap: parseInt(form.total_cap) || 25,
       channel_id: form.channel_id || null,
-      status: publish ? "active" : "draft",
+      // For edits, only change status when explicitly publishing; never downgrade an active event
+      status: editing
+        ? (publish && editing.status !== "active" ? "active" : editing.status)
+        : (publish ? "active" : "draft"),
       roles: form.roles.filter(r => r.name.trim()).map((r, i) => ({
         name: r.name.trim(), emoji: r.emoji || null,
         soft_cap: r.soft_cap ? parseInt(r.soft_cap) : null, display_order: i,

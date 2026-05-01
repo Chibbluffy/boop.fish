@@ -1627,15 +1627,16 @@ const server = serve({
         const token = process.env.DISCORD_BOT_TOKEN;
         if (!token) return err("Not configured", 500);
         const animated = new URL(req.url).searchParams.get("animated") === "1";
-        const ext = animated ? "gif" : "png";
-        const upstream = await fetch(
-          `https://cdn.discordapp.com/emojis/${req.params.id}.${ext}?size=64`,
-          { headers: { Authorization: `Bot ${token}` } },
-        );
+        const discordUrl = animated
+          ? `https://cdn.discordapp.com/emojis/${req.params.id}.webp?size=64&animated=true`
+          : `https://cdn.discordapp.com/emojis/${req.params.id}.webp?size=64`;
+        const upstream = await fetch(discordUrl, {
+          headers: { Authorization: `Bot ${token}` },
+        });
         if (!upstream.ok) return new Response(null, { status: 404 });
         return new Response(upstream.body, {
           headers: {
-            "Content-Type": upstream.headers.get("Content-Type") ?? (animated ? "image/gif" : "image/png"),
+            "Content-Type": upstream.headers.get("Content-Type") ?? "image/webp",
             "Cache-Control": "public, max-age=604800",
           },
         });
