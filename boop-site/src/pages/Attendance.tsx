@@ -70,6 +70,7 @@ export default function Attendance() {
   const [dateFrom, setDateFrom]         = useState("");
   const [dateTo, setDateTo]             = useState("");
   const [minEvents, setMinEvents]       = useState(0);
+  const [onlyInvolved, setOnlyInvolved] = useState(false);
   const [sortKey, setSortKey]           = useState<SortKey>("pct");
   const [sortDir, setSortDir]           = useState<SortDir>("desc");
 
@@ -122,8 +123,25 @@ export default function Attendance() {
     return true;
   }), [closedEvents, eventSearch, dateFrom, dateTo]);
 
-  const filteredMembers = useMemo(() => memberStats
+  // Recompute each member's rates using only the currently filtered events
+  const filteredMemberStats = useMemo(() => {
+    const filteredIds = new Set(filteredEvents.map(e => e.id));
+    return memberStats.map(m => {
+      let attended = 0, total = 0;
+      for (const evId of filteredIds) {
+        const cell = m.byEvent[evId];
+        if (cell === undefined) continue;
+        total++;
+        if (cell.attended) attended++;
+      }
+      const pct = total > 0 ? Math.round((attended / total) * 100) : 0;
+      return { ...m, attended, total, pct };
+    });
+  }, [memberStats, filteredEvents]);
+
+  const filteredMembers = useMemo(() => filteredMemberStats
     .filter(m => {
+      if (onlyInvolved && m.total === 0) return false;
       if (minEvents > 0 && m.total < minEvents) return false;
       if (memberSearch && !m.name.toLowerCase().includes(memberSearch.toLowerCase())) return false;
       return true;
@@ -135,7 +153,7 @@ export default function Attendance() {
                                  a.pct - b.pct;
       return sortDir === "desc" ? -diff : diff;
     }),
-  [memberStats, memberSearch, minEvents, sortKey, sortDir]);
+  [filteredMemberStats, memberSearch, minEvents, onlyInvolved, sortKey, sortDir]);
 
   function tipProps(content: React.ReactNode) {
     return {
@@ -150,7 +168,7 @@ export default function Attendance() {
     else { setSortKey(key); setSortDir("desc"); }
   }
 
-  const hasFilters = memberSearch || eventSearch || dateFrom || dateTo || minEvents > 0;
+  const hasFilters = memberSearch || eventSearch || dateFrom || dateTo || minEvents > 0 || onlyInvolved;
 
   if (!user || user.role === "pending") {
     return <div className="flex items-center justify-center min-h-[60vh] text-slate-400">You need to be logged in to view attendance.</div>;
@@ -192,6 +210,20 @@ export default function Attendance() {
             onChange={e => setMinEvents(parseInt(e.target.value) || 0)}
             className="bg-slate-800 border border-slate-700 rounded-lg px-3 py-1.5 text-sm text-white focus:outline-none focus:border-violet-500 w-20"
           />
+        </div>
+
+        <div className="flex flex-col gap-1 justify-end">
+          <label className="text-[10px] font-semibold text-slate-500 uppercase tracking-wide">Members</label>
+          <button
+            onClick={() => setOnlyInvolved(v => !v)}
+            className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors border ${
+              onlyInvolved
+                ? "bg-violet-600 border-violet-500 text-white"
+                : "bg-slate-800 border-slate-700 text-slate-400 hover:text-white"
+            }`}
+          >
+            {onlyInvolved ? "Involved only" : "All members"}
+          </button>
         </div>
 
         <div className="flex flex-col gap-1">
@@ -241,7 +273,7 @@ export default function Attendance() {
 
         {hasFilters && (
           <button
-            onClick={() => { setMemberSearch(""); setEventSearch(""); setDateFrom(""); setDateTo(""); setMinEvents(0); }}
+            onClick={() => { setMemberSearch(""); setEventSearch(""); setDateFrom(""); setDateTo(""); setMinEvents(0); setOnlyInvolved(false); }}
             className="self-end px-3 py-1.5 rounded-lg text-xs text-slate-400 hover:text-white bg-slate-800 hover:bg-slate-700 transition-colors"
           >
             Clear filters
