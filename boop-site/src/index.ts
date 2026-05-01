@@ -1335,13 +1335,41 @@ const server = serve({
       async POST(req) {
         if (req.headers.get("Authorization") !== `Bot ${process.env.DISCORD_BOT_TOKEN}`) return err("Forbidden", 403);
         const { discord_id, discord_name, role_id, role_name, bdo_class, status } = await req.json();
+        let resolvedStatus = status;
         await sql.begin(async sql => {
-          await sql`SELECT id FROM events WHERE id = ${req.params.id} FOR UPDATE`;
-          const existing = await sql`SELECT id FROM event_signups WHERE event_id = ${req.params.id} AND discord_id = ${discord_id}`;
+          const [evRow] = await sql`SELECT id, total_cap FROM events WHERE id = ${req.params.id} FOR UPDATE`;
+
+          if (resolvedStatus === "accepted") {
+            const [{ total_accepted }] = await sql`
+              SELECT COUNT(*)::int AS total_accepted FROM event_signups
+              WHERE event_id = ${req.params.id} AND status = 'accepted' AND discord_id != ${discord_id}
+            `;
+            if (evRow.total_cap && total_accepted >= evRow.total_cap) resolvedStatus = "bench";
+          }
+
+          if (resolvedStatus === "accepted" && role_id) {
+            const [roleRow] = await sql`SELECT soft_cap FROM event_roles WHERE id = ${role_id}`;
+            if (roleRow?.soft_cap != null) {
+              const [{ role_accepted }] = await sql`
+                SELECT COUNT(*)::int AS role_accepted FROM event_signups
+                WHERE event_id = ${req.params.id} AND role_id = ${role_id} AND status = 'accepted' AND discord_id != ${discord_id}
+              `;
+              if (role_accepted >= roleRow.soft_cap) resolvedStatus = "bench";
+            }
+          }
+
+          const existing = await sql`SELECT id, role_id, signup_order FROM event_signups WHERE event_id = ${req.params.id} AND discord_id = ${discord_id}`;
           if (existing.length > 0) {
+            // Switching roles moves the user to the back of the queue
+            const roleChanged = (existing[0].role_id ?? null) !== (role_id ?? null);
+            let newOrder = existing[0].signup_order;
+            if (roleChanged) {
+              const [{ next_order }] = await sql`SELECT COALESCE(MAX(signup_order), 0) + 1 AS next_order FROM event_signups WHERE event_id = ${req.params.id}`;
+              newOrder = next_order;
+            }
             await sql`
               UPDATE event_signups SET role_id = ${role_id}, role_name = ${role_name},
-                bdo_class = ${bdo_class}, status = ${status}
+                bdo_class = ${bdo_class}, status = ${resolvedStatus}, signup_order = ${newOrder}
               WHERE event_id = ${req.params.id} AND discord_id = ${discord_id}
             `;
           } else {
@@ -1350,7 +1378,7 @@ const server = serve({
             `;
             await sql`
               INSERT INTO event_signups (event_id, discord_id, discord_name, role_id, role_name, bdo_class, signup_order, status)
-              VALUES (${req.params.id}, ${discord_id}, ${discord_name}, ${role_id}, ${role_name}, ${bdo_class}, ${next_order}, ${status})
+              VALUES (${req.params.id}, ${discord_id}, ${discord_name}, ${role_id}, ${role_name}, ${bdo_class}, ${next_order}, ${resolvedStatus})
             `;
           }
           await sql`UPDATE events SET updated_at = NOW() WHERE id = ${req.params.id}`;
@@ -1360,7 +1388,7 @@ const server = serve({
         if (evRowSignup?.calendar_event_id) {
           const [uRow] = await sql`SELECT id FROM users WHERE discord_id = ${discord_id}`;
           if (uRow) {
-            if (status !== 'absent') {
+            if (resolvedStatus !== 'absent') {
               await sql`INSERT INTO calendar_event_interests (event_id, user_id) VALUES (${evRowSignup.calendar_event_id}, ${uRow.id}) ON CONFLICT DO NOTHING`;
             } else {
               await sql`DELETE FROM calendar_event_interests WHERE event_id = ${evRowSignup.calendar_event_id} AND user_id = ${uRow.id}`;
@@ -1450,13 +1478,13 @@ const server = serve({
           WHERE status IN ('closed', 'active')
           ORDER BY event_date DESC, event_time DESC
         `;
-        const signups = await sql`
+        const signups = events.length === 0 ? [] : await sql`
           SELECT es.event_id, es.discord_id, es.discord_name, es.attended,
-                 u.avatar_url, u.username
+                 u.discord_avatar AS avatar_url, u.username
           FROM event_signups es
           LEFT JOIN users u ON u.discord_id = es.discord_id
           WHERE es.event_id = ANY(${events.map((e: any) => e.id)})
-            AND es.status NOT IN ('absent', 'withdrawn')
+            AND es.status != 'absent'
           ORDER BY es.discord_name
         `;
         return json({ events, signups });

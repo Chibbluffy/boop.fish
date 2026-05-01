@@ -228,74 +228,110 @@ export default function Attendance() {
       )}
 
       {view === "matrix" && (
-        <div className="overflow-x-auto">
-          <table className="border-collapse text-xs">
-            <thead>
-              <tr>
-                <th className="sticky left-0 z-10 bg-slate-950 px-3 py-2 text-left text-slate-400 font-semibold whitespace-nowrap border-b border-r border-slate-800 min-w-40">
-                  Event
-                </th>
-                {memberStats
-                  .sort((a, b) => b.pct - a.pct)
-                  .map(m => (
-                    <th key={m.discord_id} className="px-2 py-1 border-b border-slate-800 min-w-[60px] max-w-[80px]">
-                      <div className="flex flex-col items-center gap-1">
-                        <Avatar url={m.avatar_url} name={m.name} />
-                        <div
-                          className="writing-mode-vertical text-slate-300 font-normal"
-                          style={{ writingMode: "vertical-rl", transform: "rotate(180deg)", maxHeight: 80, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}
-                          title={m.name}
-                        >
-                          {m.name}
-                        </div>
-                        <span className={`text-[10px] font-bold ${m.pct >= 75 ? "text-green-400" : m.pct >= 50 ? "text-yellow-400" : m.pct >= 25 ? "text-orange-400" : "text-red-400"}`}>
-                          {m.pct}%
-                        </span>
+        <>
+          <div className="overflow-x-auto">
+            <table className="border-collapse">
+              <thead>
+                <tr>
+                  {/* Sticky event column header */}
+                  <th
+                    className="sticky left-0 z-10 bg-slate-950 border-b border-r border-slate-800"
+                    style={{ minWidth: 160, height: 120, verticalAlign: 'bottom', padding: '0 8px 6px' }}
+                  >
+                    <span className="text-xs font-semibold text-slate-400 uppercase tracking-wide">Event</span>
+                  </th>
+                  {/* Slanted member name headers */}
+                  {[...memberStats].sort((a, b) => b.pct - a.pct).map(m => (
+                    <th
+                      key={m.discord_id}
+                      className="border-b border-slate-800 p-0"
+                      style={{ width: 28, minWidth: 28, height: 120, verticalAlign: 'bottom', position: 'relative' }}
+                      title={`${m.name} — ${m.pct}%`}
+                    >
+                      <div style={{
+                        position: 'absolute',
+                        bottom: 6,
+                        left: '50%',
+                        transformOrigin: 'bottom left',
+                        transform: 'rotate(-45deg)',
+                        whiteSpace: 'nowrap',
+                        fontSize: 11,
+                        color: m.pct >= 75 ? '#4ade80' : m.pct >= 50 ? '#facc15' : m.pct >= 25 ? '#fb923c' : '#f87171',
+                        lineHeight: 1,
+                      }}>
+                        {m.name}
                       </div>
                     </th>
                   ))}
-              </tr>
-            </thead>
-            <tbody>
-              {closedEvents.map(ev => {
-                const dateStr = new Date(`${ev.event_date}T${ev.event_time}`).toLocaleDateString("en-GB", {
-                  day: "2-digit", month: "short", year: "numeric",
-                });
-                return (
-                  <tr key={ev.id} className="border-b border-slate-800/50 hover:bg-slate-800/20">
-                    <td className="sticky left-0 z-10 bg-slate-950 px-3 py-1.5 border-r border-slate-800 whitespace-nowrap">
-                      <div className="text-slate-200 font-medium truncate max-w-36" title={ev.title}>{ev.title}</div>
-                      <div className="text-slate-500 text-[10px]">{dateStr}</div>
-                    </td>
-                    {memberStats
-                      .sort((a, b) => b.pct - a.pct)
-                      .map(m => {
+                </tr>
+              </thead>
+              <tbody>
+                {closedEvents.map(ev => {
+                  const dateStr = new Date(`${ev.event_date}T${ev.event_time ?? '00:00'}`).toLocaleDateString("en-GB", {
+                    day: "2-digit", month: "short", year: "2-digit",
+                  });
+                  return (
+                    <tr key={ev.id} className="border-b border-slate-800/50 hover:bg-slate-800/20">
+                      <td className="sticky left-0 z-10 bg-slate-950 px-3 py-1 border-r border-slate-800 whitespace-nowrap">
+                        <div className="text-slate-200 text-xs font-medium truncate max-w-36" title={ev.title}>{ev.title}</div>
+                        <div className="text-slate-500 text-[10px]">{dateStr}</div>
+                      </td>
+                      {[...memberStats].sort((a, b) => b.pct - a.pct).map(m => {
                         const val = m.byEvent[ev.id];
+                        let bg = 'transparent';
+                        let title = 'Not signed up';
+                        if (val === null)  { bg = '#334155'; title = 'Signed up — not marked'; }
+                        if (val === true)  { bg = '#22c55e'; title = 'Attended'; }
+                        if (val === false) { bg = '#ef4444'; title = 'Did not attend'; }
                         return (
-                          <td key={m.discord_id} className="px-2 py-1.5 text-center border-r border-slate-800/30">
-                            {val === undefined ? (
-                              <span className="text-slate-700">·</span>
-                            ) : val ? (
-                              <span className="text-green-400 font-bold">✓</span>
-                            ) : (
-                              <span className="text-red-500">✗</span>
-                            )}
+                          <td key={m.discord_id} className="p-0 border-r border-slate-800/20" style={{ width: 28 }}>
+                            <div className="flex items-center justify-center" style={{ height: 28 }}>
+                              {val !== undefined && (
+                                <div
+                                  className="rounded-sm"
+                                  style={{ width: 14, height: 14, background: bg }}
+                                  title={title}
+                                />
+                              )}
+                            </div>
                           </td>
                         );
                       })}
+                    </tr>
+                  );
+                })}
+                {closedEvents.length === 0 && (
+                  <tr>
+                    <td colSpan={memberStats.length + 1} className="px-3 py-8 text-center text-slate-500 text-sm">
+                      No closed events with attendance data yet.
+                    </td>
                   </tr>
-                );
-              })}
-              {closedEvents.length === 0 && (
-                <tr>
-                  <td colSpan={memberStats.length + 1} className="px-3 py-8 text-center text-slate-500">
-                    No closed events with attendance data yet.
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-        </div>
+                )}
+              </tbody>
+            </table>
+          </div>
+
+          {/* Legend */}
+          <div className="flex items-center gap-5 mt-4 text-xs text-slate-400 flex-wrap">
+            <div className="flex items-center gap-1.5">
+              <div className="w-3.5 h-3.5 rounded-sm bg-green-500" />
+              Attended
+            </div>
+            <div className="flex items-center gap-1.5">
+              <div className="w-3.5 h-3.5 rounded-sm bg-red-500" />
+              Did not attend
+            </div>
+            <div className="flex items-center gap-1.5">
+              <div className="w-3.5 h-3.5 rounded-sm bg-slate-600" />
+              Signed up — not yet marked
+            </div>
+            <div className="flex items-center gap-1.5">
+              <div className="w-3.5 h-3.5 rounded-sm border border-slate-700" />
+              Not signed up
+            </div>
+            <span className="text-slate-600">· Name colour shows attendance rate</span>
+          </div>
+        </>
       )}
     </div>
   );

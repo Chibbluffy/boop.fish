@@ -582,10 +582,39 @@ function EventDetail({
             </div>
           )}
 
-          {/* Status buckets — always 3 columns, always visible for officers */}
-          <div className="grid grid-cols-3 gap-3">
+          {/* Bench — grouped by the role they wanted */}
+          {(isOfficer || bench.length > 0) && (() => {
+            const over = dragOver === "bench";
+            const byRole = new Map<string, typeof bench>();
+            for (const s of bench) {
+              const k = s.role_name ?? "No Role";
+              if (!byRole.has(k)) byRole.set(k, []);
+              byRole.get(k)!.push(s);
+            }
+            return (
+              <div
+                {...bucketDropProps("bench", null, null, "bench")}
+                className={`rounded-xl p-3 border transition-colors min-h-[60px] ${over ? "bg-slate-700/40 border-slate-500" : "bg-slate-900/40 border-slate-800"}`}
+              >
+                <BucketHeader name="Bench" count={bench.length} />
+                {bench.length === 0
+                  ? <p className={`text-[10px] italic ${over ? "text-slate-300" : "text-slate-700"}`}>{over ? "Drop here" : "Empty"}</p>
+                  : Array.from(byRole.entries()).map(([roleName, members]) => (
+                      <div key={roleName} className="mb-2 last:mb-0">
+                        <div className="text-[10px] text-slate-500 font-semibold uppercase tracking-wide mb-1">
+                          {roleName} ({members.length})
+                        </div>
+                        {members.map(s => <SignupRow key={s.id} s={s} />)}
+                      </div>
+                    ))
+                }
+              </div>
+            );
+          })()}
+
+          {/* Tentative / Absent */}
+          <div className="grid grid-cols-2 gap-3">
             {[
-              { key: "bench",     label: "Bench",     list: bench,     status: "bench"     as SignupStatus },
               { key: "tentative", label: "Tentative", list: tentative, status: "tentative" as SignupStatus },
               { key: "absent",    label: "Absent",    list: absent,    status: "absent"    as SignupStatus },
             ].map(({ key, label, list, status }) => {
