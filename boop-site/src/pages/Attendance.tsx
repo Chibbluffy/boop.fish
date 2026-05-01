@@ -158,7 +158,7 @@ export default function Attendance() {
           </thead>
           <tbody>
             {closedEvents.map(ev => {
-              const dateStr = new Date(`${ev.event_date}T${ev.event_time ?? '00:00'}`).toLocaleDateString("en-GB", {
+              const dateStr = new Date(`${String(ev.event_date).slice(0, 10)}T${ev.event_time ?? '00:00'}`).toLocaleDateString("en-GB", {
                 day: "2-digit", month: "short", year: "2-digit",
               });
               return (
