@@ -1481,6 +1481,7 @@ const server = serve({
         const signups = events.length === 0 ? [] : await sql`
           SELECT es.event_id, es.discord_id, es.discord_name,
                  (es.status = 'accepted') AS attended,
+                 es.role_name, es.bdo_class,
                  u.discord_avatar AS avatar_url, u.username
           FROM event_signups es
           LEFT JOIN users u ON u.discord_id = es.discord_id
