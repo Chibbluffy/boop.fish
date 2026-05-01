@@ -1492,6 +1492,30 @@ const server = serve({
       },
     },
 
+    "/api/attendance": {
+      async GET(req) {
+        const user = await authenticate(req);
+        if (!user || user.role === "pending") return err("Forbidden", 403);
+        // Return all closed events with signup attendance per member
+        const events = await sql`
+          SELECT id, title, event_date, event_time, event_timezone, status
+          FROM events
+          WHERE status IN ('closed', 'active')
+          ORDER BY event_date DESC, event_time DESC
+        `;
+        const signups = await sql`
+          SELECT es.event_id, es.discord_id, es.discord_name, es.attended,
+                 u.avatar_url, u.username
+          FROM event_signups es
+          LEFT JOIN users u ON u.discord_id = es.discord_id
+          WHERE es.event_id = ANY(${events.map((e: any) => e.id)})
+            AND es.status NOT IN ('absent', 'withdrawn')
+          ORDER BY es.discord_name
+        `;
+        return json({ events, signups });
+      },
+    },
+
     "/api/event-templates": {
       async GET(req) {
         const user = await authenticate(req);

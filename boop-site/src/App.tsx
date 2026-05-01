@@ -27,8 +27,9 @@ import DiceRoller from "./pages/DiceRoller";
 import Archive from "./pages/Archive";
 import ShrineAvailability from "./pages/ShrineAvailability";
 import Events from "./pages/Events";
+import Attendance from "./pages/Attendance";
 
-type Route = "home" | "class-roller" | "shuffler" | "employee" | "frogs" | "wall" | "submit-wall" | "calendar" | "nodewar" | "shrine" | "availability" | "auth" | "manage" | "ribbit-leaderboard" | "gear-leaderboard" | "guild-directory" | "payout-tracker" | "random-chooser" | "dice-roller" | "archive" | "events";
+type Route = "home" | "class-roller" | "shuffler" | "employee" | "frogs" | "wall" | "submit-wall" | "calendar" | "nodewar" | "shrine" | "availability" | "auth" | "manage" | "ribbit-leaderboard" | "gear-leaderboard" | "guild-directory" | "payout-tracker" | "random-chooser" | "dice-roller" | "archive" | "events" | "attendance";
 
 function parseHash(): Route {
   const h = location.hash.replace(/^#\/?/, "").split("/")[0].split("?")[0];
@@ -64,6 +65,7 @@ function parseHash(): Route {
     case "dice-roller":        return "dice-roller";
     case "archive":            return "archive";
     case "events":             return "events";
+    case "attendance":         return "attendance";
     default:
       return "home";
   }
@@ -129,6 +131,7 @@ export function App() {
         {route === "dice-roller"        && <DiceRoller />}
         {route === "archive"            && <Archive />}
         {route === "events"             && <Events />}
+        {route === "attendance"         && <Attendance />}
       </main>
     </div>
   );
