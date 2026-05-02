@@ -14,7 +14,7 @@ type AttendanceSignup = {
   event_id: string;
   discord_id: string;
   discord_name: string;
-  attended: boolean;
+  status: "accepted" | "absent" | "bench" | "tentative";
   avatar_url: string | null;
   username: string | null;
   role_name: string | null;
@@ -22,7 +22,7 @@ type AttendanceSignup = {
 };
 
 type CellData = {
-  attended: boolean;
+  status: "accepted" | "absent" | "bench" | "tentative";
   role_name: string | null;
   bdo_class: string | null;
 };
@@ -97,9 +97,12 @@ export default function Attendance() {
         map.set(s.discord_id, { discord_id: s.discord_id, name: s.username ?? s.discord_name, attended: 0, total: 0, pct: 0, byEvent: {} });
       }
       const m = map.get(s.discord_id)!;
-      m.total++;
-      if (s.attended) m.attended++;
-      m.byEvent[s.event_id] = { attended: s.attended, role_name: s.role_name, bdo_class: s.bdo_class };
+      // only accepted/absent count toward the rate; bench/tentative are informational
+      if (s.status === "accepted" || s.status === "absent") {
+        m.total++;
+        if (s.status === "accepted") m.attended++;
+      }
+      m.byEvent[s.event_id] = { status: s.status, role_name: s.role_name, bdo_class: s.bdo_class };
     }
     for (const m of map.values()) m.pct = m.total > 0 ? Math.round((m.attended / m.total) * 100) : 0;
     return Array.from(map.values());
@@ -136,8 +139,10 @@ export default function Attendance() {
       for (const evId of filteredIds) {
         const cell = m.byEvent[evId];
         if (cell === undefined) continue;
-        total++;
-        if (cell.attended) attended++;
+        if (cell.status === "accepted" || cell.status === "absent") {
+          total++;
+          if (cell.status === "accepted") attended++;
+        }
       }
       const pct = total > 0 ? Math.round((attended / total) * 100) : 0;
       return { ...m, attended, total, pct };
@@ -438,17 +443,22 @@ export default function Attendance() {
 
                   {filteredMembers.map(m => {
                     const cell = m.byEvent[ev.id];
-                    const bg = cell
-                      ? cell.attended ? "#22c55e" : "#ef4444"
-                      : "transparent";
+                    const CELL_STYLE: Record<string, { bg: string; label: string; color: string }> = {
+                      accepted:  { bg: "#22c55e", label: "✓ Attended",   color: "#4ade80" },
+                      absent:    { bg: "#ef4444", label: "✕ Absent",     color: "#f87171" },
+                      bench:     { bg: "#eab308", label: "🪑 Benched",   color: "#facc15" },
+                      tentative: { bg: "#64748b", label: "? Tentative",  color: "#94a3b8" },
+                    };
+                    const style = cell ? CELL_STYLE[cell.status] : null;
 
-                    const cellTip = cell ? (
+                    const cellTip = cell && style ? (
                       <div>
                         <p className="font-bold text-white text-sm">{m.name}</p>
                         <p className="text-slate-400 text-xs truncate max-w-48">{ev.title}</p>
-                        <p className="mt-1.5 font-semibold text-xs" style={{ color: cell.attended ? "#4ade80" : "#f87171" }}>
-                          {cell.attended ? "✓ Attended" : "✕ Absent"}
-                        </p>
+                        <p className="mt-1.5 font-semibold text-xs" style={{ color: style.color }}>{style.label}</p>
+                        {(cell.status === "bench" || cell.status === "tentative") && (
+                          <p className="text-slate-500 text-xs mt-0.5">Not counted in rate</p>
+                        )}
                         {(cell.role_name || cell.bdo_class) && (
                           <div className="mt-1 text-xs text-slate-400 space-y-0.5">
                             {cell.role_name && <p>Role: <span className="text-slate-200 font-medium">{cell.role_name}</span></p>}
@@ -472,8 +482,8 @@ export default function Attendance() {
                         {...tipProps(cellTip)}
                       >
                         <div className="flex items-center justify-center" style={{ height: 28 }}>
-                          {cell && (
-                            <div className="rounded-sm transition-opacity" style={{ width: 14, height: 14, background: bg }} />
+                          {cell && style && (
+                            <div className="rounded-sm" style={{ width: 14, height: 14, background: style.bg }} />
                           )}
                         </div>
                       </td>
@@ -505,9 +515,15 @@ export default function Attendance() {
           <div className="w-3.5 h-3.5 rounded-sm bg-red-500" /> Absent
         </div>
         <div className="flex items-center gap-1.5">
+          <div className="w-3.5 h-3.5 rounded-sm bg-yellow-500" /> Benched
+        </div>
+        <div className="flex items-center gap-1.5">
+          <div className="w-3.5 h-3.5 rounded-sm bg-slate-500" /> Tentative
+        </div>
+        <div className="flex items-center gap-1.5">
           <div className="w-3.5 h-3.5 rounded-sm border border-slate-700" /> Did not sign up
         </div>
-        <span className="text-slate-700">· Name and rate colours reflect attendance · Hover anything for details</span>
+        <span className="text-slate-700">· Bench and tentative shown for record only, not counted in rate · Hover for details</span>
       </div>
 
       {/* Floating tooltip */}
