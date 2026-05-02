@@ -13,7 +13,8 @@ type GearRow = {
   gs: number;
 };
 
-type SortKey = "gs" | "gear_ap" | "gear_aap" | "gear_dp";
+type SortKey = "gs" | "gear_ap" | "gear_aap" | "gear_dp" | "gear_eap";
+type SortDir = "asc" | "desc";
 
 function token() { return localStorage.getItem("boop_session") ?? ""; }
 function authH() { return { Authorization: `Bearer ${token()}` }; }
@@ -122,6 +123,7 @@ export default function GearLeaderboard() {
   const [gear, setGear] = useState<GearRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [sortKey, setSortKey] = useState<SortKey>("gs");
+  const [sortDir, setSortDir] = useState<SortDir>("desc");
   const [showAll, setShowAll] = useState(false);
   const [showNonMembers, setShowNonMembers] = useState(false);
   const [editing, setEditing] = useState<GearRow | null>(null);
@@ -154,12 +156,26 @@ export default function GearLeaderboard() {
     );
   }
 
-  const sorted = [...gear].sort((a, b) => ((b[sortKey] ?? 0) as number) - ((a[sortKey] ?? 0) as number));
+  function eap(row: GearRow) { return Math.max(row.gear_ap ?? 0, row.gear_aap ?? 0); }
+  function getValue(row: GearRow, key: SortKey): number {
+    if (key === "gear_eap") return eap(row);
+    return (row[key] ?? 0) as number;
+  }
+  function toggleSort(key: SortKey) {
+    if (sortKey === key) setSortDir(d => d === "desc" ? "asc" : "desc");
+    else { setSortKey(key); setSortDir("desc"); }
+  }
+
+  const sorted = [...gear].sort((a, b) => {
+    const diff = getValue(b, sortKey) - getValue(a, sortKey);
+    return sortDir === "desc" ? diff : -diff;
+  });
   const displayed = showAll ? sorted : sorted.slice(0, 25);
 
   const thBase = "px-3 py-2 text-left text-[11px] font-black uppercase tracking-widest text-slate-500 whitespace-nowrap";
   const thSort = (key: SortKey) =>
     `${thBase} cursor-pointer select-none transition-colors ${sortKey === key ? "text-violet-400" : "hover:text-slate-300"}`;
+  const sortArrow = (key: SortKey) => sortKey === key ? (sortDir === "desc" ? " ▾" : " ▴") : "";
 
   return (
     <div className="max-w-4xl mx-auto px-4 py-10">
@@ -196,17 +212,20 @@ export default function GearLeaderboard() {
                   <th className={thBase}>#</th>
                   <th className={thBase}>Player</th>
                   <th className={thBase}>Class</th>
-                  <th className={thSort("gear_ap")}  onClick={() => setSortKey("gear_ap")}>
-                    AP{sortKey === "gear_ap" && " ▾"}
+                  <th className={thSort("gear_ap")}  onClick={() => toggleSort("gear_ap")}>
+                    AP{sortArrow("gear_ap")}
                   </th>
-                  <th className={thSort("gear_aap")} onClick={() => setSortKey("gear_aap")}>
-                    AAP{sortKey === "gear_aap" && " ▾"}
+                  <th className={thSort("gear_aap")} onClick={() => toggleSort("gear_aap")}>
+                    AAP{sortArrow("gear_aap")}
                   </th>
-                  <th className={thSort("gear_dp")}  onClick={() => setSortKey("gear_dp")}>
-                    DP{sortKey === "gear_dp" && " ▾"}
+                  <th className={thSort("gear_eap")} onClick={() => toggleSort("gear_eap")} title="Effective AP — max(AP, AAP)">
+                    EAP{sortArrow("gear_eap")}
                   </th>
-                  <th className={thSort("gs")}        onClick={() => setSortKey("gs")}>
-                    GS{sortKey === "gs" && " ▾"}
+                  <th className={thSort("gear_dp")}  onClick={() => toggleSort("gear_dp")}>
+                    DP{sortArrow("gear_dp")}
+                  </th>
+                  <th className={thSort("gs")}       onClick={() => toggleSort("gs")}>
+                    GS{sortArrow("gs")}
                   </th>
                   {isAdmin && <th className={thBase} />}
                 </tr>
@@ -228,14 +247,17 @@ export default function GearLeaderboard() {
                           ? <>{row.bdo_class}{row.alt_class && <span className="text-slate-600">/{row.alt_class}</span>}</>
                           : <span className="text-slate-600">—</span>}
                     </td>
-                    <td className={`px-3 py-2.5 text-sm tabular-nums font-mono ${sortKey === "gear_ap" ? "text-violet-300 font-bold" : "text-slate-300"}`}>
-                      {row.gear_ap ?? <span className="text-slate-600">—</span>}
+                    <td className={`px-3 py-2.5 text-sm tabular-nums font-mono ${sortKey === "gear_ap" ? "text-violet-300 font-bold" : (row.gear_ap != null && row.gear_ap >= (row.gear_aap ?? 0)) ? "text-slate-200 font-semibold" : "text-slate-500"}`}>
+                      {row.gear_ap ?? <span className="text-slate-700">—</span>}
                     </td>
-                    <td className={`px-3 py-2.5 text-sm tabular-nums font-mono ${sortKey === "gear_aap" ? "text-violet-300 font-bold" : "text-slate-300"}`}>
-                      {row.gear_aap ?? <span className="text-slate-600">—</span>}
+                    <td className={`px-3 py-2.5 text-sm tabular-nums font-mono ${sortKey === "gear_aap" ? "text-violet-300 font-bold" : (row.gear_aap != null && row.gear_aap > (row.gear_ap ?? 0)) ? "text-slate-200 font-semibold" : "text-slate-500"}`}>
+                      {row.gear_aap ?? <span className="text-slate-700">—</span>}
+                    </td>
+                    <td className={`px-3 py-2.5 text-sm tabular-nums font-mono ${sortKey === "gear_eap" ? "text-violet-300 font-bold" : "text-slate-300"}`}>
+                      {eap(row) > 0 ? eap(row) : <span className="text-slate-700">—</span>}
                     </td>
                     <td className={`px-3 py-2.5 text-sm tabular-nums font-mono ${sortKey === "gear_dp" ? "text-violet-300 font-bold" : "text-slate-300"}`}>
-                      {row.gear_dp ?? <span className="text-slate-600">—</span>}
+                      {row.gear_dp ?? <span className="text-slate-700">—</span>}
                     </td>
                     <td className={`px-3 py-2.5 text-sm tabular-nums font-black ${sortKey === "gs" ? "text-violet-400" : "text-slate-200"}`}>
                       {row.gs > 0 ? row.gs : <span className="text-slate-600 font-normal">—</span>}
