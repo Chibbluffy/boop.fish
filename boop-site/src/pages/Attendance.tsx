@@ -71,6 +71,7 @@ export default function Attendance() {
   const [dateTo, setDateTo]             = useState("");
   const [minEvents, setMinEvents]       = useState(0);
   const [onlyInvolved, setOnlyInvolved] = useState(false);
+  const [weekdays, setWeekdays]         = useState<Set<number>>(new Set());
   const [sortKey, setSortKey]           = useState<SortKey>("pct");
   const [sortDir, setSortDir]           = useState<SortDir>("desc");
 
@@ -120,8 +121,12 @@ export default function Attendance() {
     if (eventSearch && !ev.title.toLowerCase().includes(eventSearch.toLowerCase())) return false;
     if (dateFrom && dateOnly < dateFrom) return false;
     if (dateTo   && dateOnly > dateTo)   return false;
+    if (weekdays.size > 0) {
+      const dow = new Date(`${dateOnly}T00:00`).getDay();
+      if (!weekdays.has(dow)) return false;
+    }
     return true;
-  }), [closedEvents, eventSearch, dateFrom, dateTo]);
+  }), [closedEvents, eventSearch, dateFrom, dateTo, weekdays]);
 
   // Recompute each member's rates using only the currently filtered events
   const filteredMemberStats = useMemo(() => {
@@ -168,7 +173,7 @@ export default function Attendance() {
     else { setSortKey(key); setSortDir("desc"); }
   }
 
-  const hasFilters = memberSearch || eventSearch || dateFrom || dateTo || minEvents > 0 || onlyInvolved;
+  const hasFilters = memberSearch || eventSearch || dateFrom || dateTo || minEvents > 0 || onlyInvolved || weekdays.size > 0;
 
   if (!user || user.role === "pending") {
     return <div className="flex items-center justify-center min-h-[60vh] text-slate-400">You need to be logged in to view attendance.</div>;
@@ -271,9 +276,30 @@ export default function Attendance() {
           />
         </div>
 
+        <div className="flex flex-col gap-1">
+          <label className="text-[10px] font-semibold text-slate-500 uppercase tracking-wide">Weekday</label>
+          <div className="flex gap-1">
+            {(["Su","Mo","Tu","We","Th","Fr","Sa"] as const).map((label, dow) => (
+              <button
+                key={dow}
+                onClick={() => setWeekdays(prev => {
+                  const next = new Set(prev);
+                  next.has(dow) ? next.delete(dow) : next.add(dow);
+                  return next;
+                })}
+                className={`w-8 py-1.5 rounded-lg text-xs font-semibold transition-colors ${
+                  weekdays.has(dow) ? "bg-violet-600 text-white" : "bg-slate-800 text-slate-400 hover:text-white"
+                }`}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+        </div>
+
         {hasFilters && (
           <button
-            onClick={() => { setMemberSearch(""); setEventSearch(""); setDateFrom(""); setDateTo(""); setMinEvents(0); setOnlyInvolved(false); }}
+            onClick={() => { setMemberSearch(""); setEventSearch(""); setDateFrom(""); setDateTo(""); setMinEvents(0); setOnlyInvolved(false); setWeekdays(new Set()); }}
             className="self-end px-3 py-1.5 rounded-lg text-xs text-slate-400 hover:text-white bg-slate-800 hover:bg-slate-700 transition-colors"
           >
             Clear filters
