@@ -10,14 +10,11 @@ const NAV_GROUPS = [
     label: "Guild Info",
     memberOnly: true,
     items: [
-      { label: "Events",            href: "#/events",           route: "events",            officerOnly: false },
-      { label: "Attendance",        href: "#/attendance",       route: "attendance",        officerOnly: false },
       { label: "Calendar",         href: "#/calendar",         route: "calendar",         officerOnly: false },
-      { label: "Guild Directory",  href: "#/guild-directory",  route: "guild-directory",   officerOnly: false },
-      { label: "Black Shrine",          href: "#/shrine",               route: "shrine",               officerOnly: false },
-      { label: "General Availability",  href: "#/availability",  route: "availability",  officerOnly: false },
-      { label: "Gear Leaderboard", href: "#/gear-leaderboard", route: "gear-leaderboard",  officerOnly: false },
-      { label: "Nodewar",          href: "#/nodewar",          route: "nodewar",           officerOnly: false },
+      { label: "Guild Directory",  href: "#/guild-directory",  route: "guild-directory",  officerOnly: false },
+      { label: "Black Shrine",     href: "#/shrine",           route: "shrine",           officerOnly: false },
+      { label: "Gear Leaderboard", href: "#/gear-leaderboard", route: "gear-leaderboard", officerOnly: false },
+      { label: "Nodewar",          href: "#/nodewar",          route: "nodewar",          officerOnly: false },
     ],
   },
   {

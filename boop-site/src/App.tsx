@@ -13,7 +13,7 @@ import Shuffler from "./pages/Shuffler";
 import Employee from "./pages/Employee";
 import Frogs from "./pages/Frogs";
 import WallOfShame from "./pages/WallOfShame";
-import CalendarPage from "./pages/CalendarPage";
+import CalendarHub from "./pages/CalendarHub";
 import Nodewar from "./pages/Nodewar";
 import Settings from "./pages/Settings";
 import SubmitWall from "./pages/SubmitWall";
@@ -25,11 +25,8 @@ import PayoutTracker from "./pages/PayoutTracker";
 import RandomChooser from "./pages/RandomChooser";
 import DiceRoller from "./pages/DiceRoller";
 import Archive from "./pages/Archive";
-import ShrineAvailability from "./pages/ShrineAvailability";
-import Events from "./pages/Events";
-import Attendance from "./pages/Attendance";
 
-type Route = "home" | "class-roller" | "shuffler" | "employee" | "frogs" | "wall" | "submit-wall" | "calendar" | "nodewar" | "shrine" | "availability" | "auth" | "manage" | "ribbit-leaderboard" | "gear-leaderboard" | "guild-directory" | "payout-tracker" | "random-chooser" | "dice-roller" | "archive" | "events" | "attendance";
+type Route = "home" | "class-roller" | "shuffler" | "employee" | "frogs" | "wall" | "submit-wall" | "calendar" | "nodewar" | "shrine" | "auth" | "manage" | "ribbit-leaderboard" | "gear-leaderboard" | "guild-directory" | "payout-tracker" | "random-chooser" | "dice-roller" | "archive";
 
 function parseHash(): Route {
   const h = location.hash.replace(/^#\/?/, "").split("/")[0].split("?")[0];
@@ -54,18 +51,18 @@ function parseHash(): Route {
     case "settings": // legacy redirect
     case "members":  // legacy redirect
       return "manage";
-    case "submit-wall": return "submit-wall";
-    case "shrine":             return "shrine";
-    case "availability": return "availability";
+    case "submit-wall":         return "submit-wall";
+    case "shrine":              return "shrine";
     case "ribbit-leaderboard": return "ribbit-leaderboard";
     case "gear-leaderboard":   return "gear-leaderboard";
     case "guild-directory":    return "guild-directory";
     case "payout-tracker":     return "payout-tracker";
     case "random-chooser":     return "random-chooser";
     case "dice-roller":        return "dice-roller";
-    case "archive":            return "archive";
-    case "events":             return "events";
-    case "attendance":         return "attendance";
+    case "archive":      return "archive";
+    case "events":       return "calendar"; // legacy → hub Events tab
+    case "attendance":   return "calendar"; // legacy → hub Attendance tab
+    case "availability": return "calendar"; // legacy → hub Availability tab
     default:
       return "home";
   }
@@ -117,12 +114,11 @@ export function App() {
         {route === "employee" && <Employee />}
         {route === "frogs" && <Frogs />}
         {route === "wall" && <WallOfShame />}
-        {route === "calendar" && <CalendarPage />}
-        {route === "nodewar" && <Nodewar />}
-        {route === "manage"      && <Settings />}
-        {route === "submit-wall" && <SubmitWall />}
+        {route === "calendar"           && <CalendarHub />}
+        {route === "nodewar"            && <Nodewar />}
+        {route === "manage"             && <Settings />}
+        {route === "submit-wall"        && <SubmitWall />}
         {route === "shrine"             && <BlackShrine key={user?.id ?? "guest"} />}
-        {route === "availability" && <ShrineAvailability key={user?.id ?? "guest"} />}
         {route === "ribbit-leaderboard" && <RibbitLeaderboard />}
         {route === "gear-leaderboard"   && <GearLeaderboard />}
         {route === "guild-directory"    && <GuildDirectory />}
@@ -130,8 +126,6 @@ export function App() {
         {route === "random-chooser"     && <RandomChooser />}
         {route === "dice-roller"        && <DiceRoller />}
         {route === "archive"            && <Archive />}
-        {route === "events"             && <Events />}
-        {route === "attendance"         && <Attendance />}
       </main>
     </div>
   );
