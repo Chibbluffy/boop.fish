@@ -38,7 +38,7 @@ interface EventItem {
   event_date: string;
   event_time: string;
   event_timezone: string | null;
-  total_cap: number;
+  total_cap: number | null;
   status: "draft" | "active" | "closed";
   channel_id: string | null;
   message_id: string | null;
@@ -64,7 +64,7 @@ interface EventTemplate {
   id: string;
   name: string;
   description: string | null;
-  total_cap: number;
+  total_cap: number | null;
   channel_id: string | null;
   event_time: string | null;
   event_timezone: string | null;
@@ -143,7 +143,7 @@ function blankForm() {
   return {
     title: "", description: "", event_date: "", event_time: "",
     event_timezone: "America/New_York",
-    total_cap: "25", channel_id: "",
+    total_cap: "", channel_id: "",
     roles: [] as RoleFormEntry[],
   };
 }
@@ -170,7 +170,7 @@ function EventForm({
         event_date: String(initial.event_date).slice(0, 10),
         event_time: String(initial.event_time).slice(0, 5),
         event_timezone: initial.event_timezone ?? "America/New_York",
-        total_cap: String(initial.total_cap), channel_id: initial.channel_id ?? "",
+        total_cap: initial.total_cap != null ? String(initial.total_cap) : "", channel_id: initial.channel_id ?? "",
         roles: existingRoles,
       };
     }
@@ -188,7 +188,7 @@ function EventForm({
       ...f,
       title: t.name,
       description: t.description ?? f.description,
-      total_cap: String(t.total_cap),
+      total_cap: t.total_cap != null ? String(t.total_cap) : "",
       channel_id: t.channel_id ?? f.channel_id,
       event_time: t.event_time ?? f.event_time,
       event_timezone: t.event_timezone ?? f.event_timezone,
@@ -259,8 +259,8 @@ function EventForm({
         {/* Cap + Channel */}
         <div className="grid grid-cols-2 gap-3">
           <div>
-            <label className="block text-xs font-bold text-slate-400 uppercase tracking-widest mb-1.5">Total Cap</label>
-            <input type="number" min="1" className={inp} value={form.total_cap} onChange={e => setForm(f => ({ ...f, total_cap: e.target.value }))} />
+            <label className="block text-xs font-bold text-slate-400 uppercase tracking-widest mb-1.5">Total Cap <span className="normal-case font-normal text-slate-600">(optional)</span></label>
+            <input type="number" min="1" placeholder="uncapped" className={inp} value={form.total_cap} onChange={e => setForm(f => ({ ...f, total_cap: e.target.value }))} />
           </div>
           <div>
             <label className="block text-xs font-bold text-slate-400 uppercase tracking-widest mb-1.5">Discord Channel</label>
@@ -511,7 +511,7 @@ function EventDetail({
           <p className="text-slate-300 text-sm">{fmtDate(event.event_date)} · {fmtTime(event.event_time)}</p>
           {event.description && <p className="text-slate-400 text-sm mt-1">{event.description}</p>}
           <p className="text-slate-400 text-sm mt-1">
-            {event.accepted_count}/{event.total_cap} accepted
+            {event.accepted_count}{event.total_cap != null ? `/${event.total_cap}` : ""} accepted
             {event.bench_count > 0 && <> · {event.bench_count} bench</>}
             {event.tentative_count > 0 && <> · {event.tentative_count} tentative</>}
             {event.absent_count > 0 && <> · {event.absent_count} absent</>}
@@ -662,7 +662,7 @@ type RecurringSeries = {
   weekdays: number[];
   event_time: string;
   event_timezone: string;
-  total_cap: number;
+  total_cap: number | null;
   channel_id: string | null;
   advance_minutes: number;
   roles: Array<{ name: string; emoji: string | null; soft_cap: number | null }>;
@@ -695,7 +695,7 @@ function RecurringSection({ channels, guildEmojis }: {
   const [form, setForm] = useState({
     title: '', description: '', weekdays: [] as number[],
     event_time: '', event_timezone: 'America/New_York',
-    total_cap: '25', channel_id: '',
+    total_cap: '', channel_id: '',
     advance_h: '24', advance_m: '0',
     start_date: '', end_date: '', cancelled_after: '',
     roles: [] as RecurringRoleEntry[],
@@ -718,7 +718,7 @@ function RecurringSection({ channels, guildEmojis }: {
     setForm({
       title: '', description: '', weekdays: [],
       event_time: '', event_timezone: 'America/New_York',
-      total_cap: '25', channel_id: '',
+      total_cap: '', channel_id: '',
       advance_h: '24', advance_m: '0',
       start_date: new Date().toISOString().slice(0, 10),
       end_date: '', cancelled_after: '',
@@ -737,7 +737,7 @@ function RecurringSection({ channels, guildEmojis }: {
       weekdays: s.weekdays,
       event_time: String(s.event_time).slice(0, 5),
       event_timezone: s.event_timezone,
-      total_cap: String(s.total_cap),
+      total_cap: s.total_cap != null ? String(s.total_cap) : '',
       channel_id: s.channel_id ?? '',
       advance_h: String(h),
       advance_m: String(m),
@@ -766,7 +766,7 @@ function RecurringSection({ channels, guildEmojis }: {
       weekdays: form.weekdays,
       event_time: form.event_time,
       event_timezone: form.event_timezone,
-      total_cap: parseInt(form.total_cap) || 25,
+      total_cap: form.total_cap ? parseInt(form.total_cap) : null,
       channel_id: form.channel_id || null,
       advance_minutes,
       roles: form.roles.filter(r => r.name.trim()).map(r => ({
@@ -923,8 +923,8 @@ function RecurringSection({ channels, guildEmojis }: {
             {/* Cap + Channel */}
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <label className="text-[10px] text-slate-500 uppercase tracking-widest font-semibold block mb-1">Total Cap</label>
-                <input type="number" min="1" value={form.total_cap}
+                <label className="text-[10px] text-slate-500 uppercase tracking-widest font-semibold block mb-1">Total Cap <span className="normal-case font-normal text-slate-700">(optional)</span></label>
+                <input type="number" min="1" placeholder="uncapped" value={form.total_cap}
                   onChange={e => setForm(f => ({ ...f, total_cap: e.target.value }))} className={finp} />
               </div>
               <div>
@@ -1306,7 +1306,7 @@ export default function Events() {
       title: form.title, description: form.description || null,
       event_date: form.event_date, event_time: form.event_time,
       event_timezone: form.event_timezone || "UTC",
-      total_cap: parseInt(form.total_cap) || 25,
+      total_cap: form.total_cap ? parseInt(form.total_cap) : null,
       channel_id: form.channel_id || null,
       // For edits, only change status when explicitly publishing; never downgrade an active event
       status: editing
@@ -1440,7 +1440,7 @@ export default function Events() {
                           </div>
                           <p className="text-slate-300 text-sm">{fmtDate(ev.event_date)} · {fmtTime(ev.event_time)}</p>
                           <p className="text-slate-500 text-xs mt-1">
-                            {ev.accepted_count}/{ev.total_cap} accepted
+                            {ev.accepted_count}{ev.total_cap != null ? `/${ev.total_cap}` : ""} accepted
                             {ev.bench_count > 0 && <> · {ev.bench_count} bench</>}
                             {ev.tentative_count > 0 && <> · {ev.tentative_count} tentative</>}
                           </p>

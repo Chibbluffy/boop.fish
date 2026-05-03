@@ -1199,7 +1199,7 @@ const server = serve({
         const [event] = await sql`
           INSERT INTO events (title, description, event_date, event_time, event_timezone, total_cap, channel_id, status, created_by)
           VALUES (${title.trim()}, ${description ?? null}, ${event_date}, ${event_time},
-                  ${event_timezone ?? null}, ${total_cap ?? 25}, ${channel_id ?? null}, ${eventStatus}, ${user!.id})
+                  ${event_timezone ?? null}, ${total_cap ?? null}, ${channel_id ?? null}, ${eventStatus}, ${user!.id})
           RETURNING *
         `;
         if (Array.isArray(roles)) {
@@ -1509,7 +1509,7 @@ const server = serve({
         if (!name?.trim()) return err("name required");
         const [t] = await sql`
           INSERT INTO event_templates (name, description, event_time, event_timezone, total_cap, channel_id, roles, created_by)
-          VALUES (${name.trim()}, ${description ?? null}, ${event_time ?? null}, ${event_timezone ?? null}, ${total_cap ?? 25},
+          VALUES (${name.trim()}, ${description ?? null}, ${event_time ?? null}, ${event_timezone ?? null}, ${total_cap ?? null},
                   ${channel_id ?? null}, ${JSON.stringify(roles ?? [])}::jsonb, ${user!.id})
           RETURNING *
         `;
@@ -1576,7 +1576,7 @@ const server = serve({
              advance_minutes, roles, start_date, end_date, created_by)
           VALUES (
             ${title.trim()}, ${description ?? null}, ${weekdays}, ${event_time},
-            ${event_timezone ?? "America/New_York"}, ${total_cap ?? 25}, ${channel_id ?? null},
+            ${event_timezone ?? "America/New_York"}, ${total_cap ?? null}, ${channel_id ?? null},
             ${advance_minutes ?? 2880}, ${JSON.stringify(roles ?? [])}::jsonb,
             ${start_date}, ${end_date ?? null}, ${user!.id}
           )
