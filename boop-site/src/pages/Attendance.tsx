@@ -109,12 +109,14 @@ export default function Attendance() {
   }, [closedEvents, signups]);
 
   const eventStats = useMemo(() => {
-    const map = new Map<string, { attended: number; total: number }>();
+    const map = new Map<string, { accepted: number; absent: number; bench: number; tentative: number }>();
     for (const s of signups) {
-      if (!map.has(s.event_id)) map.set(s.event_id, { attended: 0, total: 0 });
+      if (!map.has(s.event_id)) map.set(s.event_id, { accepted: 0, absent: 0, bench: 0, tentative: 0 });
       const e = map.get(s.event_id)!;
-      e.total++;
-      if (s.attended) e.attended++;
+      if (s.status === "accepted") e.accepted++;
+      else if (s.status === "absent") e.absent++;
+      else if (s.status === "bench") e.bench++;
+      else if (s.status === "tentative") e.tentative++;
     }
     return map;
   }, [signups]);
@@ -400,7 +402,8 @@ export default function Attendance() {
               const dateLabel = fmtEventDate(ev.event_date, ev.event_time);
               const timeLabel = fmtEventTime(ev.event_date, ev.event_time);
               const stats = eventStats.get(ev.id);
-              const evPct = stats && stats.total > 0 ? Math.round((stats.attended / stats.total) * 100) : null;
+              const evRated = stats ? stats.accepted + stats.absent : 0;
+              const evPct = evRated > 0 ? Math.round((stats!.accepted / evRated) * 100) : null;
 
               return (
                 <tr key={ev.id} className="border-b border-slate-800/40 hover:bg-slate-800/20 transition-colors">
@@ -415,22 +418,13 @@ export default function Attendance() {
                         </p>
                         {stats && (
                           <div className="mt-2 text-xs space-y-0.5">
-                            <p>
-                              <span className="text-green-400 font-semibold">{stats.attended}</span>
-                              <span className="text-slate-400"> attended</span>
-                            </p>
-                            <p>
-                              <span className="text-red-400 font-semibold">{stats.total - stats.attended}</span>
-                              <span className="text-slate-400"> absent</span>
-                            </p>
-                            <p>
-                              <span className="text-white font-semibold">{stats.total}</span>
-                              <span className="text-slate-400"> signed up</span>
-                            </p>
+                            <p><span className="text-green-400 font-semibold">{stats.accepted}</span><span className="text-slate-400"> attended</span></p>
+                            <p><span className="text-red-400 font-semibold">{stats.absent}</span><span className="text-slate-400"> absent</span></p>
+                            {stats.bench > 0 && <p><span className="text-yellow-400 font-semibold">{stats.bench}</span><span className="text-slate-400"> benched</span></p>}
+                            {stats.tentative > 0 && <p><span className="text-slate-300 font-semibold">{stats.tentative}</span><span className="text-slate-400"> tentative</span></p>}
+                            <p><span className="text-white font-semibold">{stats.accepted + stats.absent + stats.bench + stats.tentative}</span><span className="text-slate-400"> signed up</span></p>
                             {evPct !== null && (
-                              <p className="pt-0.5 font-bold" style={{ color: pctColor(evPct) }}>
-                                {evPct}% attendance rate
-                              </p>
+                              <p className="pt-0.5 font-bold" style={{ color: pctColor(evPct) }}>{evPct}% attendance rate</p>
                             )}
                           </div>
                         )}

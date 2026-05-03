@@ -499,7 +499,7 @@ function EventDetail({
   return (
     <div>
       {/* Back + header */}
-      <button onClick={onBack} className="text-slate-500 hover:text-white text-sm mb-4 transition-colors">← Back to events</button>
+      <button onClick={onBack} className="text-slate-500 hover:text-white text-sm mb-4 transition-colors">← Back to signups</button>
       <div className="flex items-start justify-between flex-wrap gap-4 mb-6">
         <div>
           <div className="flex items-center gap-3 mb-1 flex-wrap">
@@ -1367,8 +1367,8 @@ export default function Events() {
         {/* Header */}
         <div className="flex items-center justify-between mb-6 flex-wrap gap-4">
           <div>
-            <h1 className="text-2xl font-black text-white">Events</h1>
-            <p className="text-slate-400 text-sm mt-0.5">Guild event signups and attendance</p>
+            <h1 className="text-2xl font-black text-white">Signups</h1>
+            <p className="text-slate-400 text-sm mt-0.5">Guild event signups</p>
           </div>
           {isOfficer && mainTab === "events" && view === "list" && (
             <button
@@ -1426,7 +1426,7 @@ export default function Events() {
                 {loading ? (
                   <p className="text-slate-500 text-sm text-center py-20">Loading…</p>
                 ) : filtered.length === 0 ? (
-                  <p className="text-slate-500 text-sm text-center py-20">No events found.</p>
+                  <p className="text-slate-500 text-sm text-center py-20">No signups found.</p>
                 ) : (
                   <div className="flex flex-col gap-3">
                     {filtered.map(ev => (
@@ -1473,7 +1473,7 @@ export default function Events() {
                 <button
                   onClick={() => { setView("list"); setEditing(null); }}
                   className="text-slate-500 hover:text-white text-sm mb-4 transition-colors"
-                >← Back to events</button>
+                >← Back to signups</button>
                 <h2 className="text-lg font-black text-white mb-6">{editing ? "Edit Event" : "Create Event"}</h2>
                 <EventForm
                   initial={editing ?? undefined}

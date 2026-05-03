@@ -3,7 +3,7 @@ import { useAuth } from "../lib/auth";
 import Events from "./Events";
 import CalendarPage from "./CalendarPage";
 import Attendance from "./Attendance";
-import ShrineAvailability from "./ShrineAvailability";
+import Availability from "./Availability";
 
 type Tab = "events" | "calendar" | "attendance" | "availability";
 
@@ -21,7 +21,7 @@ function getTabFromHash(): Tab {
 
 const TABS: { key: Tab; label: string }[] = [
   { key: "calendar",     label: "Calendar" },
-  { key: "events",       label: "Events" },
+  { key: "events",       label: "Signups" },
   { key: "attendance",   label: "Attendance" },
   { key: "availability", label: "Availability" },
 ];
@@ -63,7 +63,7 @@ export default function CalendarHub() {
       {tab === "events"       && <Events />}
       {tab === "calendar"     && <CalendarPage />}
       {tab === "attendance"   && <Attendance />}
-      {tab === "availability" && <ShrineAvailability key={user?.id ?? "guest"} />}
+      {tab === "availability" && <Availability key={user?.id ?? "guest"} />}
     </div>
   );
 }

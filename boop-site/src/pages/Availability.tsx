@@ -123,7 +123,7 @@ function AvailGrid({
 }
 
 // ── Main component ────────────────────────────────────────────────────────────
-export default function ShrineAvailability() {
+export default function Availability() {
   const user = useAuth();
 
   const tz = useMemo(
