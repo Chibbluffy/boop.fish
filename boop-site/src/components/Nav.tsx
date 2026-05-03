@@ -10,7 +10,6 @@ const NAV_GROUPS = [
     label: "Guild Info",
     memberOnly: true,
     items: [
-      { label: "Calendar",         href: "#/calendar",         route: "calendar",         officerOnly: false },
       { label: "Guild Directory",  href: "#/guild-directory",  route: "guild-directory",  officerOnly: false },
       { label: "Black Shrine",     href: "#/shrine",           route: "shrine",           officerOnly: false },
       { label: "Gear Leaderboard", href: "#/gear-leaderboard", route: "gear-leaderboard", officerOnly: false },
@@ -261,6 +260,16 @@ export default function Nav({ route }: NavProps) {
               Home
             </a>
 
+            {user && user.role !== "pending" && (
+              <a href="#/calendar"
+                className={`shrink-0 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors whitespace-nowrap ${
+                  route === "calendar" ? "bg-slate-800 text-white" : "text-slate-400 hover:text-white hover:bg-slate-800/60"
+                }`}
+              >
+                Calendar
+              </a>
+            )}
+
             {NAV_GROUPS.map(group => {
               if (group.memberOnly && (!user || user.role === "pending")) return null;
               const isGroupActive = group.items.some(i => i.route === route);
@@ -429,6 +438,16 @@ export default function Nav({ route }: NavProps) {
               >
                 Home
               </a>
+
+              {user && user.role !== "pending" && (
+                <a href="#/calendar" onClick={() => setMobileOpen(false)}
+                  className={`block px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${
+                    route === "calendar" ? "bg-slate-800 text-white" : "text-slate-400 hover:text-white hover:bg-slate-800/60"
+                  }`}
+                >
+                  Calendar
+                </a>
+              )}
 
               {NAV_GROUPS.map(group => {
                 if (group.memberOnly && (!user || user.role === "pending")) return null;

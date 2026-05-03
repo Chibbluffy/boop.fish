@@ -16,12 +16,12 @@ function getTabFromHash(): Tab {
   const params = new URLSearchParams(raw.split("?")[1] ?? "");
   const t = params.get("tab");
   if (t === "events" || t === "calendar" || t === "attendance" || t === "availability") return t;
-  return "events";
+  return "calendar";
 }
 
 const TABS: { key: Tab; label: string }[] = [
-  { key: "events",       label: "Events" },
   { key: "calendar",     label: "Calendar" },
+  { key: "events",       label: "Events" },
   { key: "attendance",   label: "Attendance" },
   { key: "availability", label: "Availability" },
 ];
