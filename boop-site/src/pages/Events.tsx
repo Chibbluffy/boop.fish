@@ -652,6 +652,439 @@ function EventDetail({
   );
 }
 
+// ── Recurring Section ─────────────────────────────────────────────────────────
+const WEEKDAY_LABELS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+
+type RecurringSeries = {
+  id: string;
+  title: string;
+  description: string | null;
+  weekdays: number[];
+  event_time: string;
+  event_timezone: string;
+  total_cap: number;
+  channel_id: string | null;
+  advance_minutes: number;
+  roles: Array<{ name: string; emoji: string | null; soft_cap: number | null }>;
+  start_date: string;
+  end_date: string | null;
+  cancelled_after: string | null;
+  skip_dates: string[];
+};
+
+function fmtAdvance(mins: number): string {
+  const h = Math.floor(mins / 60);
+  const m = mins % 60;
+  if (h === 0) return `${m}m`;
+  if (m === 0) return `${h}h`;
+  return `${h}h ${m}m`;
+}
+
+type RecurringRoleEntry = { name: string; soft_cap: string; emoji: string };
+
+function RecurringSection({ channels, guildEmojis }: {
+  channels: Channel[];
+  guildEmojis: GuildEmoji[];
+}) {
+  const [series, setSeries]     = useState<RecurringSeries[]>([]);
+  const [loading, setLoading]   = useState(true);
+  const [editId, setEditId]     = useState<string | null>(null);
+  const [saving, setSaving]     = useState(false);
+  const [skipInput, setSkipInput] = useState<Record<string, string>>({});
+
+  const [form, setForm] = useState({
+    title: '', description: '', weekdays: [] as number[],
+    event_time: '', event_timezone: 'America/New_York',
+    total_cap: '25', channel_id: '',
+    advance_h: '24', advance_m: '0',
+    start_date: '', end_date: '', cancelled_after: '',
+    roles: [] as RecurringRoleEntry[],
+    update_future: false,
+  });
+
+  function token() { return localStorage.getItem("boop_session") ?? ""; }
+  function authH() { return { Authorization: `Bearer ${token()}` }; }
+
+  useEffect(() => {
+    fetch('/api/recurring', { headers: authH() })
+      .then(r => r.json())
+      .then(d => setSeries(Array.isArray(d) ? d : []))
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, []);
+
+  function startNew() {
+    setEditId('new');
+    setForm({
+      title: '', description: '', weekdays: [],
+      event_time: '', event_timezone: 'America/New_York',
+      total_cap: '25', channel_id: '',
+      advance_h: '24', advance_m: '0',
+      start_date: new Date().toISOString().slice(0, 10),
+      end_date: '', cancelled_after: '',
+      roles: [],
+      update_future: false,
+    });
+  }
+
+  function startEdit(s: RecurringSeries) {
+    setEditId(s.id);
+    const h = Math.floor(s.advance_minutes / 60);
+    const m = s.advance_minutes % 60;
+    setForm({
+      title: s.title,
+      description: s.description ?? '',
+      weekdays: s.weekdays,
+      event_time: String(s.event_time).slice(0, 5),
+      event_timezone: s.event_timezone,
+      total_cap: String(s.total_cap),
+      channel_id: s.channel_id ?? '',
+      advance_h: String(h),
+      advance_m: String(m),
+      start_date: String(s.start_date).slice(0, 10),
+      end_date: s.end_date ? String(s.end_date).slice(0, 10) : '',
+      cancelled_after: s.cancelled_after ? String(s.cancelled_after).slice(0, 10) : '',
+      roles: s.roles.map(r => ({ name: r.name, emoji: r.emoji ?? '', soft_cap: r.soft_cap != null ? String(r.soft_cap) : '' })),
+      update_future: false,
+    });
+  }
+
+  function toggleWeekday(d: number) {
+    setForm(f => ({
+      ...f,
+      weekdays: f.weekdays.includes(d) ? f.weekdays.filter(w => w !== d) : [...f.weekdays, d].sort((a, b) => a - b),
+    }));
+  }
+
+  async function save() {
+    if (!form.title.trim() || form.weekdays.length === 0 || !form.event_time || !form.start_date) return;
+    setSaving(true);
+    const advance_minutes = (parseInt(form.advance_h) || 0) * 60 + (parseInt(form.advance_m) || 0);
+    const payload = {
+      title: form.title.trim(),
+      description: form.description.trim() || null,
+      weekdays: form.weekdays,
+      event_time: form.event_time,
+      event_timezone: form.event_timezone,
+      total_cap: parseInt(form.total_cap) || 25,
+      channel_id: form.channel_id || null,
+      advance_minutes,
+      roles: form.roles.filter(r => r.name.trim()).map(r => ({
+        name: r.name.trim(),
+        emoji: r.emoji.trim() || null,
+        soft_cap: r.soft_cap ? parseInt(r.soft_cap) : null,
+      })),
+      start_date: form.start_date,
+      end_date: form.end_date || null,
+      cancelled_after: form.cancelled_after || null,
+      update_future_events: form.update_future,
+    };
+    const isNew = editId === 'new';
+    const res = await fetch(isNew ? '/api/recurring' : `/api/recurring/${editId}`, {
+      method: isNew ? 'POST' : 'PATCH',
+      headers: { 'Content-Type': 'application/json', ...authH() },
+      body: JSON.stringify(payload),
+    });
+    if (res.ok) {
+      const row = await res.json();
+      if (isNew) setSeries(prev => [row, ...prev]);
+      else setSeries(prev => prev.map(s => s.id === editId ? row : s));
+      setEditId(null);
+    }
+    setSaving(false);
+  }
+
+  async function remove(id: string) {
+    if (!confirm('Delete this recurring series? Already-created events will not be deleted.')) return;
+    await fetch(`/api/recurring/${id}`, { method: 'DELETE', headers: authH() });
+    setSeries(prev => prev.filter(s => s.id !== id));
+    if (editId === id) setEditId(null);
+  }
+
+  async function addSkipDate(sid: string) {
+    const d = skipInput[sid];
+    if (!d) return;
+    const res = await fetch(`/api/recurring/${sid}/skip`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...authH() },
+      body: JSON.stringify({ date: d }),
+    });
+    if (res.ok) {
+      setSeries(prev => prev.map(s => s.id === sid ? { ...s, skip_dates: [...s.skip_dates, d].sort() } : s));
+      setSkipInput(prev => ({ ...prev, [sid]: '' }));
+    }
+  }
+
+  async function removeSkipDate(sid: string, d: string) {
+    await fetch(`/api/recurring/${sid}/skip/${d}`, { method: 'DELETE', headers: authH() });
+    setSeries(prev => prev.map(s => s.id === sid ? { ...s, skip_dates: s.skip_dates.filter(x => x !== d) } : s));
+  }
+
+  const finp = "bg-slate-800/60 border border-slate-700 text-white rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-violet-500 w-full";
+
+  const today = new Date().toISOString().slice(0, 10);
+  function isActive(s: RecurringSeries) {
+    return !s.cancelled_after && (!s.end_date || s.end_date >= today);
+  }
+
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-6">
+        <div>
+          <h2 className="text-xl font-black text-white">Recurring Events</h2>
+          <p className="text-slate-400 text-sm mt-0.5">Auto-post signups on a repeating schedule.</p>
+        </div>
+        {editId === null && (
+          <button onClick={startNew}
+            className="px-4 py-2 rounded-xl bg-violet-600 hover:bg-violet-500 text-white font-bold text-sm transition-colors">
+            + New Series
+          </button>
+        )}
+      </div>
+
+      {editId !== null && (
+        <div className="bg-slate-900/60 border border-slate-800 rounded-2xl p-5 mb-6">
+          <h3 className="font-black text-slate-400 text-xs uppercase tracking-widest mb-4">
+            {editId === 'new' ? 'New Recurring Series' : 'Edit Series'}
+          </h3>
+          <div className="flex flex-col gap-4">
+            <input value={form.title} onChange={e => setForm(f => ({ ...f, title: e.target.value }))}
+              placeholder="Series title (e.g. Node War)" className={finp} />
+            <input value={form.description} onChange={e => setForm(f => ({ ...f, description: e.target.value }))}
+              placeholder="Description (optional)" className={finp} />
+
+            {/* Weekdays */}
+            <div>
+              <label className="text-[10px] text-slate-500 uppercase tracking-widest font-semibold block mb-1.5">Repeats on</label>
+              <div className="flex gap-1 flex-wrap">
+                {WEEKDAY_LABELS.map((label, i) => (
+                  <button key={i} type="button" onClick={() => toggleWeekday(i)}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-colors
+                      ${form.weekdays.includes(i)
+                        ? 'bg-violet-600 text-white'
+                        : 'bg-slate-800 text-slate-400 hover:text-white border border-slate-700'}`}>
+                    {label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Time + Timezone */}
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="text-[10px] text-slate-500 uppercase tracking-widest font-semibold block mb-1">Event Time</label>
+                <input type="time" value={form.event_time}
+                  onChange={e => setForm(f => ({ ...f, event_time: e.target.value }))} className={finp} />
+              </div>
+              <div>
+                <label className="text-[10px] text-slate-500 uppercase tracking-widest font-semibold block mb-1">Timezone</label>
+                <select value={form.event_timezone}
+                  onChange={e => setForm(f => ({ ...f, event_timezone: e.target.value }))} className={finp}>
+                  {TIMEZONES.map(tz => <option key={tz.value} value={tz.value}>{tz.label}</option>)}
+                </select>
+              </div>
+            </div>
+
+            {/* Advance notice */}
+            <div>
+              <label className="text-[10px] text-slate-500 uppercase tracking-widest font-semibold block mb-1.5">
+                Post signups this far before event
+              </label>
+              <div className="flex gap-2 items-center">
+                <input type="number" min="0" value={form.advance_h}
+                  onChange={e => setForm(f => ({ ...f, advance_h: e.target.value }))}
+                  className="bg-slate-800/60 border border-slate-700 text-white rounded-xl px-3 py-2 text-sm w-24 focus:outline-none focus:border-violet-500"
+                  placeholder="0" />
+                <span className="text-slate-500 text-sm shrink-0">h</span>
+                <input type="number" min="0" max="59" value={form.advance_m}
+                  onChange={e => setForm(f => ({ ...f, advance_m: e.target.value }))}
+                  className="bg-slate-800/60 border border-slate-700 text-white rounded-xl px-3 py-2 text-sm w-24 focus:outline-none focus:border-violet-500"
+                  placeholder="0" />
+                <span className="text-slate-500 text-sm shrink-0">min</span>
+              </div>
+            </div>
+
+            {/* Start / End date */}
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="text-[10px] text-slate-500 uppercase tracking-widest font-semibold block mb-1">Starts On</label>
+                <input type="date" value={form.start_date}
+                  onChange={e => setForm(f => ({ ...f, start_date: e.target.value }))} className={finp} />
+              </div>
+              <div>
+                <label className="text-[10px] text-slate-500 uppercase tracking-widest font-semibold block mb-1">
+                  Ends On <span className="text-slate-600 normal-case font-normal">(optional)</span>
+                </label>
+                <input type="date" value={form.end_date}
+                  onChange={e => setForm(f => ({ ...f, end_date: e.target.value }))} className={finp} />
+              </div>
+            </div>
+
+            {/* Cap + Channel */}
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="text-[10px] text-slate-500 uppercase tracking-widest font-semibold block mb-1">Total Cap</label>
+                <input type="number" min="1" value={form.total_cap}
+                  onChange={e => setForm(f => ({ ...f, total_cap: e.target.value }))} className={finp} />
+              </div>
+              <div>
+                <label className="text-[10px] text-slate-500 uppercase tracking-widest font-semibold block mb-1">Discord Channel</label>
+                {channels.length > 0 ? (
+                  <select value={form.channel_id}
+                    onChange={e => setForm(f => ({ ...f, channel_id: e.target.value }))} className={finp}>
+                    <option value="">— select channel —</option>
+                    {channels.map(c => <option key={c.id} value={c.id}>#{c.name}</option>)}
+                  </select>
+                ) : (
+                  <input value={form.channel_id}
+                    onChange={e => setForm(f => ({ ...f, channel_id: e.target.value }))}
+                    placeholder="Channel ID" className={finp} />
+                )}
+              </div>
+            </div>
+
+            {/* Roles */}
+            <div>
+              <p className="text-xs font-semibold text-slate-400 uppercase tracking-widest mb-2">Roles</p>
+              <div className="flex flex-col gap-2">
+                {form.roles.map((r, i) => (
+                  <div key={i} className="flex gap-2 items-center">
+                    <input value={r.name}
+                      onChange={e => setForm(f => ({ ...f, roles: f.roles.map((x, j) => j === i ? { ...x, name: e.target.value } : x) }))}
+                      placeholder="Role name" className="bg-slate-800/60 border border-slate-700 text-white rounded-xl px-3 py-2 text-sm flex-1 focus:outline-none focus:border-violet-500" />
+                    <input value={r.soft_cap}
+                      onChange={e => setForm(f => ({ ...f, roles: f.roles.map((x, j) => j === i ? { ...x, soft_cap: e.target.value } : x) }))}
+                      placeholder="Cap" type="number" min={0}
+                      className="bg-slate-800/60 border border-slate-700 text-white rounded-xl px-3 py-2 text-sm w-20 focus:outline-none focus:border-violet-500" />
+                    <EmojiSelect value={r.emoji} emojis={guildEmojis}
+                      onChange={v => setForm(f => ({ ...f, roles: f.roles.map((x, j) => j === i ? { ...x, emoji: v } : x) }))} />
+                    <button onClick={() => setForm(f => ({ ...f, roles: f.roles.filter((_, j) => j !== i) }))}
+                      className="shrink-0 text-slate-600 hover:text-red-400 transition-colors text-lg leading-none px-1">×</button>
+                  </div>
+                ))}
+                <button onClick={() => setForm(f => ({ ...f, roles: [...f.roles, { name: '', soft_cap: '', emoji: '' }] }))}
+                  className="self-start text-xs text-violet-400 hover:text-violet-300 transition-colors">+ Add role</button>
+              </div>
+            </div>
+
+            {/* Cancel from date (edit only) */}
+            {editId !== 'new' && (
+              <div>
+                <label className="text-[10px] text-slate-500 uppercase tracking-widest font-semibold block mb-1">
+                  Cancel After Date <span className="text-slate-600 normal-case font-normal">(stops occurrences after this date)</span>
+                </label>
+                <input type="date" value={form.cancelled_after}
+                  onChange={e => setForm(f => ({ ...f, cancelled_after: e.target.value }))} className={finp} />
+              </div>
+            )}
+
+            {/* Update future events (edit only) */}
+            {editId !== 'new' && (
+              <label className="flex items-center gap-2 cursor-pointer select-none">
+                <input type="checkbox" checked={form.update_future}
+                  onChange={e => setForm(f => ({ ...f, update_future: e.target.checked }))}
+                  className="w-4 h-4 rounded accent-violet-500" />
+                <span className="text-sm text-slate-300">Also update already-posted future events</span>
+              </label>
+            )}
+
+            <div className="flex gap-2">
+              <button onClick={save}
+                disabled={!form.title.trim() || form.weekdays.length === 0 || !form.event_time || !form.start_date || saving}
+                className="px-5 py-2 rounded-xl bg-violet-600 hover:bg-violet-500 disabled:opacity-30 text-white font-bold text-sm transition-colors">
+                {saving ? 'Saving…' : 'Save'}
+              </button>
+              <button onClick={() => setEditId(null)}
+                className="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-sm transition-colors">
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {loading ? (
+        <p className="text-slate-500 text-center py-12">Loading…</p>
+      ) : series.length === 0 ? (
+        <p className="text-slate-600 text-center py-12">No recurring series yet.</p>
+      ) : (
+        <div className="flex flex-col gap-3">
+          {series.map(s => (
+            <div key={s.id} className="bg-slate-900/40 border border-slate-800 rounded-xl p-4">
+              <div className="flex items-start justify-between gap-3">
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2 mb-1 flex-wrap">
+                    <p className="font-bold text-white">{s.title}</p>
+                    <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                      isActive(s)
+                        ? 'bg-violet-500/20 text-violet-300 border border-violet-500/40'
+                        : 'bg-slate-700/60 text-slate-400 border border-slate-600'
+                    }`}>
+                      {isActive(s) ? 'active' : 'ended'}
+                    </span>
+                  </div>
+                  {s.description && <p className="text-xs text-slate-400 mb-1.5">{s.description}</p>}
+                  <div className="flex flex-wrap gap-1 mb-2">
+                    {s.weekdays.slice().sort((a, b) => a - b).map(d => (
+                      <span key={d} className="text-[10px] px-1.5 py-0.5 bg-slate-800 text-slate-300 rounded border border-slate-700">
+                        {WEEKDAY_LABELS[d]}
+                      </span>
+                    ))}
+                  </div>
+                  <div className="flex flex-wrap gap-x-4 gap-y-0.5 text-xs text-slate-500">
+                    <span>{String(s.event_time).slice(0, 5)} {s.event_timezone}</span>
+                    <span>⏰ {fmtAdvance(s.advance_minutes)} before</span>
+                    <span>from {String(s.start_date).slice(0, 10)}{s.end_date ? ` → ${String(s.end_date).slice(0, 10)}` : ''}</span>
+                    {s.cancelled_after && (
+                      <span className="text-amber-400">⛔ cancelled after {String(s.cancelled_after).slice(0, 10)}</span>
+                    )}
+                  </div>
+                  {s.skip_dates.length > 0 && (
+                    <div className="mt-2 flex flex-wrap gap-1">
+                      {s.skip_dates.map(d => (
+                        <span key={d} className="text-[10px] px-2 py-0.5 bg-slate-800 text-amber-400 rounded border border-slate-700 flex items-center gap-1">
+                          skip {d}
+                          <button onClick={() => removeSkipDate(s.id, d)}
+                            className="text-slate-600 hover:text-red-400 ml-0.5 leading-none">×</button>
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                  <div className="mt-2 flex gap-2 items-center">
+                    <input
+                      type="date"
+                      value={skipInput[s.id] ?? ''}
+                      onChange={e => setSkipInput(prev => ({ ...prev, [s.id]: e.target.value }))}
+                      className="bg-slate-800/60 border border-slate-700 text-white rounded-lg px-2 py-1 text-xs focus:outline-none focus:border-amber-500"
+                    />
+                    <button
+                      onClick={() => addSkipDate(s.id)}
+                      disabled={!skipInput[s.id]}
+                      className="text-xs px-2 py-1 rounded-lg bg-amber-900/30 hover:bg-amber-900/50 text-amber-400 transition-colors disabled:opacity-30"
+                    >
+                      Skip date
+                    </button>
+                  </div>
+                </div>
+                <div className="shrink-0 flex gap-1">
+                  <button onClick={() => startEdit(s)}
+                    className="px-2.5 py-1.5 rounded-lg text-xs text-slate-500 hover:text-white hover:bg-slate-800 transition-colors">
+                    Edit
+                  </button>
+                  <button onClick={() => remove(s.id)}
+                    className="px-2.5 py-1.5 rounded-lg text-xs text-slate-700 hover:text-red-400 hover:bg-slate-800 transition-colors">
+                    Delete
+                  </button>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── Templates Section ─────────────────────────────────────────────────────────
 type TplRoleEntry = { name: string; soft_cap: string; emoji: string };
 
@@ -834,7 +1267,7 @@ export default function Events() {
   const user = useAuth();
   const isOfficer = !!user && isOfficerOrAdmin(user);
 
-  const [mainTab, setMainTab]     = useState<"events" | "templates">("events");
+  const [mainTab, setMainTab]     = useState<"events" | "templates" | "recurring">("events");
   const [view, setView]           = useState<"list" | "form" | "detail">("list");
   const [events, setEvents]       = useState<EventItem[]>([]);
   const [detail, setDetail]       = useState<EventDetail | null>(null);
@@ -958,12 +1391,21 @@ export default function Events() {
               className={`px-4 py-1.5 rounded-lg text-sm font-semibold transition-colors ${mainTab === "templates" ? "bg-violet-600 text-white" : "text-slate-300 hover:text-white"}`}>
               Templates
             </button>
+            <button onClick={() => setMainTab("recurring")}
+              className={`px-4 py-1.5 rounded-lg text-sm font-semibold transition-colors ${mainTab === "recurring" ? "bg-violet-600 text-white" : "text-slate-300 hover:text-white"}`}>
+              Recurring
+            </button>
           </div>
         )}
 
         {/* ── Templates tab ── */}
         {isOfficer && mainTab === "templates" && view === "list" && (
           <TemplatesSection templates={templates} setTemplates={setTemplates} channels={channels} guildEmojis={guildEmojis} />
+        )}
+
+        {/* ── Recurring tab ── */}
+        {isOfficer && mainTab === "recurring" && view === "list" && (
+          <RecurringSection channels={channels} guildEmojis={guildEmojis} />
         )}
 
         {/* ── Events tab ── */}

@@ -1544,6 +1544,183 @@ const server = serve({
       },
     },
 
+    // ── Recurring Events ─────────────────────────────────────────────────────────
+
+    "/api/recurring": {
+      async GET(req) {
+        const user = await authenticate(req);
+        if (!requireRole(user, "officer")) return err("Forbidden", 403);
+        const rows = await sql`
+          SELECT r.*, u.username AS created_by_name
+          FROM recurring_events r
+          LEFT JOIN users u ON u.id = r.created_by
+          ORDER BY r.created_at DESC
+        `;
+        return json(rows.map(r => ({
+          ...r,
+          roles: Array.isArray(r.roles) ? r.roles : (r.roles ? JSON.parse(r.roles as string) : []),
+          skip_dates: (r.skip_dates ?? []).map((d: any) => String(d).slice(0, 10)),
+        })));
+      },
+      async POST(req) {
+        const user = await authenticate(req);
+        if (!requireRole(user, "officer")) return err("Forbidden", 403);
+        const { title, description, weekdays, event_time, event_timezone, total_cap, channel_id, advance_minutes, roles, start_date, end_date } = await req.json();
+        if (!title?.trim()) return err("title is required");
+        if (!Array.isArray(weekdays) || weekdays.length === 0) return err("at least one weekday required");
+        if (!event_time) return err("event_time is required");
+        if (!start_date) return err("start_date is required");
+        const [row] = await sql`
+          INSERT INTO recurring_events
+            (title, description, weekdays, event_time, event_timezone, total_cap, channel_id,
+             advance_minutes, roles, start_date, end_date, created_by)
+          VALUES (
+            ${title.trim()}, ${description ?? null}, ${weekdays}, ${event_time},
+            ${event_timezone ?? "America/New_York"}, ${total_cap ?? 25}, ${channel_id ?? null},
+            ${advance_minutes ?? 2880}, ${JSON.stringify(roles ?? [])}::jsonb,
+            ${start_date}, ${end_date ?? null}, ${user!.id}
+          )
+          RETURNING *
+        `;
+        await sql`SELECT pg_notify('recurring_updated', ${row.id}::text)`;
+        return json({ ...row, roles: Array.isArray(row.roles) ? row.roles : [], skip_dates: [] }, 201);
+      },
+    },
+
+    "/api/recurring/:id": {
+      async GET(req) {
+        const user = await authenticate(req);
+        if (!requireRole(user, "officer")) return err("Forbidden", 403);
+        const [row] = await sql`SELECT * FROM recurring_events WHERE id = ${req.params.id}`;
+        if (!row) return err("Not found", 404);
+        const recent = await sql`
+          SELECT id, title, event_date::text, status
+          FROM events WHERE recurring_id = ${req.params.id}
+          ORDER BY event_date DESC LIMIT 10
+        `;
+        return json({
+          ...row,
+          roles: Array.isArray(row.roles) ? row.roles : (row.roles ? JSON.parse(row.roles as string) : []),
+          skip_dates: (row.skip_dates ?? []).map((d: any) => String(d).slice(0, 10)),
+          recent_events: recent,
+        });
+      },
+      async PATCH(req) {
+        const user = await authenticate(req);
+        if (!requireRole(user, "officer")) return err("Forbidden", 403);
+        const body = await req.json();
+        const { title, description, weekdays, event_time, event_timezone, total_cap, channel_id,
+                advance_minutes, roles, start_date, end_date, cancelled_after, update_future_events } = body;
+        const [updated] = await sql`
+          UPDATE recurring_events SET
+            title           = COALESCE(${title ?? null}, title),
+            description     = ${description ?? null},
+            weekdays        = COALESCE(${weekdays ?? null}, weekdays),
+            event_time      = COALESCE(${event_time ?? null}::time, event_time),
+            event_timezone  = COALESCE(${event_timezone ?? null}, event_timezone),
+            total_cap       = COALESCE(${total_cap ?? null}, total_cap),
+            channel_id      = ${channel_id ?? null},
+            advance_minutes = COALESCE(${advance_minutes ?? null}, advance_minutes),
+            roles           = COALESCE(${roles ? JSON.stringify(roles) : null}::jsonb, roles),
+            start_date      = COALESCE(${start_date ?? null}::date, start_date),
+            end_date        = ${end_date ?? null},
+            cancelled_after = ${cancelled_after ?? null},
+            updated_at      = NOW()
+          WHERE id = ${req.params.id}
+          RETURNING *
+        `;
+        if (!updated) return err("Not found", 404);
+
+        if (update_future_events) {
+          const futureEvents = await sql`
+            SELECT id FROM events
+            WHERE recurring_id = ${req.params.id}
+              AND event_date >= CURRENT_DATE
+              AND status != 'closed'
+          `;
+          for (const ev of futureEvents) {
+            await sql`
+              UPDATE events SET
+                title          = COALESCE(${title ?? null}, title),
+                description    = ${description ?? null},
+                event_time     = COALESCE(${event_time ?? null}::time, event_time),
+                event_timezone = COALESCE(${event_timezone ?? null}, event_timezone),
+                total_cap      = COALESCE(${total_cap ?? null}, total_cap),
+                channel_id     = COALESCE(${channel_id ?? null}, channel_id),
+                updated_at     = NOW()
+              WHERE id = ${ev.id}
+            `;
+            await sql`
+              UPDATE calendar_events SET
+                title          = COALESCE(${title ?? null}, title),
+                description    = ${description ?? null},
+                event_time     = COALESCE(${event_time ?? null}::time, event_time),
+                event_timezone = COALESCE(${event_timezone ?? null}, event_timezone),
+                updated_at     = NOW()
+              WHERE id = (SELECT calendar_event_id FROM events WHERE id = ${ev.id})
+            `;
+            if (Array.isArray(roles)) {
+              await sql`DELETE FROM event_roles WHERE event_id = ${ev.id}`;
+              for (let i = 0; i < roles.length; i++) {
+                const r = roles[i];
+                if (!r.name) continue;
+                await sql`
+                  INSERT INTO event_roles (event_id, name, emoji, soft_cap, display_order)
+                  VALUES (${ev.id}, ${r.name}, ${r.emoji ?? null}, ${r.soft_cap ?? null}, ${i})
+                `;
+              }
+            }
+            await sql`SELECT pg_notify('event_updated', ${ev.id}::text)`;
+          }
+        }
+
+        await sql`SELECT pg_notify('recurring_updated', ${req.params.id}::text)`;
+        return json({
+          ...updated,
+          roles: Array.isArray(updated.roles) ? updated.roles : [],
+          skip_dates: (updated.skip_dates ?? []).map((d: any) => String(d).slice(0, 10)),
+        });
+      },
+      async DELETE(req) {
+        const user = await authenticate(req);
+        if (!requireRole(user, "officer")) return err("Forbidden", 403);
+        const sid = req.params.id;
+        await sql`DELETE FROM recurring_events WHERE id = ${sid}`;
+        await sql`SELECT pg_notify('recurring_updated', ${sid}::text)`;
+        return json({ ok: true });
+      },
+    },
+
+    "/api/recurring/:id/skip": {
+      async POST(req) {
+        const user = await authenticate(req);
+        if (!requireRole(user, "officer")) return err("Forbidden", 403);
+        const { date } = await req.json();
+        if (!date) return err("date is required");
+        await sql`
+          UPDATE recurring_events
+          SET skip_dates = array_append(skip_dates, ${date}::date), updated_at = NOW()
+          WHERE id = ${req.params.id}
+        `;
+        await sql`SELECT pg_notify('recurring_updated', ${req.params.id}::text)`;
+        return json({ ok: true });
+      },
+    },
+
+    "/api/recurring/:id/skip/:date": {
+      async DELETE(req) {
+        const user = await authenticate(req);
+        if (!requireRole(user, "officer")) return err("Forbidden", 403);
+        await sql`
+          UPDATE recurring_events
+          SET skip_dates = array_remove(skip_dates, ${req.params.date}::date), updated_at = NOW()
+          WHERE id = ${req.params.id}
+        `;
+        await sql`SELECT pg_notify('recurring_updated', ${req.params.id}::text)`;
+        return json({ ok: true });
+      },
+    },
+
     "/api/class-emojis": {
       async GET(req) {
         const user = await authenticate(req);
