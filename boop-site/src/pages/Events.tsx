@@ -1243,8 +1243,8 @@ function TemplatesSection({ templates, setTemplates, channels, guildEmojis }: {
                   {t.description && <p className="text-xs text-slate-400 mt-0.5">{t.description}</p>}
                   <div className="flex flex-wrap gap-1.5 mt-2">
                     {(Array.isArray(t.roles) ? t.roles : []).map((r, i) => (
-                      <span key={i} className="text-xs px-2 py-0.5 rounded-full bg-slate-800 text-slate-300 border border-slate-700">
-                        {r.emoji && <span className="mr-1">{r.emoji}</span>}{r.name}{r.soft_cap != null ? ` (${r.soft_cap})` : ""}
+                      <span key={i} className="text-xs px-2 py-0.5 rounded-full bg-slate-800 text-slate-300 border border-slate-700 inline-flex items-center gap-1">
+                        {r.emoji && <EmojiText text={r.emoji} />}{r.name}{r.soft_cap != null ? ` (${r.soft_cap})` : ""}
                       </span>
                     ))}
                   </div>
