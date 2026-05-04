@@ -743,25 +743,26 @@ type RecurringSeries = {
 };
 
 function fmtAnnounce(mins: number, eventTime: string): string {
-  if (mins < 1440) {
+  const [etH, etM] = eventTime.slice(0, 5).split(':').map(Number);
+  const eventMins = (etH || 0) * 60 + (etM || 0);
+  const totalMins = eventMins - mins; // minutes from midnight of event day (can be negative)
+  if (totalMins >= 0) {
+    // Same calendar day as the event
     const h = Math.floor(mins / 60);
     const m = mins % 60;
     if (h === 0) return `${m}m before`;
     if (m === 0) return `${h}h before`;
     return `${h}h ${m}m before`;
   }
-  const [etH, etM] = eventTime.slice(0, 5).split(':').map(Number);
-  const eventMins = (etH || 0) * 60 + (etM || 0);
-  let days = Math.floor(mins / 1440);
-  let remaining = mins - days * 1440;
-  let announceMins = eventMins - remaining;
-  if (announceMins < 0) { announceMins += 1440; days -= 1; }
+  // Crosses midnight — show as "N day(s) before at HH:MM"
+  const announceMins = ((totalMins % 1440) + 1440) % 1440;
+  const daysBefore = Math.ceil(-totalMins / 1440);
   const aH = Math.floor(announceMins / 60);
   const aM = announceMins % 60;
   const suffix = aH >= 12 ? 'PM' : 'AM';
   const h12 = aH % 12 || 12;
   const timeStr = `${h12}:${String(aM).padStart(2, '0')} ${suffix}`;
-  return `${days} day${days !== 1 ? 's' : ''} before at ${timeStr}`;
+  return `${daysBefore} day${daysBefore !== 1 ? 's' : ''} before at ${timeStr}`;
 }
 
 type RecurringRoleEntry = { name: string; soft_cap: string; emoji: string };
@@ -833,13 +834,11 @@ function RecurringSection({ channels, guildEmojis, discordRoles }: {
     let announce_days = '1';
     let announce_time = '12:00';
 
-    if (adv >= 1440) {
+    const totalMins = eventMins - adv; // negative means crosses midnight
+    if (totalMins < 0) {
       announce_mode = 'days_before';
-      let days = Math.floor(adv / 1440);
-      let remaining = adv - days * 1440;
-      let announceMins = eventMins - remaining;
-      if (announceMins < 0) { announceMins += 1440; days -= 1; }
-      if (days < 1) { days = 1; }
+      const announceMins = ((totalMins % 1440) + 1440) % 1440;
+      const days = Math.max(1, Math.ceil(-totalMins / 1440));
       announce_days = String(days);
       const aH = Math.floor(announceMins / 60);
       const aM = announceMins % 60;
