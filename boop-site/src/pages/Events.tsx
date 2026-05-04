@@ -39,6 +39,8 @@ interface EventItem {
   event_time: string;
   event_timezone: string | null;
   total_cap: number | null;
+  ping_role_ids: string[];
+  enable_ping: boolean;
   status: "draft" | "active" | "closed";
   channel_id: string | null;
   message_id: string | null;
@@ -65,6 +67,8 @@ interface EventTemplate {
   name: string;
   description: string | null;
   total_cap: number | null;
+  ping_role_ids: string[];
+  enable_ping: boolean;
   channel_id: string | null;
   event_time: string | null;
   event_timezone: string | null;
@@ -73,6 +77,7 @@ interface EventTemplate {
 
 interface Channel { id: string; name: string; }
 interface GuildEmoji { id: string; name: string; animated: boolean; }
+interface DiscordRole { id: string; name: string; color: number; }
 
 function emojiUrl(e: GuildEmoji) {
   return `/api/discord/emoji-image/${e.id}${e.animated ? "?animated=1" : ""}`;
@@ -144,18 +149,20 @@ function blankForm() {
     title: "", description: "", event_date: "", event_time: "",
     event_timezone: "America/New_York",
     total_cap: "", channel_id: "",
+    enable_ping: true, ping_role_ids: [] as string[],
     roles: [] as RoleFormEntry[],
   };
 }
 
 // ── Event Form ────────────────────────────────────────────────────────────────
 function EventForm({
-  initial, templates, channels, guildEmojis, onSave, onPublish, onCancel,
+  initial, templates, channels, guildEmojis, discordRoles, onSave, onPublish, onCancel,
 }: {
   initial?: EventDetail | EventItem;
   templates: EventTemplate[];
   channels: Channel[];
   guildEmojis: GuildEmoji[];
+  discordRoles: DiscordRole[];
   onSave: (data: ReturnType<typeof blankForm>, publish: boolean) => Promise<void>;
   onPublish?: () => Promise<void>;
   onCancel: () => void;
@@ -171,6 +178,8 @@ function EventForm({
         event_time: String(initial.event_time).slice(0, 5),
         event_timezone: initial.event_timezone ?? "America/New_York",
         total_cap: initial.total_cap != null ? String(initial.total_cap) : "", channel_id: initial.channel_id ?? "",
+        enable_ping: (initial as EventItem).enable_ping ?? true,
+        ping_role_ids: (initial as EventItem).ping_role_ids ?? [],
         roles: existingRoles,
       };
     }
@@ -192,6 +201,8 @@ function EventForm({
       channel_id: t.channel_id ?? f.channel_id,
       event_time: t.event_time ?? f.event_time,
       event_timezone: t.event_timezone ?? f.event_timezone,
+      enable_ping: t.enable_ping ?? true,
+      ping_role_ids: t.ping_role_ids ?? [],
       roles: t.roles.map(r => ({ name: r.name, emoji: r.emoji ?? "", soft_cap: r.soft_cap ? String(r.soft_cap) : "" })),
     }));
   }
@@ -273,6 +284,44 @@ function EventForm({
               <input className={inp} value={form.channel_id} onChange={e => setForm(f => ({ ...f, channel_id: e.target.value }))} placeholder="Channel ID" />
             )}
           </div>
+        </div>
+
+        {/* Ping settings */}
+        <div>
+          <div className="flex items-center gap-2 mb-2">
+            <input
+              type="checkbox" id="ep-enable-ping"
+              checked={form.enable_ping}
+              onChange={e => setForm(f => ({ ...f, enable_ping: e.target.checked }))}
+              className="accent-violet-500"
+            />
+            <label htmlFor="ep-enable-ping" className="text-xs font-bold text-slate-400 uppercase tracking-widest cursor-pointer">
+              Ping roles when posted
+            </label>
+          </div>
+          {form.enable_ping && (
+            <div className="flex flex-wrap gap-1.5">
+              {discordRoles.map(r => {
+                const sel = form.ping_role_ids.includes(r.id);
+                return (
+                  <button key={r.id} type="button"
+                    onClick={() => setForm(f => ({
+                      ...f,
+                      ping_role_ids: sel
+                        ? f.ping_role_ids.filter(id => id !== r.id)
+                        : [...f.ping_role_ids, r.id],
+                    }))}
+                    className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition-colors ${
+                      sel ? "bg-violet-600 text-white" : "bg-slate-800 text-slate-400 hover:text-white"
+                    }`}
+                  >
+                    @{r.name}
+                  </button>
+                );
+              })}
+              {discordRoles.length === 0 && <p className="text-xs text-slate-600">No roles found.</p>}
+            </div>
+          )}
         </div>
 
         {/* Roles */}
@@ -663,6 +712,8 @@ type RecurringSeries = {
   event_time: string;
   event_timezone: string;
   total_cap: number | null;
+  ping_role_ids: string[];
+  enable_ping: boolean;
   channel_id: string | null;
   advance_minutes: number;
   roles: Array<{ name: string; emoji: string | null; soft_cap: number | null }>;
@@ -682,9 +733,10 @@ function fmtAdvance(mins: number): string {
 
 type RecurringRoleEntry = { name: string; soft_cap: string; emoji: string };
 
-function RecurringSection({ channels, guildEmojis }: {
+function RecurringSection({ channels, guildEmojis, discordRoles }: {
   channels: Channel[];
   guildEmojis: GuildEmoji[];
+  discordRoles: DiscordRole[];
 }) {
   const [series, setSeries]     = useState<RecurringSeries[]>([]);
   const [loading, setLoading]   = useState(true);
@@ -698,6 +750,7 @@ function RecurringSection({ channels, guildEmojis }: {
     total_cap: '', channel_id: '',
     advance_h: '24', advance_m: '0',
     start_date: '', end_date: '', cancelled_after: '',
+    enable_ping: true, ping_role_ids: [] as string[],
     roles: [] as RecurringRoleEntry[],
     update_future: false,
   });
@@ -722,6 +775,7 @@ function RecurringSection({ channels, guildEmojis }: {
       advance_h: '24', advance_m: '0',
       start_date: new Date().toISOString().slice(0, 10),
       end_date: '', cancelled_after: '',
+      enable_ping: true, ping_role_ids: [] as string[],
       roles: [],
       update_future: false,
     });
@@ -744,6 +798,8 @@ function RecurringSection({ channels, guildEmojis }: {
       start_date: String(s.start_date).slice(0, 10),
       end_date: s.end_date ? String(s.end_date).slice(0, 10) : '',
       cancelled_after: s.cancelled_after ? String(s.cancelled_after).slice(0, 10) : '',
+      enable_ping: s.enable_ping ?? true,
+      ping_role_ids: s.ping_role_ids ?? [],
       roles: s.roles.map(r => ({ name: r.name, emoji: r.emoji ?? '', soft_cap: r.soft_cap != null ? String(r.soft_cap) : '' })),
       update_future: false,
     });
@@ -767,6 +823,8 @@ function RecurringSection({ channels, guildEmojis }: {
       event_time: form.event_time,
       event_timezone: form.event_timezone,
       total_cap: form.total_cap ? parseInt(form.total_cap) : null,
+      enable_ping: form.enable_ping,
+      ping_role_ids: form.ping_role_ids,
       channel_id: form.channel_id || null,
       advance_minutes,
       roles: form.roles.filter(r => r.name.trim()).map(r => ({
@@ -943,6 +1001,44 @@ function RecurringSection({ channels, guildEmojis }: {
               </div>
             </div>
 
+            {/* Ping settings */}
+            <div>
+              <div className="flex items-center gap-2 mb-2">
+                <input
+                  type="checkbox" id="rec-enable-ping"
+                  checked={form.enable_ping}
+                  onChange={e => setForm(f => ({ ...f, enable_ping: e.target.checked }))}
+                  className="accent-violet-500"
+                />
+                <label htmlFor="rec-enable-ping" className="text-xs font-bold text-slate-400 uppercase tracking-widest cursor-pointer">
+                  Ping roles when posted
+                </label>
+              </div>
+              {form.enable_ping && (
+                <div className="flex flex-wrap gap-1.5">
+                  {discordRoles.map(r => {
+                    const sel = form.ping_role_ids.includes(r.id);
+                    return (
+                      <button key={r.id} type="button"
+                        onClick={() => setForm(f => ({
+                          ...f,
+                          ping_role_ids: sel
+                            ? f.ping_role_ids.filter(id => id !== r.id)
+                            : [...f.ping_role_ids, r.id],
+                        }))}
+                        className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition-colors ${
+                          sel ? "bg-violet-600 text-white" : "bg-slate-800 text-slate-400 hover:text-white"
+                        }`}
+                      >
+                        @{r.name}
+                      </button>
+                    );
+                  })}
+                  {discordRoles.length === 0 && <p className="text-xs text-slate-600">No roles found.</p>}
+                </div>
+              )}
+            </div>
+
             {/* Roles */}
             <div>
               <p className="text-xs font-semibold text-slate-400 uppercase tracking-widest mb-2">Roles</p>
@@ -1088,15 +1184,16 @@ function RecurringSection({ channels, guildEmojis }: {
 // ── Templates Section ─────────────────────────────────────────────────────────
 type TplRoleEntry = { name: string; soft_cap: string; emoji: string };
 
-function TemplatesSection({ templates, setTemplates, channels, guildEmojis }: {
+function TemplatesSection({ templates, setTemplates, channels, guildEmojis, discordRoles }: {
   templates: EventTemplate[];
   setTemplates: React.Dispatch<React.SetStateAction<EventTemplate[]>>;
   channels: Channel[];
   guildEmojis: GuildEmoji[];
+  discordRoles: DiscordRole[];
 }) {
   const [loading, setLoading] = useState(true);
   const [editId, setEditId]       = useState<string | null>(null);
-  const [form, setForm]           = useState({ name: "", description: "", event_time: "", event_timezone: "America/New_York", channel_id: "" });
+  const [form, setForm]           = useState({ name: "", description: "", event_time: "", event_timezone: "America/New_York", channel_id: "", enable_ping: true, ping_role_ids: [] as string[] });
   const [roles, setRoles]         = useState<TplRoleEntry[]>([]);
   const [saving, setSaving]       = useState(false);
 
@@ -1107,13 +1204,13 @@ function TemplatesSection({ templates, setTemplates, channels, guildEmojis }: {
 
   function startNew() {
     setEditId("new");
-    setForm({ name: "", description: "", event_time: "", event_timezone: "America/New_York", channel_id: "" });
+    setForm({ name: "", description: "", event_time: "", event_timezone: "America/New_York", channel_id: "", enable_ping: true, ping_role_ids: [] });
     setRoles([{ name: "Main", soft_cap: "", emoji: "" }]);
   }
 
   function startEdit(t: EventTemplate) {
     setEditId(t.id);
-    setForm({ name: t.name, description: t.description ?? "", event_time: t.event_time ?? "", event_timezone: t.event_timezone ?? "America/New_York", channel_id: t.channel_id ?? "" });
+    setForm({ name: t.name, description: t.description ?? "", event_time: t.event_time ?? "", event_timezone: t.event_timezone ?? "America/New_York", channel_id: t.channel_id ?? "", enable_ping: t.enable_ping ?? true, ping_role_ids: t.ping_role_ids ?? [] });
     const safe = Array.isArray(t.roles) ? t.roles : [];
     setRoles(safe.map(r => ({ name: r.name, soft_cap: r.soft_cap != null ? String(r.soft_cap) : "", emoji: r.emoji ?? "" })));
   }
@@ -1130,6 +1227,8 @@ function TemplatesSection({ templates, setTemplates, channels, guildEmojis }: {
     const payload = {
       name: form.name.trim(), description: form.description.trim() || null,
       event_time: form.event_time || null, event_timezone: form.event_timezone || null, channel_id: form.channel_id || null,
+      enable_ping: form.enable_ping,
+      ping_role_ids: form.ping_role_ids,
       roles: roles.filter(r => r.name.trim()).map(r => ({
         name: r.name.trim(), soft_cap: r.soft_cap ? parseInt(r.soft_cap) : null, emoji: r.emoji.trim() || null,
       })),
@@ -1205,6 +1304,42 @@ function TemplatesSection({ templates, setTemplates, channels, guildEmojis }: {
               )}
             </div>
             <div>
+              <div className="flex items-center gap-2 mb-2">
+                <input
+                  type="checkbox" id="tpl-enable-ping"
+                  checked={form.enable_ping}
+                  onChange={e => setForm(f => ({ ...f, enable_ping: e.target.checked }))}
+                  className="accent-violet-500"
+                />
+                <label htmlFor="tpl-enable-ping" className="text-xs font-bold text-slate-400 uppercase tracking-widest cursor-pointer">
+                  Ping roles when posted
+                </label>
+              </div>
+              {form.enable_ping && (
+                <div className="flex flex-wrap gap-1.5 mb-3">
+                  {discordRoles.map(r => {
+                    const sel = form.ping_role_ids.includes(r.id);
+                    return (
+                      <button key={r.id} type="button"
+                        onClick={() => setForm(f => ({
+                          ...f,
+                          ping_role_ids: sel
+                            ? f.ping_role_ids.filter(id => id !== r.id)
+                            : [...f.ping_role_ids, r.id],
+                        }))}
+                        className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition-colors ${
+                          sel ? "bg-violet-600 text-white" : "bg-slate-800 text-slate-400 hover:text-white"
+                        }`}
+                      >
+                        @{r.name}
+                      </button>
+                    );
+                  })}
+                  {discordRoles.length === 0 && <p className="text-xs text-slate-600">No roles found.</p>}
+                </div>
+              )}
+            </div>
+            <div>
               <p className="text-xs font-semibold text-slate-400 uppercase tracking-widest mb-2">Roles</p>
               <div className="flex flex-col gap-2">
                 {roles.map((r, i) => (
@@ -1263,7 +1398,7 @@ function TemplatesSection({ templates, setTemplates, channels, guildEmojis }: {
 }
 
 // ── Main page ─────────────────────────────────────────────────────────────────
-export default function Events() {
+export default function Events({ initialEventId }: { initialEventId?: string | null } = {}) {
   const user = useAuth();
   const isOfficer = !!user && isOfficerOrAdmin(user);
 
@@ -1275,6 +1410,7 @@ export default function Events() {
   const [templates, setTemplates]   = useState<EventTemplate[]>([]);
   const [channels, setChannels]     = useState<Channel[]>([]);
   const [guildEmojis, setGuildEmojis] = useState<GuildEmoji[]>([]);
+  const [discordRoles, setDiscordRoles] = useState<DiscordRole[]>([]);
   const [loading, setLoading]       = useState(true);
   const [filter, setFilter]       = useState<"upcoming" | "all" | "closed">("upcoming");
 
@@ -1285,6 +1421,10 @@ export default function Events() {
   }, []);
 
   useEffect(() => {
+    if (initialEventId) loadDetail(initialEventId);
+  }, [initialEventId]);
+
+  useEffect(() => {
     if (!user || user.role === "pending") return;
     loadEvents();
     if (isOfficer) {
@@ -1293,6 +1433,7 @@ export default function Events() {
       apiFetch("/api/discord/emojis").then(r => r.json()).then(d => {
         setGuildEmojis((Array.isArray(d) ? d : []).filter((e: any) => e.id && e.name).sort((a: GuildEmoji, b: GuildEmoji) => a.name.localeCompare(b.name)));
       }).catch(() => {});
+      apiFetch("/api/discord/roles").then(r => r.json()).then(setDiscordRoles).catch(() => {});
     }
   }, [user, isOfficer, loadEvents]);
 
@@ -1307,6 +1448,8 @@ export default function Events() {
       event_date: form.event_date, event_time: form.event_time,
       event_timezone: form.event_timezone || "UTC",
       total_cap: form.total_cap ? parseInt(form.total_cap) : null,
+      enable_ping: form.enable_ping,
+      ping_role_ids: form.ping_role_ids,
       channel_id: form.channel_id || null,
       // For edits, only change status when explicitly publishing; never downgrade an active event
       status: editing
@@ -1400,12 +1543,12 @@ export default function Events() {
 
         {/* ── Templates tab ── */}
         {isOfficer && mainTab === "templates" && view === "list" && (
-          <TemplatesSection templates={templates} setTemplates={setTemplates} channels={channels} guildEmojis={guildEmojis} />
+          <TemplatesSection templates={templates} setTemplates={setTemplates} channels={channels} guildEmojis={guildEmojis} discordRoles={discordRoles} />
         )}
 
         {/* ── Recurring tab ── */}
         {isOfficer && mainTab === "recurring" && view === "list" && (
-          <RecurringSection channels={channels} guildEmojis={guildEmojis} />
+          <RecurringSection channels={channels} guildEmojis={guildEmojis} discordRoles={discordRoles} />
         )}
 
         {/* ── Events tab ── */}
@@ -1480,6 +1623,7 @@ export default function Events() {
                   templates={templates}
                   channels={channels}
                   guildEmojis={guildEmojis}
+                  discordRoles={discordRoles}
                   onSave={saveForm}
                   onCancel={() => { setView("list"); setEditing(null); }}
                 />

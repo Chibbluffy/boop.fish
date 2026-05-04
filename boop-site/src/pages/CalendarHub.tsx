@@ -7,6 +7,11 @@ import Availability from "./Availability";
 
 type Tab = "events" | "calendar" | "attendance" | "availability";
 
+function getEventIdFromHash(): string | null {
+  const params = new URLSearchParams(location.hash.split("?")[1] ?? "");
+  return params.get("event") ?? null;
+}
+
 function getTabFromHash(): Tab {
   const raw = location.hash.replace(/^#\/?/, "");
   const segment = raw.split("?")[0].split("/")[0];
@@ -60,7 +65,7 @@ export default function CalendarHub() {
         </div>
       </div>
 
-      {tab === "events"       && <Events />}
+      {tab === "events"       && <Events initialEventId={getEventIdFromHash()} />}
       {tab === "calendar"     && <CalendarPage />}
       {tab === "attendance"   && <Attendance />}
       {tab === "availability" && <Availability key={user?.id ?? "guest"} />}

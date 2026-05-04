@@ -1193,13 +1193,14 @@ const server = serve({
       async POST(req) {
         const user = await authenticate(req);
         if (!requireRole(user, "officer")) return err("Forbidden", 403);
-        const { title, description, event_date, event_time, event_timezone, total_cap, channel_id, status, roles } = await req.json();
+        const { title, description, event_date, event_time, event_timezone, total_cap, channel_id, status, roles, ping_role_ids, enable_ping } = await req.json();
         if (!title?.trim() || !event_date || !event_time) return err("title, event_date, and event_time are required");
         const eventStatus = status === "active" ? "active" : "draft";
         const [event] = await sql`
-          INSERT INTO events (title, description, event_date, event_time, event_timezone, total_cap, channel_id, status, created_by)
+          INSERT INTO events (title, description, event_date, event_time, event_timezone, total_cap, channel_id, status, created_by, ping_role_ids, enable_ping)
           VALUES (${title.trim()}, ${description ?? null}, ${event_date}, ${event_time},
-                  ${event_timezone ?? null}, ${total_cap ?? null}, ${channel_id ?? null}, ${eventStatus}, ${user!.id})
+                  ${event_timezone ?? null}, ${total_cap ?? null}, ${channel_id ?? null}, ${eventStatus}, ${user!.id},
+                  ${ping_role_ids ?? []}, ${enable_ping ?? true})
           RETURNING *
         `;
         if (Array.isArray(roles)) {
@@ -1272,7 +1273,7 @@ const server = serve({
           await sql`UPDATE events SET message_id = ${body.message_id}, updated_at = NOW() WHERE id = ${req.params.id}`;
           return json({ ok: true });
         }
-        const { title, description, event_date, event_time, event_timezone, total_cap, channel_id, status, roles } = body;
+        const { title, description, event_date, event_time, event_timezone, total_cap, channel_id, status, roles, ping_role_ids, enable_ping } = body;
         await sql`
           UPDATE events SET
             title          = COALESCE(${title          ?? null}, title),
@@ -1283,6 +1284,8 @@ const server = serve({
             total_cap      = COALESCE(${total_cap      ?? null}, total_cap),
             channel_id     = COALESCE(${channel_id     ?? null}, channel_id),
             status         = COALESCE(${status         ?? null}, status),
+            ping_role_ids  = COALESCE(${ping_role_ids  ?? null}, ping_role_ids),
+            enable_ping    = COALESCE(${enable_ping    ?? null}, enable_ping),
             updated_at     = NOW()
           WHERE id = ${req.params.id}
         `;
@@ -1423,6 +1426,8 @@ const server = serve({
         const user  = isBot ? null : await authenticate(req);
         if (!isBot && !requireRole(user, "officer")) return err("Forbidden", 403);
         const { role_id, role_name, bdo_class, status, attended, attended_role, attended_class } = await req.json();
+        const [oldSignup] = await sql`SELECT discord_id, status, role_name FROM event_signups WHERE id = ${req.params.signupId}`;
+        const [evForDm]   = await sql`SELECT title FROM events WHERE id = ${req.params.id}`;
         await sql`
           UPDATE event_signups SET
             role_id        = COALESCE(${role_id        ?? null}, role_id),
@@ -1436,6 +1441,24 @@ const server = serve({
         `;
         await sql`UPDATE events SET updated_at = NOW() WHERE id = ${req.params.id}`;
         await sql`SELECT pg_notify('event_updated', ${req.params.id}::text)`;
+        if (!isBot && user && oldSignup && evForDm) {
+          const isSelfChange = user.discord_id === oldSignup.discord_id;
+          const statusChanged = status != null && status !== oldSignup.status;
+          const roleChanged   = role_name != null && role_name !== oldSignup.role_name;
+          if ((statusChanged || roleChanged) && !isSelfChange) {
+            const payload = JSON.stringify({
+              event_id:               req.params.id,
+              event_title:            evForDm.title,
+              discord_id:             oldSignup.discord_id,
+              old_status:             oldSignup.status,
+              new_status:             status ?? oldSignup.status,
+              old_role:               oldSignup.role_name,
+              new_role:               role_name ?? oldSignup.role_name,
+              changed_by_discord_id:  user.discord_id,
+            });
+            await sql`SELECT pg_notify('signup_changed', ${payload})`;
+          }
+        }
         return json({ ok: true });
       },
       async DELETE(req) {
@@ -1454,6 +1477,8 @@ const server = serve({
         const user = await authenticate(req);
         if (!requireRole(user, "officer")) return err("Forbidden", 403);
         const { role_id, role_name, status } = await req.json();
+        const [oldSignupMv] = await sql`SELECT discord_id, status, role_name FROM event_signups WHERE id = ${req.params.signupId}`;
+        const [evForDmMv]   = await sql`SELECT title FROM events WHERE id = ${req.params.id}`;
         await sql`
           UPDATE event_signups SET
             role_id   = ${role_id   ?? null},
@@ -1463,6 +1488,22 @@ const server = serve({
         `;
         await sql`UPDATE events SET updated_at = NOW() WHERE id = ${req.params.id}`;
         await sql`SELECT pg_notify('event_updated', ${req.params.id}::text)`;
+        if (user && oldSignupMv && evForDmMv) {
+          const isSelfChange = user.discord_id === oldSignupMv.discord_id;
+          if (!isSelfChange) {
+            const payload = JSON.stringify({
+              event_id:              req.params.id,
+              event_title:           evForDmMv.title,
+              discord_id:            oldSignupMv.discord_id,
+              old_status:            oldSignupMv.status,
+              new_status:            status,
+              old_role:              oldSignupMv.role_name,
+              new_role:              role_name ?? null,
+              changed_by_discord_id: user.discord_id,
+            });
+            await sql`SELECT pg_notify('signup_changed', ${payload})`;
+          }
+        }
         return json({ ok: true });
       },
     },
@@ -1505,12 +1546,12 @@ const server = serve({
       async POST(req) {
         const user = await authenticate(req);
         if (!requireRole(user, "officer")) return err("Forbidden", 403);
-        const { name, description, event_time, event_timezone, total_cap, channel_id, roles } = await req.json();
+        const { name, description, event_time, event_timezone, total_cap, channel_id, roles, ping_role_ids, enable_ping } = await req.json();
         if (!name?.trim()) return err("name required");
         const [t] = await sql`
-          INSERT INTO event_templates (name, description, event_time, event_timezone, total_cap, channel_id, roles, created_by)
+          INSERT INTO event_templates (name, description, event_time, event_timezone, total_cap, channel_id, roles, created_by, ping_role_ids, enable_ping)
           VALUES (${name.trim()}, ${description ?? null}, ${event_time ?? null}, ${event_timezone ?? null}, ${total_cap ?? null},
-                  ${channel_id ?? null}, ${JSON.stringify(roles ?? [])}::jsonb, ${user!.id})
+                  ${channel_id ?? null}, ${JSON.stringify(roles ?? [])}::jsonb, ${user!.id}, ${ping_role_ids ?? []}, ${enable_ping ?? true})
           RETURNING *
         `;
         return json({ ...t, roles: Array.isArray(t.roles) ? t.roles : (t.roles ? JSON.parse(t.roles as string) : []) }, 201);
@@ -1521,7 +1562,7 @@ const server = serve({
       async PATCH(req) {
         const user = await authenticate(req);
         if (!requireRole(user, "officer")) return err("Forbidden", 403);
-        const { name, description, event_time, event_timezone, total_cap, channel_id, roles } = await req.json();
+        const { name, description, event_time, event_timezone, total_cap, channel_id, roles, ping_role_ids, enable_ping } = await req.json();
         const [updated] = await sql`
           UPDATE event_templates SET
             name           = COALESCE(${name        ?? null}, name),
@@ -1529,8 +1570,10 @@ const server = serve({
             event_time     = ${event_time     ?? null},
             event_timezone = ${event_timezone ?? null},
             channel_id     = ${channel_id     ?? null},
-            roles       = COALESCE(${roles ? JSON.stringify(roles) : null}::jsonb, roles),
-            updated_at  = NOW()
+            roles          = COALESCE(${roles ? JSON.stringify(roles) : null}::jsonb, roles),
+            ping_role_ids  = COALESCE(${ping_role_ids ?? null}, ping_role_ids),
+            enable_ping    = COALESCE(${enable_ping    ?? null}, enable_ping),
+            updated_at     = NOW()
           WHERE id = ${req.params.id}
           RETURNING *
         `;
@@ -1565,7 +1608,7 @@ const server = serve({
       async POST(req) {
         const user = await authenticate(req);
         if (!requireRole(user, "officer")) return err("Forbidden", 403);
-        const { title, description, weekdays, event_time, event_timezone, total_cap, channel_id, advance_minutes, roles, start_date, end_date } = await req.json();
+        const { title, description, weekdays, event_time, event_timezone, total_cap, channel_id, advance_minutes, roles, start_date, end_date, ping_role_ids, enable_ping } = await req.json();
         if (!title?.trim()) return err("title is required");
         if (!Array.isArray(weekdays) || weekdays.length === 0) return err("at least one weekday required");
         if (!event_time) return err("event_time is required");
@@ -1573,12 +1616,12 @@ const server = serve({
         const [row] = await sql`
           INSERT INTO recurring_events
             (title, description, weekdays, event_time, event_timezone, total_cap, channel_id,
-             advance_minutes, roles, start_date, end_date, created_by)
+             advance_minutes, roles, start_date, end_date, created_by, ping_role_ids, enable_ping)
           VALUES (
             ${title.trim()}, ${description ?? null}, ${weekdays}, ${event_time},
             ${event_timezone ?? "America/New_York"}, ${total_cap ?? null}, ${channel_id ?? null},
             ${advance_minutes ?? 2880}, ${JSON.stringify(roles ?? [])}::jsonb,
-            ${start_date}, ${end_date ?? null}, ${user!.id}
+            ${start_date}, ${end_date ?? null}, ${user!.id}, ${ping_role_ids ?? []}, ${enable_ping ?? true}
           )
           RETURNING *
         `;
@@ -1610,7 +1653,7 @@ const server = serve({
         if (!requireRole(user, "officer")) return err("Forbidden", 403);
         const body = await req.json();
         const { title, description, weekdays, event_time, event_timezone, total_cap, channel_id,
-                advance_minutes, roles, start_date, end_date, cancelled_after, update_future_events } = body;
+                advance_minutes, roles, start_date, end_date, cancelled_after, update_future_events, ping_role_ids, enable_ping } = body;
         const [updated] = await sql`
           UPDATE recurring_events SET
             title           = COALESCE(${title ?? null}, title),
@@ -1625,6 +1668,8 @@ const server = serve({
             start_date      = COALESCE(${start_date ?? null}::date, start_date),
             end_date        = ${end_date ?? null},
             cancelled_after = ${cancelled_after ?? null},
+            ping_role_ids   = COALESCE(${ping_role_ids ?? null}, ping_role_ids),
+            enable_ping     = COALESCE(${enable_ping    ?? null}, enable_ping),
             updated_at      = NOW()
           WHERE id = ${req.params.id}
           RETURNING *
@@ -1647,6 +1692,8 @@ const server = serve({
                 event_timezone = COALESCE(${event_timezone ?? null}, event_timezone),
                 total_cap      = COALESCE(${total_cap ?? null}, total_cap),
                 channel_id     = COALESCE(${channel_id ?? null}, channel_id),
+                ping_role_ids  = COALESCE(${ping_role_ids ?? null}, ping_role_ids),
+                enable_ping    = COALESCE(${enable_ping    ?? null}, enable_ping),
                 updated_at     = NOW()
               WHERE id = ${ev.id}
             `;
@@ -1781,6 +1828,27 @@ const server = serve({
         if (!res.ok) return err("Failed to fetch Discord channels", 502);
         const all = await res.json() as Array<{ id: string; name: string; type: number }>;
         return json(all.filter(c => c.type === 0).map(c => ({ id: c.id, name: c.name })).sort((a, b) => a.name.localeCompare(b.name)));
+      },
+    },
+
+    "/api/discord/roles": {
+      async GET(req) {
+        const user = await authenticate(req);
+        if (!requireRole(user, "officer")) return err("Forbidden", 403);
+        const guildId = process.env.DISCORD_GUILD_ID;
+        const token   = process.env.DISCORD_BOT_TOKEN;
+        if (!guildId || !token) return err("Discord bot token not configured", 500);
+        const res = await fetch(`https://discord.com/api/v10/guilds/${guildId}/roles`, {
+          headers: { Authorization: `Bot ${token}` },
+        });
+        if (!res.ok) return err("Failed to fetch Discord roles", 502);
+        const all = await res.json() as Array<{ id: string; name: string; color: number; position: number; managed: boolean }>;
+        return json(
+          all
+            .filter(r => r.name !== "@everyone" && !r.managed)
+            .sort((a, b) => b.position - a.position)
+            .map(r => ({ id: r.id, name: r.name, color: r.color }))
+        );
       },
     },
 
