@@ -41,6 +41,7 @@ interface EventItem {
   total_cap: number | null;
   ping_role_ids: string[];
   enable_ping: boolean;
+  enable_reminder_ping: boolean;
   status: "draft" | "active" | "closed";
   channel_id: string | null;
   message_id: string | null;
@@ -69,6 +70,7 @@ interface EventTemplate {
   total_cap: number | null;
   ping_role_ids: string[];
   enable_ping: boolean;
+  enable_reminder_ping: boolean;
   channel_id: string | null;
   event_time: string | null;
   event_timezone: string | null;
@@ -150,6 +152,7 @@ function blankForm() {
     event_timezone: "America/New_York",
     total_cap: "", channel_id: "",
     enable_ping: true, ping_role_ids: [] as string[],
+    enable_reminder_ping: true,
     roles: [] as RoleFormEntry[],
   };
 }
@@ -180,6 +183,7 @@ function EventForm({
         total_cap: initial.total_cap != null ? String(initial.total_cap) : "", channel_id: initial.channel_id ?? "",
         enable_ping: (initial as EventItem).enable_ping ?? true,
         ping_role_ids: (initial as EventItem).ping_role_ids ?? [],
+        enable_reminder_ping: (initial as EventItem).enable_reminder_ping ?? true,
         roles: existingRoles,
       };
     }
@@ -203,6 +207,7 @@ function EventForm({
       event_timezone: t.event_timezone ?? f.event_timezone,
       enable_ping: t.enable_ping ?? true,
       ping_role_ids: t.ping_role_ids ?? [],
+      enable_reminder_ping: t.enable_reminder_ping ?? true,
       roles: t.roles.map(r => ({ name: r.name, emoji: r.emoji ?? "", soft_cap: r.soft_cap ? String(r.soft_cap) : "" })),
     }));
   }
@@ -322,6 +327,19 @@ function EventForm({
               {discordRoles.length === 0 && <p className="text-xs text-slate-600">No roles found.</p>}
             </div>
           )}
+        </div>
+
+        {/* Reminder ping toggle */}
+        <div className="flex items-center gap-2">
+          <input
+            type="checkbox" id="ep-enable-reminder-ping"
+            checked={form.enable_reminder_ping}
+            onChange={e => setForm(f => ({ ...f, enable_reminder_ping: e.target.checked }))}
+            className="accent-violet-500"
+          />
+          <label htmlFor="ep-enable-reminder-ping" className="text-xs font-bold text-slate-400 uppercase tracking-widest cursor-pointer">
+            Send 30 min &amp; 5 min reminder pings
+          </label>
         </div>
 
         {/* Roles */}
@@ -714,6 +732,7 @@ type RecurringSeries = {
   total_cap: number | null;
   ping_role_ids: string[];
   enable_ping: boolean;
+  enable_reminder_ping: boolean;
   channel_id: string | null;
   advance_minutes: number;
   roles: Array<{ name: string; emoji: string | null; soft_cap: number | null }>;
@@ -751,6 +770,7 @@ function RecurringSection({ channels, guildEmojis, discordRoles }: {
     advance_h: '24', advance_m: '0',
     start_date: '', end_date: '', cancelled_after: '',
     enable_ping: true, ping_role_ids: [] as string[],
+    enable_reminder_ping: true,
     roles: [] as RecurringRoleEntry[],
     update_future: false,
   });
@@ -776,6 +796,7 @@ function RecurringSection({ channels, guildEmojis, discordRoles }: {
       start_date: new Date().toISOString().slice(0, 10),
       end_date: '', cancelled_after: '',
       enable_ping: true, ping_role_ids: [] as string[],
+      enable_reminder_ping: true,
       roles: [],
       update_future: false,
     });
@@ -800,6 +821,7 @@ function RecurringSection({ channels, guildEmojis, discordRoles }: {
       cancelled_after: s.cancelled_after ? String(s.cancelled_after).slice(0, 10) : '',
       enable_ping: s.enable_ping ?? true,
       ping_role_ids: s.ping_role_ids ?? [],
+      enable_reminder_ping: s.enable_reminder_ping ?? true,
       roles: s.roles.map(r => ({ name: r.name, emoji: r.emoji ?? '', soft_cap: r.soft_cap != null ? String(r.soft_cap) : '' })),
       update_future: false,
     });
@@ -825,6 +847,7 @@ function RecurringSection({ channels, guildEmojis, discordRoles }: {
       total_cap: form.total_cap ? parseInt(form.total_cap) : null,
       enable_ping: form.enable_ping,
       ping_role_ids: form.ping_role_ids,
+      enable_reminder_ping: form.enable_reminder_ping,
       channel_id: form.channel_id || null,
       advance_minutes,
       roles: form.roles.filter(r => r.name.trim()).map(r => ({
@@ -1039,6 +1062,19 @@ function RecurringSection({ channels, guildEmojis, discordRoles }: {
               )}
             </div>
 
+            {/* Reminder ping toggle */}
+            <div className="flex items-center gap-2">
+              <input
+                type="checkbox" id="rec-enable-reminder-ping"
+                checked={form.enable_reminder_ping}
+                onChange={e => setForm(f => ({ ...f, enable_reminder_ping: e.target.checked }))}
+                className="accent-violet-500"
+              />
+              <label htmlFor="rec-enable-reminder-ping" className="text-xs font-bold text-slate-400 uppercase tracking-widest cursor-pointer">
+                Send 30 min &amp; 5 min reminder pings
+              </label>
+            </div>
+
             {/* Roles */}
             <div>
               <p className="text-xs font-semibold text-slate-400 uppercase tracking-widest mb-2">Roles</p>
@@ -1193,7 +1229,7 @@ function TemplatesSection({ templates, setTemplates, channels, guildEmojis, disc
 }) {
   const [loading, setLoading] = useState(true);
   const [editId, setEditId]       = useState<string | null>(null);
-  const [form, setForm]           = useState({ name: "", description: "", event_time: "", event_timezone: "America/New_York", channel_id: "", enable_ping: true, ping_role_ids: [] as string[] });
+  const [form, setForm]           = useState({ name: "", description: "", event_time: "", event_timezone: "America/New_York", channel_id: "", enable_ping: true, ping_role_ids: [] as string[], enable_reminder_ping: true });
   const [roles, setRoles]         = useState<TplRoleEntry[]>([]);
   const [saving, setSaving]       = useState(false);
 
@@ -1204,13 +1240,13 @@ function TemplatesSection({ templates, setTemplates, channels, guildEmojis, disc
 
   function startNew() {
     setEditId("new");
-    setForm({ name: "", description: "", event_time: "", event_timezone: "America/New_York", channel_id: "", enable_ping: true, ping_role_ids: [] });
+    setForm({ name: "", description: "", event_time: "", event_timezone: "America/New_York", channel_id: "", enable_ping: true, ping_role_ids: [], enable_reminder_ping: true });
     setRoles([{ name: "Main", soft_cap: "", emoji: "" }]);
   }
 
   function startEdit(t: EventTemplate) {
     setEditId(t.id);
-    setForm({ name: t.name, description: t.description ?? "", event_time: t.event_time ?? "", event_timezone: t.event_timezone ?? "America/New_York", channel_id: t.channel_id ?? "", enable_ping: t.enable_ping ?? true, ping_role_ids: t.ping_role_ids ?? [] });
+    setForm({ name: t.name, description: t.description ?? "", event_time: t.event_time ?? "", event_timezone: t.event_timezone ?? "America/New_York", channel_id: t.channel_id ?? "", enable_ping: t.enable_ping ?? true, ping_role_ids: t.ping_role_ids ?? [], enable_reminder_ping: t.enable_reminder_ping ?? true });
     const safe = Array.isArray(t.roles) ? t.roles : [];
     setRoles(safe.map(r => ({ name: r.name, soft_cap: r.soft_cap != null ? String(r.soft_cap) : "", emoji: r.emoji ?? "" })));
   }
@@ -1229,6 +1265,7 @@ function TemplatesSection({ templates, setTemplates, channels, guildEmojis, disc
       event_time: form.event_time || null, event_timezone: form.event_timezone || null, channel_id: form.channel_id || null,
       enable_ping: form.enable_ping,
       ping_role_ids: form.ping_role_ids,
+      enable_reminder_ping: form.enable_reminder_ping,
       roles: roles.filter(r => r.name.trim()).map(r => ({
         name: r.name.trim(), soft_cap: r.soft_cap ? parseInt(r.soft_cap) : null, emoji: r.emoji.trim() || null,
       })),
@@ -1338,6 +1375,17 @@ function TemplatesSection({ templates, setTemplates, channels, guildEmojis, disc
                   {discordRoles.length === 0 && <p className="text-xs text-slate-600">No roles found.</p>}
                 </div>
               )}
+            </div>
+            <div className="flex items-center gap-2">
+              <input
+                type="checkbox" id="tpl-enable-reminder-ping"
+                checked={form.enable_reminder_ping}
+                onChange={e => setForm(f => ({ ...f, enable_reminder_ping: e.target.checked }))}
+                className="accent-violet-500"
+              />
+              <label htmlFor="tpl-enable-reminder-ping" className="text-xs font-bold text-slate-400 uppercase tracking-widest cursor-pointer">
+                Send 30 min &amp; 5 min reminder pings
+              </label>
             </div>
             <div>
               <p className="text-xs font-semibold text-slate-400 uppercase tracking-widest mb-2">Roles</p>
@@ -1450,6 +1498,7 @@ export default function Events({ initialEventId }: { initialEventId?: string | n
       total_cap: form.total_cap ? parseInt(form.total_cap) : null,
       enable_ping: form.enable_ping,
       ping_role_ids: form.ping_role_ids,
+      enable_reminder_ping: form.enable_reminder_ping,
       channel_id: form.channel_id || null,
       // For edits, only change status when explicitly publishing; never downgrade an active event
       status: editing
