@@ -742,12 +742,26 @@ type RecurringSeries = {
   skip_dates: string[];
 };
 
-function fmtAdvance(mins: number): string {
-  const h = Math.floor(mins / 60);
-  const m = mins % 60;
-  if (h === 0) return `${m}m`;
-  if (m === 0) return `${h}h`;
-  return `${h}h ${m}m`;
+function fmtAnnounce(mins: number, eventTime: string): string {
+  if (mins < 1440) {
+    const h = Math.floor(mins / 60);
+    const m = mins % 60;
+    if (h === 0) return `${m}m before`;
+    if (m === 0) return `${h}h before`;
+    return `${h}h ${m}m before`;
+  }
+  const [etH, etM] = eventTime.slice(0, 5).split(':').map(Number);
+  const eventMins = (etH || 0) * 60 + (etM || 0);
+  let days = Math.floor(mins / 1440);
+  let remaining = mins - days * 1440;
+  let announceMins = eventMins - remaining;
+  if (announceMins < 0) { announceMins += 1440; days -= 1; }
+  const aH = Math.floor(announceMins / 60);
+  const aM = announceMins % 60;
+  const suffix = aH >= 12 ? 'PM' : 'AM';
+  const h12 = aH % 12 || 12;
+  const timeStr = `${h12}:${String(aM).padStart(2, '0')} ${suffix}`;
+  return `${days} day${days !== 1 ? 's' : ''} before at ${timeStr}`;
 }
 
 type RecurringRoleEntry = { name: string; soft_cap: string; emoji: string };
@@ -767,7 +781,9 @@ function RecurringSection({ channels, guildEmojis, discordRoles }: {
     title: '', description: '', weekdays: [] as number[],
     event_time: '', event_timezone: 'America/New_York',
     total_cap: '', channel_id: '',
-    advance_h: '24', advance_m: '0',
+    announce_mode: 'days_before' as 'hours_before' | 'days_before',
+    advance_h: '2', advance_m: '0',
+    announce_days: '2', announce_time: '12:00',
     start_date: '', end_date: '', cancelled_after: '',
     enable_ping: true, ping_role_ids: [] as string[],
     enable_reminder_ping: true,
@@ -792,7 +808,9 @@ function RecurringSection({ channels, guildEmojis, discordRoles }: {
       title: '', description: '', weekdays: [],
       event_time: '', event_timezone: 'America/New_York',
       total_cap: '', channel_id: '',
-      advance_h: '24', advance_m: '0',
+      announce_mode: 'days_before' as 'hours_before' | 'days_before',
+      advance_h: '2', advance_m: '0',
+      announce_days: '2', announce_time: '12:00',
       start_date: new Date().toISOString().slice(0, 10),
       end_date: '', cancelled_after: '',
       enable_ping: true, ping_role_ids: [] as string[],
@@ -804,18 +822,39 @@ function RecurringSection({ channels, guildEmojis, discordRoles }: {
 
   function startEdit(s: RecurringSeries) {
     setEditId(s.id);
-    const h = Math.floor(s.advance_minutes / 60);
-    const m = s.advance_minutes % 60;
+    const adv = s.advance_minutes;
+    const eventTimeStr = String(s.event_time).slice(0, 5);
+    const [etH, etM] = eventTimeStr.split(':').map(Number);
+    const eventMins = (etH || 0) * 60 + (etM || 0);
+
+    let announce_mode: 'hours_before' | 'days_before' = 'hours_before';
+    let advance_h = String(Math.floor(adv / 60));
+    let advance_m = String(adv % 60);
+    let announce_days = '1';
+    let announce_time = '12:00';
+
+    if (adv >= 1440) {
+      announce_mode = 'days_before';
+      let days = Math.floor(adv / 1440);
+      let remaining = adv - days * 1440;
+      let announceMins = eventMins - remaining;
+      if (announceMins < 0) { announceMins += 1440; days -= 1; }
+      if (days < 1) { days = 1; }
+      announce_days = String(days);
+      const aH = Math.floor(announceMins / 60);
+      const aM = announceMins % 60;
+      announce_time = `${String(aH).padStart(2, '0')}:${String(aM).padStart(2, '0')}`;
+    }
+
     setForm({
       title: s.title,
       description: s.description ?? '',
       weekdays: s.weekdays,
-      event_time: String(s.event_time).slice(0, 5),
+      event_time: eventTimeStr,
       event_timezone: s.event_timezone,
       total_cap: s.total_cap != null ? String(s.total_cap) : '',
       channel_id: s.channel_id ?? '',
-      advance_h: String(h),
-      advance_m: String(m),
+      announce_mode, advance_h, advance_m, announce_days, announce_time,
       start_date: String(s.start_date).slice(0, 10),
       end_date: s.end_date ? String(s.end_date).slice(0, 10) : '',
       cancelled_after: s.cancelled_after ? String(s.cancelled_after).slice(0, 10) : '',
@@ -837,7 +876,17 @@ function RecurringSection({ channels, guildEmojis, discordRoles }: {
   async function save() {
     if (!form.title.trim() || form.weekdays.length === 0 || !form.event_time || !form.start_date) return;
     setSaving(true);
-    const advance_minutes = (parseInt(form.advance_h) || 0) * 60 + (parseInt(form.advance_m) || 0);
+    let advance_minutes: number;
+    if (form.announce_mode === 'days_before') {
+      const [etH, etM] = form.event_time.split(':').map(Number);
+      const eventMins = (etH || 0) * 60 + (etM || 0);
+      const [atH, atM] = form.announce_time.split(':').map(Number);
+      const announceMins = (atH || 0) * 60 + (atM || 0);
+      const days = parseInt(form.announce_days) || 1;
+      advance_minutes = days * 1440 + eventMins - announceMins;
+    } else {
+      advance_minutes = (parseInt(form.advance_h) || 0) * 60 + (parseInt(form.advance_m) || 0);
+    }
     const payload = {
       title: form.title.trim(),
       description: form.description.trim() || null,
@@ -966,25 +1015,6 @@ function RecurringSection({ channels, guildEmojis, discordRoles }: {
               </div>
             </div>
 
-            {/* Advance notice */}
-            <div>
-              <label className="text-[10px] text-slate-500 uppercase tracking-widest font-semibold block mb-1.5">
-                Post signups this far before event
-              </label>
-              <div className="flex gap-2 items-center">
-                <input type="number" min="0" value={form.advance_h}
-                  onChange={e => setForm(f => ({ ...f, advance_h: e.target.value }))}
-                  className="bg-slate-800/60 border border-slate-700 text-white rounded-xl px-3 py-2 text-sm w-24 focus:outline-none focus:border-violet-500"
-                  placeholder="0" />
-                <span className="text-slate-500 text-sm shrink-0">h</span>
-                <input type="number" min="0" max="59" value={form.advance_m}
-                  onChange={e => setForm(f => ({ ...f, advance_m: e.target.value }))}
-                  className="bg-slate-800/60 border border-slate-700 text-white rounded-xl px-3 py-2 text-sm w-24 focus:outline-none focus:border-violet-500"
-                  placeholder="0" />
-                <span className="text-slate-500 text-sm shrink-0">min</span>
-              </div>
-            </div>
-
             {/* Start / End date */}
             <div className="grid grid-cols-2 gap-3">
               <div>
@@ -1022,6 +1052,49 @@ function RecurringSection({ channels, guildEmojis, discordRoles }: {
                     placeholder="Channel ID" className={finp} />
                 )}
               </div>
+            </div>
+
+            {/* ── Announce Signups ── */}
+            <div className="border border-slate-700/60 rounded-xl p-4 flex flex-col gap-3 bg-slate-900/40">
+              <p className="text-xs font-bold text-slate-400 uppercase tracking-widest">Announce Signups</p>
+              <div className="flex gap-2">
+                <button type="button"
+                  onClick={() => setForm(f => ({ ...f, announce_mode: 'days_before' }))}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors ${form.announce_mode === 'days_before' ? 'bg-violet-600 text-white' : 'bg-slate-800 text-slate-400 hover:text-white'}`}>
+                  Days before
+                </button>
+                <button type="button"
+                  onClick={() => setForm(f => ({ ...f, announce_mode: 'hours_before' }))}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors ${form.announce_mode === 'hours_before' ? 'bg-violet-600 text-white' : 'bg-slate-800 text-slate-400 hover:text-white'}`}>
+                  Hours / minutes before
+                </button>
+              </div>
+              {form.announce_mode === 'days_before' ? (
+                <div className="flex gap-2 items-center flex-wrap">
+                  <select value={form.announce_days}
+                    onChange={e => setForm(f => ({ ...f, announce_days: e.target.value }))}
+                    className="bg-slate-800/60 border border-slate-700 text-white rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-violet-500">
+                    {[1,2,3,5,7,14].map(d => <option key={d} value={String(d)}>{d} day{d > 1 ? 's' : ''} before</option>)}
+                  </select>
+                  <span className="text-slate-500 text-sm shrink-0">at</span>
+                  <input type="time" value={form.announce_time}
+                    onChange={e => setForm(f => ({ ...f, announce_time: e.target.value }))}
+                    className="bg-slate-800/60 border border-slate-700 text-white rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-violet-500" />
+                </div>
+              ) : (
+                <div className="flex gap-2 items-center">
+                  <input type="number" min="0" value={form.advance_h}
+                    onChange={e => setForm(f => ({ ...f, advance_h: e.target.value }))}
+                    className="bg-slate-800/60 border border-slate-700 text-white rounded-xl px-3 py-2 text-sm w-20 focus:outline-none focus:border-violet-500"
+                    placeholder="0" />
+                  <span className="text-slate-500 text-sm shrink-0">h</span>
+                  <input type="number" min="0" max="59" value={form.advance_m}
+                    onChange={e => setForm(f => ({ ...f, advance_m: e.target.value }))}
+                    className="bg-slate-800/60 border border-slate-700 text-white rounded-xl px-3 py-2 text-sm w-20 focus:outline-none focus:border-violet-500"
+                    placeholder="0" />
+                  <span className="text-slate-500 text-sm shrink-0">min before</span>
+                </div>
+              )}
             </div>
 
             {/* Ping settings */}
@@ -1165,7 +1238,7 @@ function RecurringSection({ channels, guildEmojis, discordRoles }: {
                   </div>
                   <div className="flex flex-wrap gap-x-4 gap-y-0.5 text-xs text-slate-500">
                     <span>{String(s.event_time).slice(0, 5)} {s.event_timezone}</span>
-                    <span>⏰ {fmtAdvance(s.advance_minutes)} before</span>
+                    <span>⏰ signups open {fmtAnnounce(s.advance_minutes, String(s.event_time))}</span>
                     <span>from {String(s.start_date).slice(0, 10)}{s.end_date ? ` → ${String(s.end_date).slice(0, 10)}` : ''}</span>
                     {s.cancelled_after && (
                       <span className="text-amber-400">⛔ cancelled after {String(s.cancelled_after).slice(0, 10)}</span>
