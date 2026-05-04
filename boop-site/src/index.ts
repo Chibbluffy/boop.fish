@@ -1655,7 +1655,7 @@ const server = serve({
         if (!requireRole(user, "officer")) return err("Forbidden", 403);
         const body = await req.json();
         const { title, description, weekdays, event_time, event_timezone, total_cap, channel_id,
-                advance_minutes, roles, start_date, end_date, cancelled_after, update_future_events, ping_role_ids, enable_ping, enable_reminder_ping } = body;
+                advance_minutes, roles, start_date, end_date, update_future_events, ping_role_ids, enable_ping, enable_reminder_ping } = body;
         const [updated] = await sql`
           UPDATE recurring_events SET
             title                = COALESCE(${title ?? null}, title),
@@ -1669,7 +1669,6 @@ const server = serve({
             roles                = COALESCE(${roles ? JSON.stringify(roles) : null}::jsonb, roles),
             start_date           = COALESCE(${start_date ?? null}::date, start_date),
             end_date             = ${end_date ?? null},
-            cancelled_after      = ${cancelled_after ?? null},
             ping_role_ids        = COALESCE(${ping_role_ids        ?? null}, ping_role_ids),
             enable_ping          = COALESCE(${enable_ping          ?? null}, enable_ping),
             enable_reminder_ping = COALESCE(${enable_reminder_ping ?? null}, enable_reminder_ping),

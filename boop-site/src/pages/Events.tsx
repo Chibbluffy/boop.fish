@@ -738,7 +738,6 @@ type RecurringSeries = {
   roles: Array<{ name: string; emoji: string | null; soft_cap: number | null }>;
   start_date: string;
   end_date: string | null;
-  cancelled_after: string | null;
   skip_dates: string[];
 };
 
@@ -785,7 +784,7 @@ function RecurringSection({ channels, guildEmojis, discordRoles }: {
     announce_mode: 'days_before' as 'hours_before' | 'days_before',
     advance_h: '2', advance_m: '0',
     announce_days: '2', announce_time: '12:00',
-    start_date: '', end_date: '', cancelled_after: '',
+    start_date: '', end_date: '',
     enable_ping: true, ping_role_ids: [] as string[],
     enable_reminder_ping: true,
     roles: [] as RecurringRoleEntry[],
@@ -856,7 +855,6 @@ function RecurringSection({ channels, guildEmojis, discordRoles }: {
       announce_mode, advance_h, advance_m, announce_days, announce_time,
       start_date: String(s.start_date).slice(0, 10),
       end_date: s.end_date ? String(s.end_date).slice(0, 10) : '',
-      cancelled_after: s.cancelled_after ? String(s.cancelled_after).slice(0, 10) : '',
       enable_ping: s.enable_ping ?? true,
       ping_role_ids: s.ping_role_ids ?? [],
       enable_reminder_ping: s.enable_reminder_ping ?? true,
@@ -905,7 +903,6 @@ function RecurringSection({ channels, guildEmojis, discordRoles }: {
       })),
       start_date: form.start_date,
       end_date: form.end_date || null,
-      cancelled_after: form.cancelled_after || null,
       update_future_events: form.update_future,
     };
     const isNew = editId === 'new';
@@ -953,7 +950,7 @@ function RecurringSection({ channels, guildEmojis, discordRoles }: {
 
   const today = new Date().toISOString().slice(0, 10);
   function isActive(s: RecurringSeries) {
-    return !s.cancelled_after && (!s.end_date || s.end_date >= today);
+    return !s.end_date || s.end_date >= today;
   }
 
   return (
@@ -1171,17 +1168,6 @@ function RecurringSection({ channels, guildEmojis, discordRoles }: {
               </div>
             </div>
 
-            {/* Cancel from date (edit only) */}
-            {editId !== 'new' && (
-              <div>
-                <label className="text-[10px] text-slate-500 uppercase tracking-widest font-semibold block mb-1">
-                  Cancel After Date <span className="text-slate-600 normal-case font-normal">(stops occurrences after this date)</span>
-                </label>
-                <input type="date" value={form.cancelled_after}
-                  onChange={e => setForm(f => ({ ...f, cancelled_after: e.target.value }))} className={finp} />
-              </div>
-            )}
-
             {/* Update future events (edit only) */}
             {editId !== 'new' && (
               <label className="flex items-center gap-2 cursor-pointer select-none">
@@ -1239,9 +1225,6 @@ function RecurringSection({ channels, guildEmojis, discordRoles }: {
                     <span>{String(s.event_time).slice(0, 5)} {s.event_timezone}</span>
                     <span>⏰ signups open {fmtAnnounce(s.advance_minutes, String(s.event_time))}</span>
                     <span>from {String(s.start_date).slice(0, 10)}{s.end_date ? ` → ${String(s.end_date).slice(0, 10)}` : ''}</span>
-                    {s.cancelled_after && (
-                      <span className="text-amber-400">⛔ cancelled after {String(s.cancelled_after).slice(0, 10)}</span>
-                    )}
                   </div>
                   {s.skip_dates.length > 0 && (
                     <div className="mt-2 flex flex-wrap gap-1">
