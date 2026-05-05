@@ -1060,7 +1060,7 @@ const server = serve({
           return json({ dates: rows, syncing: _warScoresSyncing, configured: true, tz });
         } catch (e) {
           console.error("[war-scores/dates] error:", e);
-          return json({ error: String(e) }, { status: 500 });
+          return json({ error: String(e) }, 500);
         }
       },
     },
