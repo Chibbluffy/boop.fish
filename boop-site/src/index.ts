@@ -1039,8 +1039,7 @@ const server = serve({
         if (!user || user.role === "pending") return err("Forbidden", 403);
         const channelId = process.env.WAR_SCORES_CHANNEL_ID;
         if (!channelId) return json({ dates: [], syncing: false, configured: false });
-        const tz = process.env.WAR_SCORES_TIMEZONE ?? "UTC";
-        // Kick off background sync without blocking the response
+        const tz = user.timezone ?? "UTC";
         syncWarScores(channelId).catch(() => {});
         const rows = await sql`
           SELECT
@@ -1048,10 +1047,10 @@ const server = serve({
             COUNT(*)::int AS count
           FROM war_scores_messages
           WHERE channel_id = ${channelId}
-          GROUP BY date
-          ORDER BY date DESC
+          GROUP BY (posted_at AT TIME ZONE ${tz})::date
+          ORDER BY (posted_at AT TIME ZONE ${tz})::date DESC
         `;
-        return json({ dates: rows, syncing: _warScoresSyncing, configured: true });
+        return json({ dates: rows, syncing: _warScoresSyncing, configured: true, tz });
       },
     },
 
@@ -1061,7 +1060,7 @@ const server = serve({
         if (!user || user.role === "pending") return err("Forbidden", 403);
         const channelId = process.env.WAR_SCORES_CHANNEL_ID;
         if (!channelId) return json([]);
-        const tz = process.env.WAR_SCORES_TIMEZONE ?? "UTC";
+        const tz = user.timezone ?? "UTC";
         const rows = await sql`
           SELECT message_id, posted_at, author_name, content, attachments, embeds
           FROM war_scores_messages
@@ -1085,29 +1084,80 @@ const server = serve({
       },
     },
 
+    "/api/war-scores/debug": {
+      async GET(req) {
+        const user = await authenticate(req);
+        if (!requireRole(user, "officer")) return err("Forbidden", 403);
+        const channelId = process.env.WAR_SCORES_CHANNEL_ID;
+        const tz = user!.timezone ?? "UTC";
+        const total = channelId
+          ? await sql`SELECT COUNT(*)::int AS n FROM war_scores_messages WHERE channel_id = ${channelId}`
+          : [{ n: 0 }];
+        const sample = channelId ? await sql`
+          SELECT
+            message_id,
+            posted_at,
+            (posted_at AT TIME ZONE ${tz})::date::text AS local_date,
+            author_name,
+            content,
+            attachments,
+            embeds
+          FROM war_scores_messages
+          WHERE channel_id = ${channelId}
+          ORDER BY posted_at DESC
+          LIMIT 5
+        ` : [];
+        return json({
+          channelId: channelId ? `...${channelId.slice(-6)}` : null,
+          tz,
+          totalMessages: total[0]?.n ?? 0,
+          last5: sample.map((row: any) => ({
+            message_id:  row.message_id,
+            posted_at:   row.posted_at,
+            local_date:  row.local_date,
+            author_name: row.author_name,
+            content_len: (row.content ?? "").length,
+            content_preview: (row.content ?? "").slice(0, 100),
+            attachment_count: Array.isArray(row.attachments) ? row.attachments.length : "not-array",
+            attachments: row.attachments,
+            embed_count:  Array.isArray(row.embeds) ? row.embeds.length : "not-array",
+            embeds: row.embeds,
+            _extracted: _extractWarScoresMedia(row),
+          })),
+        });
+      },
+    },
+
     "/api/war-scores/debug/:date": {
       async GET(req) {
         const user = await authenticate(req);
         if (!requireRole(user, "officer")) return err("Forbidden", 403);
         const channelId = process.env.WAR_SCORES_CHANNEL_ID;
-        if (!channelId) return json([]);
-        const tz = process.env.WAR_SCORES_TIMEZONE ?? "UTC";
+        if (!channelId) return json({ error: "WAR_SCORES_CHANNEL_ID not set" });
+        const tz = user!.timezone ?? "UTC";
         const rows = await sql`
-          SELECT message_id, posted_at, author_name, content, attachments, embeds
+          SELECT message_id, posted_at, author_name, content, attachments, embeds,
+                 (posted_at AT TIME ZONE ${tz})::date::text AS local_date
           FROM war_scores_messages
           WHERE channel_id = ${channelId}
             AND (posted_at AT TIME ZONE ${tz})::date = ${req.params.date}::date
           ORDER BY posted_at ASC
         `;
-        return json(rows.map((row: any) => ({
-          message_id:   row.message_id,
-          posted_at:    row.posted_at,
-          author_name:  row.author_name,
-          content:      row.content,
-          attachments:  row.attachments,
-          embeds:       row.embeds,
-          _extracted:   _extractWarScoresMedia(row),
-        })));
+        return json({
+          queried_date: req.params.date,
+          tz,
+          row_count: rows.length,
+          messages: rows.map((row: any) => ({
+            message_id:       row.message_id,
+            posted_at:        row.posted_at,
+            local_date:       row.local_date,
+            author_name:      row.author_name,
+            content_preview:  (row.content ?? "").slice(0, 200),
+            attachments:      row.attachments,
+            embeds:           row.embeds,
+            _extracted:       _extractWarScoresMedia(row),
+          })),
+        });
       },
     },
 
