@@ -111,6 +111,12 @@ async function syncWarScores(channelId: string): Promise<void> {
   }
 }
 
+function _safeIanaTz(tz: string | null): string {
+  if (!tz) return "UTC";
+  if (/^[A-Za-z_]+(?:\/[A-Za-z_+\-]+(?:\/[A-Za-z_+\-]+)?)?$/.test(tz)) return tz;
+  return "UTC";
+}
+
 const _IMAGE_EXT_RE  = /\.(png|jpe?g|gif|webp|avif)(\?|$)/i;
 const _DISCORD_CDN   = /^https:\/\/(cdn\.discordapp\.com|media\.discordapp\.net)\//;
 
@@ -1039,7 +1045,7 @@ const server = serve({
         if (!user || user.role === "pending") return err("Forbidden", 403);
         const channelId = process.env.WAR_SCORES_CHANNEL_ID;
         if (!channelId) return json({ dates: [], syncing: false, configured: false });
-        const tz = user.timezone ?? "UTC";
+        const tz = _safeIanaTz(new URL(req.url).searchParams.get("tz"));
         syncWarScores(channelId).catch(() => {});
         const rows = await sql`
           SELECT
@@ -1060,7 +1066,7 @@ const server = serve({
         if (!user || user.role === "pending") return err("Forbidden", 403);
         const channelId = process.env.WAR_SCORES_CHANNEL_ID;
         if (!channelId) return json([]);
-        const tz = user.timezone ?? "UTC";
+        const tz = _safeIanaTz(new URL(req.url).searchParams.get("tz"));
         const rows = await sql`
           SELECT message_id, posted_at, author_name, content, attachments, embeds
           FROM war_scores_messages
@@ -1089,7 +1095,7 @@ const server = serve({
         const user = await authenticate(req);
         if (!requireRole(user, "officer")) return err("Forbidden", 403);
         const channelId = process.env.WAR_SCORES_CHANNEL_ID;
-        const tz = user!.timezone ?? "UTC";
+        const tz = _safeIanaTz(new URL(req.url).searchParams.get("tz"));
         const total = channelId
           ? await sql`SELECT COUNT(*)::int AS n FROM war_scores_messages WHERE channel_id = ${channelId}`
           : [{ n: 0 }];

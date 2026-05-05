@@ -37,6 +37,8 @@ function dateKey(dateStr: string) {
 export default function Nodewar() {
   const user = useAuth();
 
+  const browserTz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+
   const [dates,       setDates]       = useState<WarDate[]>([]);
   const [loading,     setLoading]     = useState(true);
   const [syncing,     setSyncing]     = useState(false);
@@ -51,7 +53,7 @@ export default function Nodewar() {
   // Load date list on mount
   useEffect(() => {
     if (!user || user.role === "pending") return;
-    fetch("/api/war-scores/dates", { headers: authH() })
+    fetch(`/api/war-scores/dates?tz=${encodeURIComponent(browserTz)}`, { headers: authH() })
       .then(r => r.json())
       .then(d => {
         setDates(d.dates ?? []);
@@ -67,7 +69,7 @@ export default function Nodewar() {
   useEffect(() => {
     if (!syncing || dates.length > 0) return;
     const id = setInterval(() => {
-      fetch("/api/war-scores/dates", { headers: authH() })
+      fetch(`/api/war-scores/dates?tz=${encodeURIComponent(browserTz)}`, { headers: authH() })
         .then(r => r.json())
         .then(d => {
           setSyncing(d.syncing ?? false);
@@ -89,7 +91,7 @@ export default function Nodewar() {
     setMessages([]);
     setUrlMap({});
 
-    fetch(`/api/war-scores/date/${dateKey(selectedDate)}`, { headers: authH() })
+    fetch(`/api/war-scores/date/${dateKey(selectedDate)}?tz=${encodeURIComponent(browserTz)}`, { headers: authH() })
       .then(r => r.json())
       .then(async (data: WarMessage[]) => {
         if (cancelled) return;
