@@ -168,6 +168,26 @@ CREATE TABLE IF NOT EXISTS nodewar_images (
 CREATE INDEX IF NOT EXISTS idx_nodewar_images_entry ON nodewar_images(entry_id);
 
 -- ============================================================
+-- WAR SCORES  (Discord channel mirror for war-scores channel)
+-- Messages are synced from Discord; only images and links are
+-- displayed.  The channel is configured via WAR_SCORES_CHANNEL_ID
+-- in the server environment.
+-- ============================================================
+CREATE TABLE IF NOT EXISTS war_scores_messages (
+  message_id  VARCHAR(20)  PRIMARY KEY,
+  channel_id  VARCHAR(20)  NOT NULL,
+  posted_at   TIMESTAMPTZ  NOT NULL,
+  author_id   VARCHAR(20),
+  author_name VARCHAR(100),
+  content     TEXT         NOT NULL DEFAULT '',
+  attachments JSONB        NOT NULL DEFAULT '[]',
+  embeds      JSONB        NOT NULL DEFAULT '[]',
+  synced_at   TIMESTAMPTZ  NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_war_scores_posted_at ON war_scores_messages(posted_at DESC);
+CREATE INDEX IF NOT EXISTS idx_war_scores_channel   ON war_scores_messages(channel_id);
+
+-- ============================================================
 -- WALL OF SHAME  (troll/funny officer announcements)
 -- ============================================================
 CREATE TABLE IF NOT EXISTS wall_of_shame (

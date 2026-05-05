@@ -36,6 +36,122 @@ function safeJoin(base: string, ...parts: string[]): string | null {
   return resolved.startsWith(base + "/") || resolved === base ? resolved : null;
 }
 
+// ── War Scores sync ──────────────────────────────────────────────────────────
+
+let _warScoresSyncing = false;
+
+async function _storeWarScoreMsg(channelId: string, msg: any) {
+  await sql`
+    INSERT INTO war_scores_messages
+      (message_id, channel_id, posted_at, author_id, author_name, content, attachments, embeds)
+    VALUES (
+      ${msg.id}, ${channelId}, ${new Date(msg.timestamp)},
+      ${msg.author?.id ?? null}, ${msg.author?.username ?? null},
+      ${msg.content ?? ""},
+      ${JSON.stringify(msg.attachments ?? [])}::jsonb,
+      ${JSON.stringify(msg.embeds ?? [])}::jsonb
+    )
+    ON CONFLICT (message_id) DO NOTHING
+  `;
+}
+
+async function _fetchWarScoresPage(channelId: string, botToken: string, params: Record<string, string>): Promise<any[]> {
+  const url = new URL(`https://discord.com/api/v10/channels/${channelId}/messages`);
+  url.searchParams.set("limit", "100");
+  for (const [k, v] of Object.entries(params)) url.searchParams.set(k, v);
+  const res = await fetch(url.toString(), { headers: { Authorization: `Bot ${botToken}` } });
+  if (res.status === 429) {
+    const retry = parseFloat(res.headers.get("retry-after") ?? "1") * 1000;
+    await new Promise(r => setTimeout(r, Math.min(retry, 5000)));
+    return _fetchWarScoresPage(channelId, botToken, params);
+  }
+  if (!res.ok) return [];
+  return res.json();
+}
+
+async function syncWarScores(channelId: string): Promise<void> {
+  if (_warScoresSyncing) return;
+  const botToken = process.env.DISCORD_BOT_TOKEN;
+  if (!botToken) return;
+  _warScoresSyncing = true;
+  try {
+    const [latest] = await sql`
+      SELECT message_id FROM war_scores_messages
+      WHERE channel_id = ${channelId}
+      ORDER BY posted_at DESC LIMIT 1
+    `;
+    if (latest) {
+      // Incremental: fetch only messages newer than the latest stored
+      let after = latest.message_id as string;
+      while (true) {
+        const msgs = await _fetchWarScoresPage(channelId, botToken, { after });
+        if (!msgs.length) break;
+        for (const m of msgs) await _storeWarScoreMsg(channelId, m);
+        after = msgs[msgs.length - 1].id;
+        if (msgs.length < 100) break;
+        await new Promise(r => setTimeout(r, 300));
+      }
+    } else {
+      // Full sync: page backward from newest to oldest
+      let before: string | undefined;
+      while (true) {
+        const params: Record<string, string> = before ? { before } : {};
+        const msgs = await _fetchWarScoresPage(channelId, botToken, params);
+        if (!msgs.length) break;
+        for (const m of msgs) await _storeWarScoreMsg(channelId, m);
+        before = msgs[msgs.length - 1].id;
+        if (msgs.length < 100) break;
+        await new Promise(r => setTimeout(r, 300));
+      }
+    }
+  } catch (e) {
+    console.error("[war-scores] sync error:", e);
+  } finally {
+    _warScoresSyncing = false;
+  }
+}
+
+const _IMAGE_EXT_RE  = /\.(png|jpe?g|gif|webp|avif)(\?|$)/i;
+const _DISCORD_CDN   = /^https:\/\/(cdn\.discordapp\.com|media\.discordapp\.net)\//;
+
+function _extractWarScoresMedia(row: any) {
+  const attachments: any[] = Array.isArray(row.attachments) ? row.attachments : [];
+  const embeds:      any[] = Array.isArray(row.embeds)      ? row.embeds      : [];
+  const content            = row.content ?? "";
+  const images: string[]   = [];
+  const links:  string[]   = [];
+
+  for (const att of attachments) {
+    const ct = (att.content_type ?? "") as string;
+    if (ct.startsWith("image/") || _IMAGE_EXT_RE.test(att.filename ?? "")) {
+      if (att.url) images.push(att.url);
+    }
+  }
+
+  for (const emb of embeds) {
+    if (emb.type === "image" || emb.type === "gifv") {
+      const u = emb.image?.url ?? emb.url ?? emb.thumbnail?.url;
+      if (u) images.push(u);
+    }
+  }
+
+  const urlMatches = (content.match(/https?:\/\/\S+/g) ?? []) as string[];
+  for (let raw of urlMatches) {
+    raw = raw.replace(/[).,;!?>"]+$/, "");
+    try {
+      const parsed = new URL(raw);
+      if (_DISCORD_CDN.test(raw)) continue; // already captured via attachments
+      if (_IMAGE_EXT_RE.test(parsed.pathname)) {
+        images.push(raw);
+      } else {
+        links.push(raw);
+      }
+    } catch { /* invalid URL */ }
+  }
+
+  return { images, links };
+}
+
 // ── Server ───────────────────────────────────────────────────────────────────
 
 const server = serve({
@@ -912,6 +1028,58 @@ const server = serve({
         }
 
         return json({ ok: true, id: entry.id }, 201);
+      },
+    },
+
+    // ── War Scores ───────────────────────────────────────────────────────────
+
+    "/api/war-scores/dates": {
+      async GET(req) {
+        const user = await authenticate(req);
+        if (!user || user.role === "pending") return err("Forbidden", 403);
+        const channelId = process.env.WAR_SCORES_CHANNEL_ID;
+        if (!channelId) return json({ dates: [], syncing: false, configured: false });
+        // Kick off background sync without blocking the response
+        syncWarScores(channelId).catch(() => {});
+        const rows = await sql`
+          SELECT
+            (posted_at AT TIME ZONE 'UTC')::date AS date,
+            COUNT(*)::int AS count
+          FROM war_scores_messages
+          WHERE channel_id = ${channelId}
+          GROUP BY date
+          ORDER BY date DESC
+        `;
+        return json({ dates: rows, syncing: _warScoresSyncing, configured: true });
+      },
+    },
+
+    "/api/war-scores/date/:date": {
+      async GET(req) {
+        const user = await authenticate(req);
+        if (!user || user.role === "pending") return err("Forbidden", 403);
+        const channelId = process.env.WAR_SCORES_CHANNEL_ID;
+        if (!channelId) return json([]);
+        const rows = await sql`
+          SELECT message_id, posted_at, author_name, content, attachments, embeds
+          FROM war_scores_messages
+          WHERE channel_id = ${channelId}
+            AND (posted_at AT TIME ZONE 'UTC')::date = ${req.params.date}::date
+          ORDER BY posted_at ASC
+        `;
+        const messages = rows
+          .map((row: any) => {
+            const { images, links } = _extractWarScoresMedia(row);
+            return {
+              message_id:  row.message_id,
+              posted_at:   row.posted_at,
+              author_name: row.author_name,
+              images,
+              links,
+            };
+          })
+          .filter((m: any) => m.images.length > 0 || m.links.length > 0);
+        return json(messages);
       },
     },
 

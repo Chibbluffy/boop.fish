@@ -1,93 +1,106 @@
-import React, { useEffect, useRef, useState } from "react";
-import { useAuth, isOfficerOrAdmin } from "../lib/auth";
+import { useEffect, useState } from "react";
+import { useAuth } from "../lib/auth";
 
-type NodewarEntry = {
-  id: string;
-  title: string | null;
-  node_name: string | null;
-  event_date: string;
-  result: "win" | "loss" | "draw" | null;
-  notes: string | null;
-  images: string[];
+type WarDate    = { date: string; count: number };
+type WarMessage = {
+  message_id:  string;
+  posted_at:   string;
+  author_name: string | null;
+  images:      string[];
+  links:       string[];
 };
 
-const RESULT_STYLE: Record<string, string> = {
-  win:  "bg-green-500/20 text-green-400 border border-green-500/30",
-  loss: "bg-red-500/20 text-red-400 border border-red-500/30",
-  draw: "bg-slate-700/50 text-slate-400 border border-slate-700",
-};
+function token() { return localStorage.getItem("boop_session") ?? ""; }
+function authH() { return { Authorization: `Bearer ${token()}` }; }
 
-function fmt(date: string) {
-  return new Date(date).toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric", year: "numeric", timeZone: "UTC" });
+async function refreshUrls(urls: string[]): Promise<Record<string, string>> {
+  if (!urls.length) return {};
+  const res = await fetch("/api/quotes/refresh-urls", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...authH() },
+    body: JSON.stringify({ urls }),
+  });
+  return res.ok ? res.json() : {};
 }
 
-const THIRTY_DAYS_AGO = new Date(Date.now() - 30 * 86_400_000).toISOString().slice(0, 10);
+function fmtDate(dateStr: string) {
+  return new Date(`${dateStr}T00:00:00Z`).toLocaleDateString("en-US", {
+    weekday: "short", month: "short", day: "numeric", year: "numeric", timeZone: "UTC",
+  });
+}
 
 export default function Nodewar() {
   const user = useAuth();
-  const isOfficer = isOfficerOrAdmin(user);
 
-  const [entries, setEntries] = useState<NodewarEntry[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [showAll, setShowAll] = useState(false);
-  const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [lightbox, setLightbox] = useState<string | null>(null);
-  const [showUpload, setShowUpload] = useState(false);
+  const [dates,       setDates]       = useState<WarDate[]>([]);
+  const [loading,     setLoading]     = useState(true);
+  const [syncing,     setSyncing]     = useState(false);
+  const [configured,  setConfigured]  = useState(true);
+  const [selectedDate, setSelectedDate] = useState<string | null>(null);
 
-  // Upload form state
-  const [upDate, setUpDate] = useState(new Date().toISOString().slice(0, 10));
-  const [upTitle, setUpTitle] = useState("");
-  const [upNode, setUpNode] = useState("");
-  const [upResult, setUpResult] = useState("");
-  const [upNotes, setUpNotes] = useState("");
-  const [upFiles, setUpFiles] = useState<FileList | null>(null);
-  const [uploading, setUploading] = useState(false);
-  const fileRef = useRef<HTMLInputElement>(null);
+  const [messages,    setMessages]    = useState<WarMessage[]>([]);
+  const [loadingDate, setLoadingDate] = useState(false);
+  const [urlMap,      setUrlMap]      = useState<Record<string, string>>({});
+  const [lightbox,    setLightbox]    = useState<string | null>(null);
 
-  const token = localStorage.getItem("boop_session");
-
+  // Load date list on mount
   useEffect(() => {
     if (!user || user.role === "pending") return;
-    fetch("/api/nodewar", { headers: { Authorization: `Bearer ${token}` } })
+    fetch("/api/war-scores/dates", { headers: authH() })
       .then(r => r.json())
-      .then(data => { setEntries(data); setLoading(false); })
-      .catch(() => setLoading(false));
+      .then(d => {
+        setDates(d.dates ?? []);
+        setSyncing(d.syncing ?? false);
+        setConfigured(d.configured ?? true);
+        if (d.dates?.length) setSelectedDate(d.dates[0].date);
+      })
+      .catch(() => {})
+      .finally(() => setLoading(false));
   }, [user]);
 
-  // Auto-select most recent entry
+  // Poll while syncing and nothing is in DB yet
   useEffect(() => {
-    if (entries.length && !selectedId) setSelectedId(entries[0].id);
-  }, [entries]);
+    if (!syncing || dates.length > 0) return;
+    const id = setInterval(() => {
+      fetch("/api/war-scores/dates", { headers: authH() })
+        .then(r => r.json())
+        .then(d => {
+          setSyncing(d.syncing ?? false);
+          if (d.dates?.length) {
+            setDates(d.dates);
+            setSelectedDate(d.dates[0].date);
+            clearInterval(id);
+          }
+        });
+    }, 3000);
+    return () => clearInterval(id);
+  }, [syncing, dates.length]);
 
-  async function upload() {
-    if (!upFiles?.length) return;
-    setUploading(true);
-    const form = new FormData();
-    form.append("event_date", upDate);
-    if (upTitle) form.append("title", upTitle);
-    if (upNode)  form.append("node_name", upNode);
-    if (upResult) form.append("result", upResult);
-    if (upNotes) form.append("notes", upNotes);
-    for (const f of Array.from(upFiles)) form.append("images", f);
+  // Load messages whenever selected date changes
+  useEffect(() => {
+    if (!selectedDate || !user || user.role === "pending") return;
+    let cancelled = false;
+    setLoadingDate(true);
+    setMessages([]);
+    setUrlMap({});
 
-    const res = await fetch("/api/nodewar", {
-      method: "POST",
-      headers: { Authorization: `Bearer ${token}` },
-      body: form,
-    });
+    fetch(`/api/war-scores/date/${selectedDate}`, { headers: authH() })
+      .then(r => r.json())
+      .then(async (data: WarMessage[]) => {
+        if (cancelled) return;
+        setMessages(data);
+        const allImages = data.flatMap(m => m.images);
+        if (allImages.length) {
+          const fresh = await refreshUrls(allImages);
+          if (!cancelled) setUrlMap(fresh);
+        }
+      })
+      .catch(() => {})
+      .finally(() => { if (!cancelled) setLoadingDate(false); });
 
-    if (res.ok) {
-      // Reload entries
-      const data = await fetch("/api/nodewar", { headers: { Authorization: `Bearer ${token}` } }).then(r => r.json());
-      setEntries(data);
-      setShowUpload(false);
-      setUpTitle(""); setUpNode(""); setUpResult(""); setUpNotes(""); setUpFiles(null);
-      if (fileRef.current) fileRef.current.value = "";
-    }
-    setUploading(false);
-  }
+    return () => { cancelled = true; };
+  }, [selectedDate, user]);
 
-  // ── Access gate ──────────────────────────────────────────────────────────────
   if (!user || user.role === "pending") {
     return (
       <div className="min-h-screen bg-slate-950 flex items-center justify-center p-6">
@@ -95,218 +108,155 @@ export default function Nodewar() {
           <p className="text-4xl mb-4">⚔️</p>
           <p className="text-white font-bold text-lg">Members only</p>
           <p className="text-slate-500 mt-2 text-sm">
-            {!user ? "Sign in to view nodewar stats." : "Your account is pending approval."}
+            {!user ? "Sign in to view nodewar scores." : "Your account is pending approval."}
           </p>
         </div>
       </div>
     );
   }
 
-  const recentEntries = entries.filter(e => e.event_date >= THIRTY_DAYS_AGO);
-  const olderEntries  = entries.filter(e => e.event_date < THIRTY_DAYS_AGO);
-  const visibleEntries = showAll ? entries : recentEntries;
-  const selected = entries.find(e => e.id === selectedId) ?? null;
+  const allImages = messages.flatMap(m => m.images);
+  const allLinks  = [...new Set(messages.flatMap(m => m.links))];
 
   return (
     <div className="min-h-screen bg-slate-950 px-6 py-10">
-      <div className="max-w-5xl mx-auto">
+      <div className="max-w-6xl mx-auto">
 
-        {/* Header */}
-        <div className="flex items-center justify-between mb-8">
-          <div>
-            <h2 className="text-4xl font-black tracking-tight text-white">Nodewar</h2>
-            <p className="text-slate-400 mt-1">Guild nodewar history and screenshots.</p>
-          </div>
-          {isOfficer && (
-            <button
-              onClick={() => setShowUpload(true)}
-              className="px-4 py-2 rounded-lg bg-violet-600 hover:bg-violet-500 text-white text-sm font-semibold transition-colors"
-            >
-              + Upload Stats
-            </button>
-          )}
+        <div className="mb-8">
+          <h2 className="text-4xl font-black tracking-tight text-white">Nodewar</h2>
+          <p className="text-slate-400 mt-1">Guild war score history from Discord.</p>
         </div>
 
-        {loading ? (
-          <p className="text-slate-500 text-center py-20">Loading...</p>
-        ) : entries.length === 0 ? (
-          <p className="text-slate-600 text-center py-20">No nodewar entries yet.</p>
+        {!configured ? (
+          <div className="bg-slate-900 border border-slate-800 rounded-xl p-8 text-center">
+            <p className="text-slate-400 text-sm">War scores channel not configured.</p>
+            <p className="text-slate-600 text-xs mt-2">
+              Add <code className="font-mono bg-slate-800 px-1 rounded">WAR_SCORES_CHANNEL_ID</code> to the server environment.
+            </p>
+          </div>
+        ) : loading ? (
+          <p className="text-slate-500 text-center py-20">Loading…</p>
+        ) : syncing && dates.length === 0 ? (
+          <div className="text-center py-20">
+            <div className="inline-block w-5 h-5 border-2 border-violet-500 border-t-transparent rounded-full animate-spin mb-4" />
+            <p className="text-slate-400 text-sm">Syncing messages from Discord…</p>
+            <p className="text-slate-600 text-xs mt-1">This only happens on first load.</p>
+          </div>
+        ) : dates.length === 0 ? (
+          <p className="text-slate-600 text-center py-20">No messages found in the war scores channel.</p>
         ) : (
           <div className="flex gap-6">
 
             {/* ── Date sidebar ── */}
             <div className="w-52 shrink-0 flex flex-col gap-1">
-              <p className="text-xs font-semibold text-slate-500 uppercase tracking-widest px-2 mb-1">
-                {showAll ? "All dates" : "Last 30 days"}
+              <p className="text-xs font-semibold text-slate-500 uppercase tracking-widest px-2 mb-1 flex items-center gap-1.5">
+                Dates
+                {syncing && (
+                  <span className="text-[10px] text-violet-400 font-normal">· syncing</span>
+                )}
               </p>
-
-              {visibleEntries.map(e => (
+              {dates.map(d => (
                 <button
-                  key={e.id}
-                  onClick={() => setSelectedId(e.id)}
+                  key={d.date}
+                  onClick={() => setSelectedDate(d.date)}
                   className={`w-full text-left px-3 py-2.5 rounded-xl border transition-colors ${
-                    selectedId === e.id
+                    selectedDate === d.date
                       ? "bg-slate-800 border-slate-600 text-white"
                       : "border-transparent text-slate-400 hover:text-white hover:bg-slate-900"
                   }`}
                 >
-                  <p className="text-xs font-bold">{fmt(e.event_date)}</p>
-                  <div className="flex items-center gap-1.5 mt-0.5">
-                    {e.result && (
-                      <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${RESULT_STYLE[e.result]}`}>
-                        {e.result}
-                      </span>
-                    )}
-                    {e.images.length > 0 && (
-                      <span className="text-[10px] text-slate-600">{e.images.length} img</span>
-                    )}
-                  </div>
+                  <p className="text-xs font-bold">{fmtDate(d.date)}</p>
+                  <p className="text-[10px] text-slate-600 mt-0.5">
+                    {d.count} message{d.count !== 1 ? "s" : ""}
+                  </p>
                 </button>
               ))}
-
-              {/* Show all / collapse */}
-              {olderEntries.length > 0 && (
-                <button
-                  onClick={() => setShowAll(s => !s)}
-                  className="mt-1 text-xs text-violet-400 hover:text-violet-300 transition-colors px-3 py-2 text-left"
-                >
-                  {showAll ? "↑ Show recent only" : `↓ Show all (${olderEntries.length} older)`}
-                </button>
-              )}
             </div>
 
-            {/* ── Entry detail ── */}
+            {/* ── Content panel ── */}
             <div className="flex-1 min-w-0">
-              {selected ? (
+              {loadingDate ? (
+                <p className="text-slate-500 text-sm py-4">Loading…</p>
+              ) : !selectedDate ? (
+                <p className="text-slate-600 text-sm">Select a date on the left.</p>
+              ) : allImages.length === 0 && allLinks.length === 0 ? (
+                <p className="text-slate-600 text-sm italic">No media found for this date.</p>
+              ) : (
                 <>
-                  {/* Entry header */}
-                  <div className="mb-4 flex flex-wrap items-start gap-3">
-                    <div className="flex-1 min-w-0">
-                      <h3 className="text-xl font-black text-white">
-                        {selected.title ?? fmt(selected.event_date)}
-                      </h3>
-                      <div className="flex flex-wrap items-center gap-2 mt-1">
-                        {selected.node_name && (
-                          <span className="text-sm text-slate-400">{selected.node_name}</span>
-                        )}
-                        {selected.result && (
-                          <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${RESULT_STYLE[selected.result]}`}>
-                            {selected.result.toUpperCase()}
-                          </span>
-                        )}
-                        <span className="text-xs text-slate-600">{fmt(selected.event_date)}</span>
-                      </div>
-                      {selected.notes && (
-                        <p className="text-sm text-slate-400 mt-2 leading-relaxed">{selected.notes}</p>
-                      )}
-                    </div>
-                  </div>
+                  <h3 className="text-xl font-black text-white mb-5">{fmtDate(selectedDate)}</h3>
 
-                  {/* Images */}
-                  {selected.images.length === 0 ? (
-                    <p className="text-slate-600 text-sm italic">No images uploaded for this entry.</p>
-                  ) : (
-                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-                      {selected.images.map((src, i) => (
-                        <button
-                          key={i}
-                          onClick={() => setLightbox(src)}
-                          className="aspect-video rounded-xl overflow-hidden border border-slate-800 hover:border-slate-600 transition-colors group"
-                        >
-                          <img
-                            src={src}
-                            alt={`nodewar-${i + 1}`}
-                            className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-200"
-                          />
-                        </button>
-                      ))}
+                  {/* External links */}
+                  {allLinks.length > 0 && (
+                    <div className="mb-6">
+                      <p className="text-xs font-semibold text-slate-500 uppercase tracking-widest mb-2">
+                        Links
+                      </p>
+                      <div className="flex flex-wrap gap-2">
+                        {allLinks.map((link, i) => {
+                          let host = link;
+                          try { host = new URL(link).hostname; } catch {}
+                          return (
+                            <a
+                              key={i}
+                              href={link}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-900 border border-slate-700 hover:border-slate-500 text-slate-300 hover:text-white text-xs font-medium transition-colors"
+                            >
+                              <svg className="w-3.5 h-3.5 shrink-0 text-slate-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                <path d="M10 13a5 5 0 007.54.54l3-3a5 5 0 00-7.07-7.07l-1.72 1.71"/>
+                                <path d="M14 11a5 5 0 00-7.54-.54l-3 3a5 5 0 007.07 7.07l1.71-1.71"/>
+                              </svg>
+                              {host}
+                            </a>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Screenshots grid */}
+                  {allImages.length > 0 && (
+                    <div>
+                      <p className="text-xs font-semibold text-slate-500 uppercase tracking-widest mb-2">
+                        Screenshots ({allImages.length})
+                      </p>
+                      <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                        {allImages.map((src, i) => {
+                          const url = urlMap[src] ?? src;
+                          return (
+                            <button
+                              key={i}
+                              onClick={() => setLightbox(url)}
+                              className="aspect-video rounded-xl overflow-hidden border border-slate-800 hover:border-slate-600 transition-colors group"
+                            >
+                              <img
+                                src={url}
+                                alt={`war-score-${i + 1}`}
+                                loading="lazy"
+                                className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-200"
+                              />
+                            </button>
+                          );
+                        })}
+                      </div>
                     </div>
                   )}
                 </>
-              ) : (
-                <p className="text-slate-600 text-sm">Select a date on the left.</p>
               )}
             </div>
           </div>
         )}
       </div>
 
-      {/* ── Lightbox ── */}
+      {/* Lightbox */}
       {lightbox && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/90" onClick={() => setLightbox(null)}>
-          <img src={lightbox} alt="nodewar full" className="max-w-full max-h-full rounded-xl shadow-2xl" />
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/90"
+          onClick={() => setLightbox(null)}
+        >
+          <img src={lightbox} alt="war score" className="max-w-full max-h-full rounded-xl shadow-2xl" />
           <button className="absolute top-4 right-4 text-white text-2xl hover:text-slate-300 transition-colors">✕</button>
-        </div>
-      )}
-
-      {/* ── Upload modal ── */}
-      {showUpload && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4" onClick={() => setShowUpload(false)}>
-          <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" />
-          <div className="relative bg-slate-900 border border-slate-700 rounded-2xl p-6 max-w-md w-full shadow-2xl" onClick={e => e.stopPropagation()}>
-            <h3 className="text-xl font-black text-white mb-5">Upload Nodewar Stats</h3>
-
-            <div className="flex flex-col gap-4">
-              <div>
-                <label className="text-xs text-slate-400 uppercase tracking-widest font-semibold block mb-1.5">Date</label>
-                <input type="date" value={upDate} onChange={e => setUpDate(e.target.value)}
-                  className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2.5 text-white focus:outline-none focus:border-violet-500 transition-colors" />
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="text-xs text-slate-400 uppercase tracking-widest font-semibold block mb-1.5">Node name</label>
-                  <input value={upNode} onChange={e => setUpNode(e.target.value)} placeholder="e.g. Heidel"
-                    className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2.5 text-white placeholder-slate-600 focus:outline-none focus:border-violet-500 transition-colors" />
-                </div>
-                <div>
-                  <label className="text-xs text-slate-400 uppercase tracking-widest font-semibold block mb-1.5">Result</label>
-                  <select value={upResult} onChange={e => setUpResult(e.target.value)}
-                    className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2.5 text-white focus:outline-none focus:border-violet-500 transition-colors">
-                    <option value="">—</option>
-                    <option value="win">Win</option>
-                    <option value="loss">Loss</option>
-                    <option value="draw">Draw</option>
-                  </select>
-                </div>
-              </div>
-
-              <div>
-                <label className="text-xs text-slate-400 uppercase tracking-widest font-semibold block mb-1.5">Title <span className="normal-case text-slate-600 font-normal">(optional)</span></label>
-                <input value={upTitle} onChange={e => setUpTitle(e.target.value)} placeholder="e.g. Week 3 Siege"
-                  className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2.5 text-white placeholder-slate-600 focus:outline-none focus:border-violet-500 transition-colors" />
-              </div>
-
-              <div>
-                <label className="text-xs text-slate-400 uppercase tracking-widest font-semibold block mb-1.5">Notes <span className="normal-case text-slate-600 font-normal">(optional)</span></label>
-                <textarea value={upNotes} onChange={e => setUpNotes(e.target.value)} rows={2} placeholder="Recap, strategy notes..."
-                  className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2.5 text-white placeholder-slate-600 focus:outline-none focus:border-violet-500 transition-colors resize-none" />
-              </div>
-
-              <div>
-                <label className="text-xs text-slate-400 uppercase tracking-widest font-semibold block mb-1.5">Screenshots</label>
-                <input ref={fileRef} type="file" multiple accept="image/*" onChange={e => setUpFiles(e.target.files)}
-                  className="w-full text-sm text-slate-400 file:mr-3 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:bg-slate-700 file:text-slate-200 file:text-xs file:font-semibold hover:file:bg-slate-600 cursor-pointer" />
-                {upFiles && upFiles.length > 0 && (
-                  <p className="text-xs text-slate-500 mt-1">{upFiles.length} file{upFiles.length > 1 ? "s" : ""} selected</p>
-                )}
-              </div>
-            </div>
-
-            <div className="flex gap-2 mt-6">
-              <button
-                onClick={upload}
-                disabled={!upFiles?.length || uploading}
-                className="flex-1 py-2.5 rounded-xl bg-violet-600 hover:bg-violet-500 disabled:opacity-30 disabled:cursor-not-allowed text-white font-bold text-sm transition-colors"
-              >
-                {uploading ? "Uploading..." : "Upload"}
-              </button>
-              <button onClick={() => setShowUpload(false)}
-                className="px-5 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 font-semibold text-sm transition-colors">
-                Cancel
-              </button>
-            </div>
-          </div>
         </div>
       )}
     </div>
