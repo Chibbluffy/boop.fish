@@ -1043,7 +1043,7 @@ const server = serve({
         syncWarScores(channelId).catch(() => {});
         const rows = await sql`
           SELECT
-            (posted_at AT TIME ZONE 'UTC')::date AS date,
+            (posted_at AT TIME ZONE 'UTC')::date::text AS date,
             COUNT(*)::int AS count
           FROM war_scores_messages
           WHERE channel_id = ${channelId}

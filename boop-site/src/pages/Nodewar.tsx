@@ -24,9 +24,14 @@ async function refreshUrls(urls: string[]): Promise<Record<string, string>> {
 }
 
 function fmtDate(dateStr: string) {
-  return new Date(`${dateStr}T00:00:00Z`).toLocaleDateString("en-US", {
+  const d = String(dateStr).slice(0, 10);
+  return new Date(`${d}T00:00:00Z`).toLocaleDateString("en-US", {
     weekday: "short", month: "short", day: "numeric", year: "numeric", timeZone: "UTC",
   });
+}
+
+function dateKey(dateStr: string) {
+  return String(dateStr).slice(0, 10);
 }
 
 export default function Nodewar() {
@@ -52,7 +57,7 @@ export default function Nodewar() {
         setDates(d.dates ?? []);
         setSyncing(d.syncing ?? false);
         setConfigured(d.configured ?? true);
-        if (d.dates?.length) setSelectedDate(d.dates[0].date);
+        if (d.dates?.length) setSelectedDate(dateKey(d.dates[0].date));
       })
       .catch(() => {})
       .finally(() => setLoading(false));
@@ -68,7 +73,7 @@ export default function Nodewar() {
           setSyncing(d.syncing ?? false);
           if (d.dates?.length) {
             setDates(d.dates);
-            setSelectedDate(d.dates[0].date);
+            setSelectedDate(dateKey(d.dates[0].date));
             clearInterval(id);
           }
         });
@@ -84,7 +89,7 @@ export default function Nodewar() {
     setMessages([]);
     setUrlMap({});
 
-    fetch(`/api/war-scores/date/${selectedDate}`, { headers: authH() })
+    fetch(`/api/war-scores/date/${dateKey(selectedDate)}`, { headers: authH() })
       .then(r => r.json())
       .then(async (data: WarMessage[]) => {
         if (cancelled) return;
@@ -158,9 +163,9 @@ export default function Nodewar() {
               {dates.map(d => (
                 <button
                   key={d.date}
-                  onClick={() => setSelectedDate(d.date)}
+                  onClick={() => setSelectedDate(dateKey(d.date))}
                   className={`w-full text-left px-3 py-2.5 rounded-xl border transition-colors ${
-                    selectedDate === d.date
+                    selectedDate === dateKey(d.date)
                       ? "bg-slate-800 border-slate-600 text-white"
                       : "border-transparent text-slate-400 hover:text-white hover:bg-slate-900"
                   }`}
