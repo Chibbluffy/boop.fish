@@ -1039,11 +1039,12 @@ const server = serve({
         if (!user || user.role === "pending") return err("Forbidden", 403);
         const channelId = process.env.WAR_SCORES_CHANNEL_ID;
         if (!channelId) return json({ dates: [], syncing: false, configured: false });
+        const tz = process.env.WAR_SCORES_TIMEZONE ?? "UTC";
         // Kick off background sync without blocking the response
         syncWarScores(channelId).catch(() => {});
         const rows = await sql`
           SELECT
-            (posted_at AT TIME ZONE 'UTC')::date::text AS date,
+            (posted_at AT TIME ZONE ${tz})::date::text AS date,
             COUNT(*)::int AS count
           FROM war_scores_messages
           WHERE channel_id = ${channelId}
@@ -1060,11 +1061,12 @@ const server = serve({
         if (!user || user.role === "pending") return err("Forbidden", 403);
         const channelId = process.env.WAR_SCORES_CHANNEL_ID;
         if (!channelId) return json([]);
+        const tz = process.env.WAR_SCORES_TIMEZONE ?? "UTC";
         const rows = await sql`
           SELECT message_id, posted_at, author_name, content, attachments, embeds
           FROM war_scores_messages
           WHERE channel_id = ${channelId}
-            AND (posted_at AT TIME ZONE 'UTC')::date = ${req.params.date}::date
+            AND (posted_at AT TIME ZONE ${tz})::date = ${req.params.date}::date
           ORDER BY posted_at ASC
         `;
         const messages = rows
@@ -1080,6 +1082,32 @@ const server = serve({
           })
           .filter((m: any) => m.images.length > 0 || m.links.length > 0);
         return json(messages);
+      },
+    },
+
+    "/api/war-scores/debug/:date": {
+      async GET(req) {
+        const user = await authenticate(req);
+        if (!requireRole(user, "officer")) return err("Forbidden", 403);
+        const channelId = process.env.WAR_SCORES_CHANNEL_ID;
+        if (!channelId) return json([]);
+        const tz = process.env.WAR_SCORES_TIMEZONE ?? "UTC";
+        const rows = await sql`
+          SELECT message_id, posted_at, author_name, content, attachments, embeds
+          FROM war_scores_messages
+          WHERE channel_id = ${channelId}
+            AND (posted_at AT TIME ZONE ${tz})::date = ${req.params.date}::date
+          ORDER BY posted_at ASC
+        `;
+        return json(rows.map((row: any) => ({
+          message_id:   row.message_id,
+          posted_at:    row.posted_at,
+          author_name:  row.author_name,
+          content:      row.content,
+          attachments:  row.attachments,
+          embeds:       row.embeds,
+          _extracted:   _extractWarScoresMedia(row),
+        })));
       },
     },
 
