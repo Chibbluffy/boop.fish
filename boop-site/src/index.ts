@@ -1049,13 +1049,14 @@ const server = serve({
           const tz = _safeIanaTz(new URL(req.url).searchParams.get("tz"));
           syncWarScores(channelId).catch(() => {});
           const rows = await sql`
-            SELECT
-              (posted_at AT TIME ZONE ${tz})::date::text AS date,
-              COUNT(*)::int AS count
-            FROM war_scores_messages
-            WHERE channel_id = ${channelId}
-            GROUP BY (posted_at AT TIME ZONE ${tz})::date
-            ORDER BY (posted_at AT TIME ZONE ${tz})::date DESC
+            SELECT date, COUNT(*)::int AS count
+            FROM (
+              SELECT (posted_at AT TIME ZONE ${tz})::date::text AS date
+              FROM war_scores_messages
+              WHERE channel_id = ${channelId}
+            ) sub
+            GROUP BY date
+            ORDER BY date DESC
           `;
           return json({ dates: rows, syncing: _warScoresSyncing, configured: true, tz });
         } catch (e) {
