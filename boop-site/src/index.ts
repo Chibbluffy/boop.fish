@@ -1181,7 +1181,8 @@ const server = serve({
             COUNT(es.id) FILTER (WHERE es.status = 'accepted')  AS accepted_count,
             COUNT(es.id) FILTER (WHERE es.status = 'bench')     AS bench_count,
             COUNT(es.id) FILTER (WHERE es.status = 'tentative') AS tentative_count,
-            COUNT(es.id) FILTER (WHERE es.status = 'absent')    AS absent_count
+            COUNT(es.id) FILTER (WHERE es.status = 'absent')    AS absent_count,
+            COUNT(es.id) FILTER (WHERE es.status = 'declined')  AS declined_count
           FROM events e
           LEFT JOIN users u ON u.id = e.created_by
           LEFT JOIN event_signups es ON es.event_id = e.id
@@ -1392,7 +1393,7 @@ const server = serve({
         if (evRowSignup?.calendar_event_id) {
           const [uRow] = await sql`SELECT id FROM users WHERE discord_id = ${discord_id}`;
           if (uRow) {
-            if (resolvedStatus !== 'absent') {
+            if (resolvedStatus !== 'absent' && resolvedStatus !== 'declined') {
               await sql`INSERT INTO calendar_event_interests (event_id, user_id) VALUES (${evRowSignup.calendar_event_id}, ${uRow.id}) ON CONFLICT DO NOTHING`;
             } else {
               await sql`DELETE FROM calendar_event_interests WHERE event_id = ${evRowSignup.calendar_event_id} AND user_id = ${uRow.id}`;
@@ -1527,7 +1528,7 @@ const server = serve({
           FROM event_signups es
           LEFT JOIN users u ON u.discord_id = es.discord_id
           WHERE es.event_id = ANY(${events.map((e: any) => e.id)})
-            AND es.status IN ('accepted', 'absent', 'bench', 'tentative')
+            AND es.status IN ('accepted', 'absent', 'bench', 'tentative', 'declined')
           ORDER BY es.discord_name
         `;
         return json({ events, signups });

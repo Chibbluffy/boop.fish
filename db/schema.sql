@@ -349,7 +349,7 @@ CREATE TABLE IF NOT EXISTS event_signups (
   bdo_class      VARCHAR(50),
   signup_order   INTEGER      NOT NULL,
   status         VARCHAR(20)  NOT NULL DEFAULT 'accepted'
-                 CHECK (status IN ('accepted', 'bench', 'tentative', 'absent')),
+                 CHECK (status IN ('accepted', 'bench', 'tentative', 'absent', 'declined')),
   attended       BOOLEAN,
   attended_role  VARCHAR(100),
   attended_class VARCHAR(50),

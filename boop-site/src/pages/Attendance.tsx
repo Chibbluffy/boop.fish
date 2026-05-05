@@ -14,7 +14,7 @@ type AttendanceSignup = {
   event_id: string;
   discord_id: string;
   discord_name: string;
-  status: "accepted" | "absent" | "bench" | "tentative";
+  status: "accepted" | "absent" | "bench" | "tentative" | "declined";
   avatar_url: string | null;
   username: string | null;
   role_name: string | null;
@@ -22,7 +22,7 @@ type AttendanceSignup = {
 };
 
 type CellData = {
-  status: "accepted" | "absent" | "bench" | "tentative";
+  status: "accepted" | "absent" | "bench" | "tentative" | "declined";
   role_name: string | null;
   bdo_class: string | null;
 };
@@ -109,14 +109,15 @@ export default function Attendance() {
   }, [closedEvents, signups]);
 
   const eventStats = useMemo(() => {
-    const map = new Map<string, { accepted: number; absent: number; bench: number; tentative: number }>();
+    const map = new Map<string, { accepted: number; absent: number; bench: number; tentative: number; declined: number }>();
     for (const s of signups) {
-      if (!map.has(s.event_id)) map.set(s.event_id, { accepted: 0, absent: 0, bench: 0, tentative: 0 });
+      if (!map.has(s.event_id)) map.set(s.event_id, { accepted: 0, absent: 0, bench: 0, tentative: 0, declined: 0 });
       const e = map.get(s.event_id)!;
       if (s.status === "accepted") e.accepted++;
       else if (s.status === "absent") e.absent++;
       else if (s.status === "bench") e.bench++;
       else if (s.status === "tentative") e.tentative++;
+      else if (s.status === "declined") e.declined++;
     }
     return map;
   }, [signups]);
@@ -422,7 +423,8 @@ export default function Attendance() {
                             <p><span className="text-red-400 font-semibold">{stats.absent}</span><span className="text-slate-400"> absent</span></p>
                             {stats.bench > 0 && <p><span className="text-yellow-400 font-semibold">{stats.bench}</span><span className="text-slate-400"> benched</span></p>}
                             {stats.tentative > 0 && <p><span className="text-slate-300 font-semibold">{stats.tentative}</span><span className="text-slate-400"> tentative</span></p>}
-                            <p><span className="text-white font-semibold">{stats.accepted + stats.absent + stats.bench + stats.tentative}</span><span className="text-slate-400"> signed up</span></p>
+                            {stats.declined > 0 && <p><span className="text-indigo-400 font-semibold">{stats.declined}</span><span className="text-slate-400"> declined</span></p>}
+                            <p><span className="text-white font-semibold">{stats.accepted + stats.absent + stats.bench + stats.tentative + stats.declined}</span><span className="text-slate-400"> signed up</span></p>
                             {evPct !== null && (
                               <p className="pt-0.5 font-bold" style={{ color: pctColor(evPct) }}>{evPct}% attendance rate</p>
                             )}
@@ -442,6 +444,7 @@ export default function Attendance() {
                       absent:    { bg: "#ef4444", label: "✕ Absent",     color: "#f87171" },
                       bench:     { bg: "#eab308", label: "🪑 Benched",   color: "#facc15" },
                       tentative: { bg: "#64748b", label: "? Tentative",  color: "#94a3b8" },
+                      declined:  { bg: "#6366f1", label: "❌ Declined",  color: "#818cf8" },
                     };
                     const style = cell ? CELL_STYLE[cell.status] : null;
 
@@ -450,7 +453,7 @@ export default function Attendance() {
                         <p className="font-bold text-white text-sm">{m.name}</p>
                         <p className="text-slate-400 text-xs truncate max-w-48">{ev.title}</p>
                         <p className="mt-1.5 font-semibold text-xs" style={{ color: style.color }}>{style.label}</p>
-                        {(cell.status === "bench" || cell.status === "tentative") && (
+                        {(cell.status === "bench" || cell.status === "tentative" || cell.status === "declined") && (
                           <p className="text-slate-500 text-xs mt-0.5">Not counted in rate</p>
                         )}
                         {(cell.role_name || cell.bdo_class) && (
@@ -515,9 +518,12 @@ export default function Attendance() {
           <div className="w-3.5 h-3.5 rounded-sm bg-slate-500" /> Tentative
         </div>
         <div className="flex items-center gap-1.5">
+          <div className="w-3.5 h-3.5 rounded-sm bg-indigo-500" /> Declined
+        </div>
+        <div className="flex items-center gap-1.5">
           <div className="w-3.5 h-3.5 rounded-sm border border-slate-700" /> Did not sign up
         </div>
-        <span className="text-slate-700">· Bench and tentative shown for record only, not counted in rate · Hover for details</span>
+        <span className="text-slate-700">· Bench, tentative, and declined shown for record only, not counted in rate · Hover for details</span>
       </div>
 
       {/* Floating tooltip */}

@@ -4,7 +4,7 @@ import { BDO_CLASSES } from "../lib/bdo-classes";
 import { TIMEZONES } from "../lib/timezones";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
-type SignupStatus = "accepted" | "bench" | "tentative" | "absent";
+type SignupStatus = "accepted" | "bench" | "tentative" | "absent" | "declined";
 
 interface EventRole {
   id: string;
@@ -50,6 +50,7 @@ interface EventItem {
   bench_count: number;
   tentative_count: number;
   absent_count: number;
+  declined_count: number;
 }
 
 interface EventDetail extends EventItem {
@@ -437,6 +438,7 @@ function EventDetail({
   const accepted  = event.signups.filter(s => s.status === "accepted");
   const bench     = event.signups.filter(s => s.status === "bench");
   const tentative = event.signups.filter(s => s.status === "tentative");
+  const declined  = event.signups.filter(s => s.status === "declined");
   const absent    = event.signups.filter(s => s.status === "absent");
 
   async function moveSignup(signupId: string, role_id: string | null, role_name: string | null, status: SignupStatus) {
@@ -581,6 +583,7 @@ function EventDetail({
             {event.accepted_count}{event.total_cap != null ? `/${event.total_cap}` : ""} accepted
             {event.bench_count > 0 && <> · {event.bench_count} bench</>}
             {event.tentative_count > 0 && <> · {event.tentative_count} tentative</>}
+            {event.declined_count > 0 && <> · {event.declined_count} declined</>}
             {event.absent_count > 0 && <> · {event.absent_count} absent</>}
           </p>
         </div>
@@ -676,6 +679,22 @@ function EventDetail({
                 {tentative.length === 0
                   ? <p className={`text-[10px] italic ${over ? "text-slate-300" : "text-slate-700"}`}>{over ? "Drop here" : "Empty"}</p>
                   : tentative.map(s => <SignupRow key={s.id} s={s} />)}
+              </div>
+            );
+          })()}
+
+          {/* Declined — self-reported, not counted in attendance rate */}
+          {(isOfficer || declined.length > 0) && (() => {
+            const over = dragOver === "declined";
+            return (
+              <div
+                {...bucketDropProps("declined", null, null, "declined")}
+                className={`rounded-xl p-3 border transition-colors min-h-[60px] ${over ? "bg-indigo-900/20 border-indigo-700/50" : "bg-slate-900/40 border-slate-800"}`}
+              >
+                <BucketHeader name="Declined" count={declined.length} />
+                {declined.length === 0
+                  ? <p className={`text-[10px] italic ${over ? "text-indigo-400" : "text-slate-700"}`}>{over ? "Drop here" : "Empty"}</p>
+                  : declined.map(s => <SignupRow key={s.id} s={s} />)}
               </div>
             );
           })()}
@@ -1690,6 +1709,7 @@ export default function Events({ initialEventId }: { initialEventId?: string | n
                             {ev.accepted_count}{ev.total_cap != null ? `/${ev.total_cap}` : ""} accepted
                             {ev.bench_count > 0 && <> · {ev.bench_count} bench</>}
                             {ev.tentative_count > 0 && <> · {ev.tentative_count} tentative</>}
+                            {ev.declined_count > 0 && <> · {ev.declined_count} declined</>}
                           </p>
                         </div>
                         <div className="flex gap-2 shrink-0">
