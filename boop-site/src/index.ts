@@ -1817,7 +1817,7 @@ const server = serve({
         const [t] = await sql`
           INSERT INTO event_templates (name, description, event_time, event_timezone, total_cap, channel_id, roles, created_by, ping_role_ids, enable_ping, enable_reminder_ping)
           VALUES (${name.trim()}, ${description ?? null}, ${event_time ?? null}, ${event_timezone ?? null}, ${total_cap ?? null},
-                  ${channel_id ?? null}, ${JSON.stringify(roles ?? [])}::jsonb, ${user!.id}, ${ping_role_ids ?? []}, ${enable_ping ?? true}, ${enable_reminder_ping ?? true})
+                  ${channel_id ?? null}, ${sql.json(roles ?? [])}, ${user!.id}, ${ping_role_ids ?? []}, ${enable_ping ?? true}, ${enable_reminder_ping ?? true})
           RETURNING *
         `;
         return json({ ...t, roles: Array.isArray(t.roles) ? t.roles : (t.roles ? JSON.parse(t.roles as string) : []) }, 201);
@@ -1836,7 +1836,7 @@ const server = serve({
             event_time           = ${event_time     ?? null},
             event_timezone       = ${event_timezone ?? null},
             channel_id           = ${channel_id     ?? null},
-            roles                = COALESCE(${roles ? JSON.stringify(roles) : null}::jsonb, roles),
+            roles                = COALESCE(${roles ? sql.json(roles) : null}, roles),
             ping_role_ids        = COALESCE(${ping_role_ids        ?? null}, ping_role_ids),
             enable_ping          = COALESCE(${enable_ping          ?? null}, enable_ping),
             enable_reminder_ping = COALESCE(${enable_reminder_ping ?? null}, enable_reminder_ping),
@@ -1887,7 +1887,7 @@ const server = serve({
           VALUES (
             ${title.trim()}, ${description ?? null}, ${weekdays}, ${event_time},
             ${event_timezone ?? "America/New_York"}, ${total_cap ?? null}, ${channel_id ?? null},
-            ${advance_minutes ?? 2880}, ${JSON.stringify(roles ?? [])}::jsonb,
+            ${advance_minutes ?? 2880}, ${sql.json(roles ?? [])},
             ${start_date}, ${end_date ?? null}, ${user!.id}, ${ping_role_ids ?? []}, ${enable_ping ?? true}, ${enable_reminder_ping ?? true}
           )
           RETURNING *
