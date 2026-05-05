@@ -120,9 +120,15 @@ function _safeIanaTz(tz: string | null): string {
 const _IMAGE_EXT_RE  = /\.(png|jpe?g|gif|webp|avif)(\?|$)/i;
 const _DISCORD_CDN   = /^https:\/\/(cdn\.discordapp\.com|media\.discordapp\.net)\//;
 
+function _parseJsonCol(val: any): any[] {
+  if (Array.isArray(val)) return val;
+  if (typeof val === "string") { try { return JSON.parse(val); } catch {} }
+  return [];
+}
+
 function _extractWarScoresMedia(row: any) {
-  const attachments: any[] = Array.isArray(row.attachments) ? row.attachments : [];
-  const embeds:      any[] = Array.isArray(row.embeds)      ? row.embeds      : [];
+  const attachments: any[] = _parseJsonCol(row.attachments);
+  const embeds:      any[] = _parseJsonCol(row.embeds);
   const content            = row.content ?? "";
   const images: string[]   = [];
   const links:  string[]   = [];
