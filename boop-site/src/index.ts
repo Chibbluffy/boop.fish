@@ -1041,22 +1041,27 @@ const server = serve({
 
     "/api/war-scores/dates": {
       async GET(req) {
-        const user = await authenticate(req);
-        if (!user || user.role === "pending") return err("Forbidden", 403);
-        const channelId = process.env.WAR_SCORES_CHANNEL_ID;
-        if (!channelId) return json({ dates: [], syncing: false, configured: false });
-        const tz = _safeIanaTz(new URL(req.url).searchParams.get("tz"));
-        syncWarScores(channelId).catch(() => {});
-        const rows = await sql`
-          SELECT
-            (posted_at AT TIME ZONE ${tz})::date::text AS date,
-            COUNT(*)::int AS count
-          FROM war_scores_messages
-          WHERE channel_id = ${channelId}
-          GROUP BY (posted_at AT TIME ZONE ${tz})::date
-          ORDER BY (posted_at AT TIME ZONE ${tz})::date DESC
-        `;
-        return json({ dates: rows, syncing: _warScoresSyncing, configured: true, tz });
+        try {
+          const user = await authenticate(req);
+          if (!user || user.role === "pending") return err("Forbidden", 403);
+          const channelId = process.env.WAR_SCORES_CHANNEL_ID;
+          if (!channelId) return json({ dates: [], syncing: false, configured: false });
+          const tz = _safeIanaTz(new URL(req.url).searchParams.get("tz"));
+          syncWarScores(channelId).catch(() => {});
+          const rows = await sql`
+            SELECT
+              (posted_at AT TIME ZONE ${tz})::date::text AS date,
+              COUNT(*)::int AS count
+            FROM war_scores_messages
+            WHERE channel_id = ${channelId}
+            GROUP BY (posted_at AT TIME ZONE ${tz})::date
+            ORDER BY (posted_at AT TIME ZONE ${tz})::date DESC
+          `;
+          return json({ dates: rows, syncing: _warScoresSyncing, configured: true, tz });
+        } catch (e) {
+          console.error("[war-scores/dates] error:", e);
+          return json({ error: String(e) }, { status: 500 });
+        }
       },
     },
 
