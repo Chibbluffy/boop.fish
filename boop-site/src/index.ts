@@ -1556,14 +1556,17 @@ const server = serve({
           WHERE id = ${req.params.id}
         `;
         if (Array.isArray(roles)) {
-          await sql`DELETE FROM event_roles WHERE event_id = ${req.params.id}`;
-          for (let i = 0; i < roles.length; i++) {
-            const r = roles[i];
-            await sql`
-              INSERT INTO event_roles (event_id, name, emoji, soft_cap, display_order)
-              VALUES (${req.params.id}, ${r.name}, ${r.emoji ?? null}, ${r.soft_cap ?? null}, ${i})
-            `;
-          }
+          await sql.begin(async sql => {
+            await sql`DELETE FROM event_roles WHERE event_id = ${req.params.id}`;
+            for (let i = 0; i < roles.length; i++) {
+              const r = roles[i];
+              if (!r.name) continue;
+              await sql`
+                INSERT INTO event_roles (event_id, name, emoji, soft_cap, display_order)
+                VALUES (${req.params.id}, ${r.name}, ${r.emoji ?? null}, ${r.soft_cap ?? null}, ${i})
+              `;
+            }
+          });
         }
         // Keep linked calendar event in sync
         await sql`
@@ -1582,7 +1585,16 @@ const server = serve({
       async DELETE(req) {
         const user = await authenticate(req);
         if (!requireRole(user, "officer")) return err("Forbidden", 403);
-        const [evRow] = await sql`SELECT calendar_event_id FROM events WHERE id = ${req.params.id}`;
+        const [evRow] = await sql`SELECT channel_id, message_id, calendar_event_id FROM events WHERE id = ${req.params.id}`;
+        if (evRow?.channel_id && evRow?.message_id) {
+          const botToken = process.env.DISCORD_BOT_TOKEN;
+          if (botToken) {
+            await fetch(
+              `https://discord.com/api/v10/channels/${evRow.channel_id}/messages/${evRow.message_id}`,
+              { method: "DELETE", headers: { Authorization: `Bot ${botToken}` } }
+            ).catch(() => {});
+          }
+        }
         await sql`DELETE FROM events WHERE id = ${req.params.id}`;
         if (evRow?.calendar_event_id) {
           await sql`DELETE FROM calendar_events WHERE id = ${evRow.calendar_event_id}`;
@@ -1731,9 +1743,19 @@ const server = serve({
         const isBot = req.headers.get("Authorization") === `Bot ${process.env.DISCORD_BOT_TOKEN}`;
         const user  = isBot ? null : await authenticate(req);
         if (!isBot && !requireRole(user, "officer")) return err("Forbidden", 403);
+        const [sigRow] = await sql`SELECT discord_id FROM event_signups WHERE id = ${req.params.signupId} AND event_id = ${req.params.id}`;
         await sql`DELETE FROM event_signups WHERE id = ${req.params.signupId} AND event_id = ${req.params.id}`;
         await sql`UPDATE events SET updated_at = NOW() WHERE id = ${req.params.id}`;
         await sql`SELECT pg_notify('event_updated', ${req.params.id}::text)`;
+        if (sigRow?.discord_id) {
+          const [evForCal] = await sql`SELECT calendar_event_id FROM events WHERE id = ${req.params.id}`;
+          if (evForCal?.calendar_event_id) {
+            const [uRow] = await sql`SELECT id FROM users WHERE discord_id = ${sigRow.discord_id}`;
+            if (uRow) {
+              await sql`DELETE FROM calendar_event_interests WHERE event_id = ${evForCal.calendar_event_id} AND user_id = ${uRow.id}`;
+            }
+          }
+        }
         return json({ ok: true });
       },
     },
@@ -1975,15 +1997,17 @@ const server = serve({
               WHERE id = (SELECT calendar_event_id FROM events WHERE id = ${ev.id})
             `;
             if (Array.isArray(roles)) {
-              await sql`DELETE FROM event_roles WHERE event_id = ${ev.id}`;
-              for (let i = 0; i < roles.length; i++) {
-                const r = roles[i];
-                if (!r.name) continue;
-                await sql`
-                  INSERT INTO event_roles (event_id, name, emoji, soft_cap, display_order)
-                  VALUES (${ev.id}, ${r.name}, ${r.emoji ?? null}, ${r.soft_cap ?? null}, ${i})
-                `;
-              }
+              await sql.begin(async sql => {
+                await sql`DELETE FROM event_roles WHERE event_id = ${ev.id}`;
+                for (let i = 0; i < roles.length; i++) {
+                  const r = roles[i];
+                  if (!r.name) continue;
+                  await sql`
+                    INSERT INTO event_roles (event_id, name, emoji, soft_cap, display_order)
+                    VALUES (${ev.id}, ${r.name}, ${r.emoji ?? null}, ${r.soft_cap ?? null}, ${i})
+                  `;
+                }
+              });
             }
             await sql`SELECT pg_notify('event_updated', ${ev.id}::text)`;
           }
@@ -2012,11 +2036,33 @@ const server = serve({
         if (!requireRole(user, "officer")) return err("Forbidden", 403);
         const { date } = await req.json();
         if (!date) return err("date is required");
+        // Add the skip date first so the recurring task won't re-create this occurrence
         await sql`
           UPDATE recurring_events
           SET skip_dates = array_append(skip_dates, ${date}::date), updated_at = NOW()
           WHERE id = ${req.params.id}
         `;
+        // If an occurrence was already posted for this date, delete its Discord message and DB row
+        const [existing] = await sql`
+          SELECT id, channel_id, message_id, calendar_event_id
+          FROM events
+          WHERE recurring_id = ${req.params.id} AND event_date = ${date}::date
+        `;
+        if (existing) {
+          if (existing.channel_id && existing.message_id) {
+            const botToken = process.env.DISCORD_BOT_TOKEN;
+            if (botToken) {
+              await fetch(
+                `https://discord.com/api/v10/channels/${existing.channel_id}/messages/${existing.message_id}`,
+                { method: "DELETE", headers: { Authorization: `Bot ${botToken}` } }
+              ).catch(() => {});
+            }
+          }
+          await sql`DELETE FROM events WHERE id = ${existing.id}`;
+          if (existing.calendar_event_id) {
+            await sql`DELETE FROM calendar_events WHERE id = ${existing.calendar_event_id}`;
+          }
+        }
         await sql`SELECT pg_notify('recurring_updated', ${req.params.id}::text)`;
         return json({ ok: true });
       },
