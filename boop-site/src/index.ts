@@ -1586,6 +1586,12 @@ const server = serve({
         const user = await authenticate(req);
         if (!requireRole(user, "officer")) return err("Forbidden", 403);
         const [evRow] = await sql`SELECT channel_id, message_id, calendar_event_id FROM events WHERE id = ${req.params.id}`;
+        // Delete from DB first — the bot listens for message_delete and would re-post if the row still exists
+        await sql`DELETE FROM events WHERE id = ${req.params.id}`;
+        if (evRow?.calendar_event_id) {
+          await sql`DELETE FROM calendar_events WHERE id = ${evRow.calendar_event_id}`;
+        }
+        // Delete the Discord message after the DB row is gone
         if (evRow?.channel_id && evRow?.message_id) {
           const botToken = process.env.DISCORD_BOT_TOKEN;
           if (botToken) {
@@ -1594,10 +1600,6 @@ const server = serve({
               { method: "DELETE", headers: { Authorization: `Bot ${botToken}` } }
             ).catch(() => {});
           }
-        }
-        await sql`DELETE FROM events WHERE id = ${req.params.id}`;
-        if (evRow?.calendar_event_id) {
-          await sql`DELETE FROM calendar_events WHERE id = ${evRow.calendar_event_id}`;
         }
         return json({ ok: true });
       },
@@ -2049,6 +2051,12 @@ const server = serve({
           WHERE recurring_id = ${req.params.id} AND event_date = ${date}::date
         `;
         if (existing) {
+          // Delete from DB first so the bot's message_delete listener won't re-post it
+          await sql`DELETE FROM events WHERE id = ${existing.id}`;
+          if (existing.calendar_event_id) {
+            await sql`DELETE FROM calendar_events WHERE id = ${existing.calendar_event_id}`;
+          }
+          // Then delete the Discord message
           if (existing.channel_id && existing.message_id) {
             const botToken = process.env.DISCORD_BOT_TOKEN;
             if (botToken) {
@@ -2057,10 +2065,6 @@ const server = serve({
                 { method: "DELETE", headers: { Authorization: `Bot ${botToken}` } }
               ).catch(() => {});
             }
-          }
-          await sql`DELETE FROM events WHERE id = ${existing.id}`;
-          if (existing.calendar_event_id) {
-            await sql`DELETE FROM calendar_events WHERE id = ${existing.calendar_event_id}`;
           }
         }
         await sql`SELECT pg_notify('recurring_updated', ${req.params.id}::text)`;
