@@ -1458,14 +1458,14 @@ const server = serve({
       async POST(req) {
         const user = await authenticate(req);
         if (!requireRole(user, "officer")) return err("Forbidden", 403);
-        const { title, description, event_date, event_time, event_timezone, total_cap, channel_id, status, roles, ping_role_ids, enable_ping, enable_reminder_ping } = await req.json();
+        const { title, description, event_date, event_time, event_timezone, total_cap, channel_id, status, roles, ping_role_ids, enable_ping, enable_reminder_ping, reminder_minutes } = await req.json();
         if (!title?.trim() || !event_date || !event_time) return err("title, event_date, and event_time are required");
         const eventStatus = status === "active" ? "active" : "draft";
         const [event] = await sql`
-          INSERT INTO events (title, description, event_date, event_time, event_timezone, total_cap, channel_id, status, created_by, ping_role_ids, enable_ping, enable_reminder_ping)
+          INSERT INTO events (title, description, event_date, event_time, event_timezone, total_cap, channel_id, status, created_by, ping_role_ids, enable_ping, enable_reminder_ping, reminder_minutes)
           VALUES (${title.trim()}, ${description ?? null}, ${event_date}, ${event_time},
                   ${event_timezone ?? null}, ${total_cap ?? null}, ${channel_id ?? null}, ${eventStatus}, ${user!.id},
-                  ${ping_role_ids ?? []}, ${enable_ping ?? true}, ${enable_reminder_ping ?? true})
+                  ${ping_role_ids ?? []}, ${enable_ping ?? true}, ${enable_reminder_ping ?? true}, ${reminder_minutes ?? [60, 30]})
           RETURNING *
         `;
         if (Array.isArray(roles)) {
@@ -1538,7 +1538,7 @@ const server = serve({
           await sql`UPDATE events SET message_id = ${body.message_id}, updated_at = NOW() WHERE id = ${req.params.id}`;
           return json({ ok: true });
         }
-        const { title, description, event_date, event_time, event_timezone, total_cap, channel_id, status, roles, ping_role_ids, enable_ping, enable_reminder_ping } = body;
+        const { title, description, event_date, event_time, event_timezone, total_cap, channel_id, status, roles, ping_role_ids, enable_ping, enable_reminder_ping, reminder_minutes } = body;
         await sql`
           UPDATE events SET
             title                = COALESCE(${title                ?? null}, title),
@@ -1552,6 +1552,7 @@ const server = serve({
             ping_role_ids        = COALESCE(${ping_role_ids        ?? null}, ping_role_ids),
             enable_ping          = COALESCE(${enable_ping          ?? null}, enable_ping),
             enable_reminder_ping = COALESCE(${enable_reminder_ping ?? null}, enable_reminder_ping),
+            reminder_minutes     = COALESCE(${reminder_minutes     ?? null}, reminder_minutes),
             updated_at           = NOW()
           WHERE id = ${req.params.id}
         `;
@@ -1899,7 +1900,7 @@ const server = serve({
       async POST(req) {
         const user = await authenticate(req);
         if (!requireRole(user, "officer")) return err("Forbidden", 403);
-        const { title, description, weekdays, event_time, event_timezone, total_cap, channel_id, advance_minutes, roles, start_date, end_date, ping_role_ids, enable_ping, enable_reminder_ping } = await req.json();
+        const { title, description, weekdays, event_time, event_timezone, total_cap, channel_id, advance_minutes, roles, start_date, end_date, ping_role_ids, enable_ping, enable_reminder_ping, reminder_minutes } = await req.json();
         if (!title?.trim()) return err("title is required");
         if (!Array.isArray(weekdays) || weekdays.length === 0) return err("at least one weekday required");
         if (!event_time) return err("event_time is required");
@@ -1907,12 +1908,12 @@ const server = serve({
         const [row] = await sql`
           INSERT INTO recurring_events
             (title, description, weekdays, event_time, event_timezone, total_cap, channel_id,
-             advance_minutes, roles, start_date, end_date, created_by, ping_role_ids, enable_ping, enable_reminder_ping)
+             advance_minutes, roles, start_date, end_date, created_by, ping_role_ids, enable_ping, enable_reminder_ping, reminder_minutes)
           VALUES (
             ${title.trim()}, ${description ?? null}, ${weekdays}, ${event_time},
             ${event_timezone ?? "America/New_York"}, ${total_cap ?? null}, ${channel_id ?? null},
             ${advance_minutes ?? 2880}, ${sql.json(roles ?? [])},
-            ${start_date}, ${end_date ?? null}, ${user!.id}, ${ping_role_ids ?? []}, ${enable_ping ?? true}, ${enable_reminder_ping ?? true}
+            ${start_date}, ${end_date ?? null}, ${user!.id}, ${ping_role_ids ?? []}, ${enable_ping ?? true}, ${enable_reminder_ping ?? true}, ${reminder_minutes ?? [60, 30]}
           )
           RETURNING *
         `;
@@ -1944,7 +1945,7 @@ const server = serve({
         if (!requireRole(user, "officer")) return err("Forbidden", 403);
         const body = await req.json();
         const { title, description, weekdays, event_time, event_timezone, total_cap, channel_id,
-                advance_minutes, roles, start_date, end_date, update_future_events, ping_role_ids, enable_ping, enable_reminder_ping } = body;
+                advance_minutes, roles, start_date, end_date, update_future_events, ping_role_ids, enable_ping, enable_reminder_ping, reminder_minutes } = body;
         const [updated] = await sql`
           UPDATE recurring_events SET
             title                = COALESCE(${title ?? null}, title),
@@ -1961,6 +1962,7 @@ const server = serve({
             ping_role_ids        = COALESCE(${ping_role_ids        ?? null}, ping_role_ids),
             enable_ping          = COALESCE(${enable_ping          ?? null}, enable_ping),
             enable_reminder_ping = COALESCE(${enable_reminder_ping ?? null}, enable_reminder_ping),
+            reminder_minutes     = COALESCE(${reminder_minutes     ?? null}, reminder_minutes),
             updated_at           = NOW()
           WHERE id = ${req.params.id}
           RETURNING *
@@ -1986,6 +1988,7 @@ const server = serve({
                 ping_role_ids        = COALESCE(${ping_role_ids        ?? null}, ping_role_ids),
                 enable_ping          = COALESCE(${enable_ping          ?? null}, enable_ping),
                 enable_reminder_ping = COALESCE(${enable_reminder_ping ?? null}, enable_reminder_ping),
+                reminder_minutes     = COALESCE(${reminder_minutes     ?? null}, reminder_minutes),
                 updated_at           = NOW()
               WHERE id = ${ev.id}
             `;

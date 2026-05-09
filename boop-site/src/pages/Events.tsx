@@ -42,6 +42,7 @@ interface EventItem {
   ping_role_ids: string[];
   enable_ping: boolean;
   enable_reminder_ping: boolean;
+  reminder_minutes: number[];
   status: "draft" | "active" | "closed";
   channel_id: string | null;
   message_id: string | null;
@@ -154,6 +155,7 @@ function blankForm() {
     total_cap: "", channel_id: "",
     enable_ping: true, ping_role_ids: [] as string[],
     enable_reminder_ping: true,
+    reminder_minutes: [60, 30] as number[],
     roles: [] as RoleFormEntry[],
   };
 }
@@ -185,6 +187,7 @@ function EventForm({
         enable_ping: (initial as EventItem).enable_ping ?? true,
         ping_role_ids: (initial as EventItem).ping_role_ids ?? [],
         enable_reminder_ping: (initial as EventItem).enable_reminder_ping ?? true,
+        reminder_minutes: (initial as EventItem).reminder_minutes ?? [60, 30],
         roles: existingRoles,
       };
     }
@@ -330,17 +333,53 @@ function EventForm({
           )}
         </div>
 
-        {/* Reminder ping toggle */}
-        <div className="flex items-center gap-2">
-          <input
-            type="checkbox" id="ep-enable-reminder-ping"
-            checked={form.enable_reminder_ping}
-            onChange={e => setForm(f => ({ ...f, enable_reminder_ping: e.target.checked }))}
-            className="accent-violet-500"
-          />
-          <label htmlFor="ep-enable-reminder-ping" className="text-xs font-bold text-slate-400 uppercase tracking-widest cursor-pointer">
-            Send 30 min &amp; 5 min reminder pings
-          </label>
+        {/* Reminder ping settings */}
+        <div>
+          <div className="flex items-center gap-2 mb-2">
+            <input
+              type="checkbox" id="ep-enable-reminder-ping"
+              checked={form.enable_reminder_ping}
+              onChange={e => setForm(f => ({ ...f, enable_reminder_ping: e.target.checked }))}
+              className="accent-violet-500"
+            />
+            <label htmlFor="ep-enable-reminder-ping" className="text-xs font-bold text-slate-400 uppercase tracking-widest cursor-pointer">
+              Send reminder pings
+            </label>
+          </div>
+          {form.enable_reminder_ping && (
+            <div className="space-y-2 pl-1">
+              <div className="flex flex-wrap gap-1.5">
+                {[...form.reminder_minutes].sort((a, b) => b - a).map(rm => {
+                  const h = Math.floor(rm / 60), m = rm % 60;
+                  const lbl = h > 0 && m > 0 ? `${h}h ${m}m` : h > 0 ? `${h}h` : `${m}m`;
+                  return (
+                    <span key={rm} className="flex items-center gap-1 px-2.5 py-1 bg-slate-800 rounded-lg text-xs text-slate-300">
+                      {lbl}
+                      <button type="button"
+                        onClick={() => setForm(f => ({ ...f, reminder_minutes: f.reminder_minutes.filter(v => v !== rm) }))}
+                        className="text-slate-500 hover:text-red-400 transition-colors leading-none ml-0.5">×</button>
+                    </span>
+                  );
+                })}
+                {form.reminder_minutes.length === 0 && (
+                  <span className="text-xs text-slate-600 italic">No reminders set</span>
+                )}
+              </div>
+              <div className="flex flex-wrap gap-1.5">
+                {[5, 15, 30, 60, 120].filter(v => !form.reminder_minutes.includes(v)).map(v => {
+                  const h = Math.floor(v / 60), m = v % 60;
+                  const lbl = h > 0 && m > 0 ? `${h}h ${m}m` : h > 0 ? `${h}h` : `${m}m`;
+                  return (
+                    <button key={v} type="button"
+                      onClick={() => setForm(f => ({ ...f, reminder_minutes: [...f.reminder_minutes, v] }))}
+                      className="px-2.5 py-1 bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white rounded-lg text-xs transition-colors">
+                      +{lbl}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Roles */}
@@ -752,6 +791,7 @@ type RecurringSeries = {
   ping_role_ids: string[];
   enable_ping: boolean;
   enable_reminder_ping: boolean;
+  reminder_minutes: number[];
   channel_id: string | null;
   advance_minutes: number;
   roles: Array<{ name: string; emoji: string | null; soft_cap: number | null }>;
@@ -806,6 +846,7 @@ function RecurringSection({ channels, guildEmojis, discordRoles }: {
     start_date: '', end_date: '',
     enable_ping: true, ping_role_ids: [] as string[],
     enable_reminder_ping: true,
+    reminder_minutes: [60, 30] as number[],
     roles: [] as RecurringRoleEntry[],
     update_future: false,
   });
@@ -834,6 +875,7 @@ function RecurringSection({ channels, guildEmojis, discordRoles }: {
       end_date: '', cancelled_after: '',
       enable_ping: true, ping_role_ids: [] as string[],
       enable_reminder_ping: true,
+      reminder_minutes: [60, 30] as number[],
       roles: [],
       update_future: false,
     });
@@ -877,6 +919,7 @@ function RecurringSection({ channels, guildEmojis, discordRoles }: {
       enable_ping: s.enable_ping ?? true,
       ping_role_ids: s.ping_role_ids ?? [],
       enable_reminder_ping: s.enable_reminder_ping ?? true,
+      reminder_minutes: s.reminder_minutes ?? [60, 30],
       roles: s.roles.map(r => ({ name: r.name, emoji: r.emoji ?? '', soft_cap: r.soft_cap != null ? String(r.soft_cap) : '' })),
       update_future: false,
     });
@@ -913,6 +956,7 @@ function RecurringSection({ channels, guildEmojis, discordRoles }: {
       enable_ping: form.enable_ping,
       ping_role_ids: form.ping_role_ids,
       enable_reminder_ping: form.enable_reminder_ping,
+      reminder_minutes: form.reminder_minutes,
       channel_id: form.channel_id || null,
       advance_minutes,
       roles: form.roles.filter(r => r.name.trim()).map(r => ({
@@ -1150,17 +1194,53 @@ function RecurringSection({ channels, guildEmojis, discordRoles }: {
               )}
             </div>
 
-            {/* Reminder ping toggle */}
-            <div className="flex items-center gap-2">
-              <input
-                type="checkbox" id="rec-enable-reminder-ping"
-                checked={form.enable_reminder_ping}
-                onChange={e => setForm(f => ({ ...f, enable_reminder_ping: e.target.checked }))}
-                className="accent-violet-500"
-              />
-              <label htmlFor="rec-enable-reminder-ping" className="text-xs font-bold text-slate-400 uppercase tracking-widest cursor-pointer">
-                Send 30 min &amp; 5 min reminder pings
-              </label>
+            {/* Reminder ping settings */}
+            <div>
+              <div className="flex items-center gap-2 mb-2">
+                <input
+                  type="checkbox" id="rec-enable-reminder-ping"
+                  checked={form.enable_reminder_ping}
+                  onChange={e => setForm(f => ({ ...f, enable_reminder_ping: e.target.checked }))}
+                  className="accent-violet-500"
+                />
+                <label htmlFor="rec-enable-reminder-ping" className="text-xs font-bold text-slate-400 uppercase tracking-widest cursor-pointer">
+                  Send reminder pings
+                </label>
+              </div>
+              {form.enable_reminder_ping && (
+                <div className="space-y-2 pl-1">
+                  <div className="flex flex-wrap gap-1.5">
+                    {[...form.reminder_minutes].sort((a, b) => b - a).map(rm => {
+                      const h = Math.floor(rm / 60), m = rm % 60;
+                      const lbl = h > 0 && m > 0 ? `${h}h ${m}m` : h > 0 ? `${h}h` : `${m}m`;
+                      return (
+                        <span key={rm} className="flex items-center gap-1 px-2.5 py-1 bg-slate-800 rounded-lg text-xs text-slate-300">
+                          {lbl}
+                          <button type="button"
+                            onClick={() => setForm(f => ({ ...f, reminder_minutes: f.reminder_minutes.filter(v => v !== rm) }))}
+                            className="text-slate-500 hover:text-red-400 transition-colors leading-none ml-0.5">×</button>
+                        </span>
+                      );
+                    })}
+                    {form.reminder_minutes.length === 0 && (
+                      <span className="text-xs text-slate-600 italic">No reminders set</span>
+                    )}
+                  </div>
+                  <div className="flex flex-wrap gap-1.5">
+                    {[5, 15, 30, 60, 120].filter(v => !form.reminder_minutes.includes(v)).map(v => {
+                      const h = Math.floor(v / 60), m = v % 60;
+                      const lbl = h > 0 && m > 0 ? `${h}h ${m}m` : h > 0 ? `${h}h` : `${m}m`;
+                      return (
+                        <button key={v} type="button"
+                          onClick={() => setForm(f => ({ ...f, reminder_minutes: [...f.reminder_minutes, v] }))}
+                          className="px-2.5 py-1 bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white rounded-lg text-xs transition-colors">
+                          +{lbl}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
             </div>
 
             {/* Roles */}
@@ -1573,6 +1653,7 @@ export default function Events({ initialEventId }: { initialEventId?: string | n
       enable_ping: form.enable_ping,
       ping_role_ids: form.ping_role_ids,
       enable_reminder_ping: form.enable_reminder_ping,
+      reminder_minutes: form.reminder_minutes,
       channel_id: form.channel_id || null,
       // For edits, only change status when explicitly publishing; never downgrade an active event
       status: editing
