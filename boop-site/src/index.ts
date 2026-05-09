@@ -1837,12 +1837,12 @@ const server = serve({
       async POST(req) {
         const user = await authenticate(req);
         if (!requireRole(user, "officer")) return err("Forbidden", 403);
-        const { name, description, event_time, event_timezone, total_cap, channel_id, roles, ping_role_ids, enable_ping, enable_reminder_ping } = await req.json();
+        const { name, description, event_time, event_timezone, total_cap, channel_id, roles, ping_role_ids, enable_ping, enable_reminder_ping, reminder_minutes } = await req.json();
         if (!name?.trim()) return err("name required");
         const [t] = await sql`
-          INSERT INTO event_templates (name, description, event_time, event_timezone, total_cap, channel_id, roles, created_by, ping_role_ids, enable_ping, enable_reminder_ping)
+          INSERT INTO event_templates (name, description, event_time, event_timezone, total_cap, channel_id, roles, created_by, ping_role_ids, enable_ping, enable_reminder_ping, reminder_minutes)
           VALUES (${name.trim()}, ${description ?? null}, ${event_time ?? null}, ${event_timezone ?? null}, ${total_cap ?? null},
-                  ${channel_id ?? null}, ${sql.json(roles ?? [])}, ${user!.id}, ${ping_role_ids ?? []}, ${enable_ping ?? true}, ${enable_reminder_ping ?? true})
+                  ${channel_id ?? null}, ${sql.json(roles ?? [])}, ${user!.id}, ${ping_role_ids ?? []}, ${enable_ping ?? true}, ${enable_reminder_ping ?? true}, ${reminder_minutes ?? [60, 30]})
           RETURNING *
         `;
         return json({ ...t, roles: Array.isArray(t.roles) ? t.roles : (t.roles ? JSON.parse(t.roles as string) : []) }, 201);
@@ -1853,7 +1853,7 @@ const server = serve({
       async PATCH(req) {
         const user = await authenticate(req);
         if (!requireRole(user, "officer")) return err("Forbidden", 403);
-        const { name, description, event_time, event_timezone, total_cap, channel_id, roles, ping_role_ids, enable_ping, enable_reminder_ping } = await req.json();
+        const { name, description, event_time, event_timezone, total_cap, channel_id, roles, ping_role_ids, enable_ping, enable_reminder_ping, reminder_minutes } = await req.json();
         const [updated] = await sql`
           UPDATE event_templates SET
             name                 = COALESCE(${name        ?? null}, name),
@@ -1865,6 +1865,7 @@ const server = serve({
             ping_role_ids        = COALESCE(${ping_role_ids        ?? null}, ping_role_ids),
             enable_ping          = COALESCE(${enable_ping          ?? null}, enable_ping),
             enable_reminder_ping = COALESCE(${enable_reminder_ping ?? null}, enable_reminder_ping),
+            reminder_minutes     = COALESCE(${reminder_minutes     ?? null}, reminder_minutes),
             updated_at           = NOW()
           WHERE id = ${req.params.id}
           RETURNING *
