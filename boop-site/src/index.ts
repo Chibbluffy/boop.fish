@@ -1615,6 +1615,32 @@ const server = serve({
       },
     },
 
+    "/api/events/:id/signups/manual": {
+      async POST(req) {
+        const user = await authenticate(req);
+        if (!requireRole(user, "officer")) return err("Forbidden", 403);
+        const { name, role_id, role_name, bdo_class, status } = await req.json();
+        if (!name?.trim()) return err("name is required");
+        // Generate a unique pseudo discord_id so manual entries never collide with real users
+        const manualId = `m_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
+        const [{ next_order }] = await sql`
+          SELECT COALESCE(MAX(signup_order), 0) + 1 AS next_order
+          FROM event_signups WHERE event_id = ${req.params.id}
+        `;
+        await sql`
+          INSERT INTO event_signups
+            (event_id, discord_id, discord_name, role_id, role_name, bdo_class, signup_order, status)
+          VALUES
+            (${req.params.id}, ${manualId}, ${name.trim()},
+             ${role_id ?? null}, ${role_name ?? null}, ${bdo_class ?? null},
+             ${next_order}, ${status ?? "accepted"})
+        `;
+        await sql`UPDATE events SET updated_at = NOW() WHERE id = ${req.params.id}`;
+        await sql`SELECT pg_notify('event_updated', ${req.params.id}::text)`;
+        return json({ ok: true });
+      },
+    },
+
     "/api/events/:id/bot-signup": {
       async POST(req) {
         if (req.headers.get("Authorization") !== `Bot ${process.env.DISCORD_BOT_TOKEN}`) return err("Forbidden", 403);

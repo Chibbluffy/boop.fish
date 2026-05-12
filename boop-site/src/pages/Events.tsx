@@ -475,6 +475,9 @@ function EventDetail({
   const draggingRef             = useRef<string | null>(null);
   const [isDragging, setIsDragging] = useState(false);
   const [dragOver, setDragOver]     = useState<string | null>(null);
+  const [showAddPlayer, setShowAddPlayer] = useState(false);
+  const [addForm, setAddForm] = useState({ name: "", role_id: "", role_name: "", bdo_class: "", status: "accepted" as SignupStatus });
+  const [addWorking, setAddWorking] = useState(false);
 
   const accepted  = event.signups.filter(s => s.status === "accepted");
   const bench     = event.signups.filter(s => s.status === "bench");
@@ -499,6 +502,26 @@ function EventDetail({
     await apiFetch(`/api/events/${event.id}/signups/${id}`, { method: "DELETE" }).catch(() => {});
     onRefresh();
     setWorking(null);
+  }
+
+  async function addPlayer() {
+    if (!addForm.name.trim()) return;
+    setAddWorking(true);
+    await apiFetch(`/api/events/${event.id}/signups/manual`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        name: addForm.name.trim(),
+        role_id: addForm.role_id || null,
+        role_name: addForm.role_name || null,
+        bdo_class: addForm.bdo_class || null,
+        status: addForm.status,
+      }),
+    }).catch(() => {});
+    setAddForm({ name: "", role_id: "", role_name: "", bdo_class: "", status: "accepted" });
+    setShowAddPlayer(false);
+    setAddWorking(false);
+    onRefresh();
   }
 
   async function toggleStatus(newStatus: "active" | "closed") {
@@ -630,6 +653,11 @@ function EventDetail({
         </div>
         {isOfficer && (
           <div className="flex gap-2 flex-wrap">
+            <button
+              onClick={() => { setShowAddPlayer(v => !v); setAddForm({ name: "", role_id: "", role_name: "", bdo_class: "", status: "accepted" }); }}
+              className="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-300 text-xs font-semibold">
+              + Add Player
+            </button>
             {event.status === "active" && (
               <button onClick={() => toggleStatus("closed")} className="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-300 text-xs font-semibold">
                 Close Signups
@@ -643,6 +671,65 @@ function EventDetail({
           </div>
         )}
       </div>
+
+      {/* Add Player form */}
+      {isOfficer && showAddPlayer && (
+        <div className="bg-slate-900/60 border border-slate-700 rounded-2xl p-4 mb-4">
+          <p className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-3">Add Player (Mercenary / Write-in)</p>
+          <div className="flex flex-wrap gap-2">
+            <input
+              className="bg-slate-800/60 border border-slate-700 text-white rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-violet-500 flex-1 min-w-36"
+              placeholder="Name (required)"
+              value={addForm.name}
+              onChange={e => setAddForm(f => ({ ...f, name: e.target.value }))}
+              onKeyDown={e => e.key === "Enter" && addPlayer()}
+            />
+            <select
+              className="bg-slate-800/60 border border-slate-700 text-white rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-violet-500"
+              value={addForm.role_id}
+              onChange={e => {
+                const r = event.roles.find(r => r.id === e.target.value);
+                setAddForm(f => ({ ...f, role_id: e.target.value, role_name: r?.name ?? "" }));
+              }}
+            >
+              <option value="">No role</option>
+              {event.roles.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
+            </select>
+            <select
+              className="bg-slate-800/60 border border-slate-700 text-white rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-violet-500"
+              value={addForm.bdo_class}
+              onChange={e => setAddForm(f => ({ ...f, bdo_class: e.target.value }))}
+            >
+              <option value="">Class (optional)</option>
+              {BDO_CLASSES.map(c => <option key={c} value={c}>{c}</option>)}
+            </select>
+            <select
+              className="bg-slate-800/60 border border-slate-700 text-white rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-violet-500"
+              value={addForm.status}
+              onChange={e => setAddForm(f => ({ ...f, status: e.target.value as SignupStatus }))}
+            >
+              <option value="accepted">Accepted</option>
+              <option value="bench">Bench</option>
+              <option value="tentative">Tentative</option>
+              <option value="absent">Absent</option>
+              <option value="declined">Declined</option>
+            </select>
+            <button
+              onClick={addPlayer}
+              disabled={!addForm.name.trim() || addWorking}
+              className="px-4 py-2 rounded-xl bg-violet-600 hover:bg-violet-500 disabled:opacity-40 text-white text-sm font-semibold transition-colors"
+            >
+              {addWorking ? "Adding…" : "Add"}
+            </button>
+            <button
+              onClick={() => setShowAddPlayer(false)}
+              className="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-sm font-semibold transition-colors"
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Signups */}
       <div className="flex flex-col gap-3">
