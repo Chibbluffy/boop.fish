@@ -940,11 +940,8 @@ function RecurringSection({ channels, guildEmojis, discordRoles }: {
     update_future: false,
   });
 
-  function token() { return localStorage.getItem("boop_session") ?? ""; }
-  function authH() { return { Authorization: `Bearer ${token()}` }; }
-
   useEffect(() => {
-    fetch('/api/recurring', { headers: authH() })
+    apiFetch('/api/recurring')
       .then(r => r.json())
       .then(d => setSeries(Array.isArray(d) ? d : []))
       .catch(() => {})
@@ -1058,9 +1055,9 @@ function RecurringSection({ channels, guildEmojis, discordRoles }: {
       update_future_events: form.update_future,
     };
     const isNew = editId === 'new';
-    const res = await fetch(isNew ? '/api/recurring' : `/api/recurring/${editId}`, {
+    const res = await apiFetch(isNew ? '/api/recurring' : `/api/recurring/${editId}`, {
       method: isNew ? 'POST' : 'PATCH',
-      headers: { 'Content-Type': 'application/json', ...authH() },
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
     });
     if (res.ok) {
@@ -1074,7 +1071,7 @@ function RecurringSection({ channels, guildEmojis, discordRoles }: {
 
   async function remove(id: string) {
     if (!confirm('Delete this recurring series? Already-created events will not be deleted.')) return;
-    await fetch(`/api/recurring/${id}`, { method: 'DELETE', headers: authH() });
+    await apiFetch(`/api/recurring/${id}`, { method: 'DELETE' });
     setSeries(prev => prev.filter(s => s.id !== id));
     if (editId === id) setEditId(null);
   }
@@ -1082,9 +1079,9 @@ function RecurringSection({ channels, guildEmojis, discordRoles }: {
   async function addSkipDate(sid: string) {
     const d = skipInput[sid];
     if (!d) return;
-    const res = await fetch(`/api/recurring/${sid}/skip`, {
+    const res = await apiFetch(`/api/recurring/${sid}/skip`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', ...authH() },
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ date: d }),
     });
     if (res.ok) {
@@ -1094,7 +1091,7 @@ function RecurringSection({ channels, guildEmojis, discordRoles }: {
   }
 
   async function removeSkipDate(sid: string, d: string) {
-    await fetch(`/api/recurring/${sid}/skip/${d}`, { method: 'DELETE', headers: authH() });
+    await apiFetch(`/api/recurring/${sid}/skip/${d}`, { method: 'DELETE' });
     setSeries(prev => prev.map(s => s.id === sid ? { ...s, skip_dates: s.skip_dates.filter(x => x !== d) } : s));
   }
 
@@ -1476,9 +1473,6 @@ function TemplatesSection({ templates, setTemplates, channels, guildEmojis, disc
   const [roles, setRoles]         = useState<TplRoleEntry[]>([]);
   const [saving, setSaving]       = useState(false);
 
-  function token() { return localStorage.getItem("boop_session") ?? ""; }
-  function authH() { return { Authorization: `Bearer ${token()}` }; }
-
   useEffect(() => { setLoading(false); }, [templates]);
 
   function startNew() {
@@ -1515,9 +1509,9 @@ function TemplatesSection({ templates, setTemplates, channels, guildEmojis, disc
       })),
     };
     const isNew = editId === "new";
-    const res = await fetch(isNew ? "/api/event-templates" : `/api/event-templates/${editId}`, {
+    const res = await apiFetch(isNew ? "/api/event-templates" : `/api/event-templates/${editId}`, {
       method: isNew ? "POST" : "PATCH",
-      headers: { "Content-Type": "application/json", ...authH() },
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),
     });
     if (res.ok) {
@@ -1531,7 +1525,7 @@ function TemplatesSection({ templates, setTemplates, channels, guildEmojis, disc
 
   async function remove(id: string) {
     if (!confirm("Delete this template?")) return;
-    await fetch(`/api/event-templates/${id}`, { method: "DELETE", headers: authH() });
+    await apiFetch(`/api/event-templates/${id}`, { method: "DELETE" });
     setTemplates(prev => prev.filter(t => t.id !== id));
     if (editId === id) setEditId(null);
   }

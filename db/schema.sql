@@ -325,27 +325,62 @@ CREATE INDEX IF NOT EXISTS idx_payout_history_user ON payout_history(user_id);
 CREATE INDEX IF NOT EXISTS idx_payout_history_date ON payout_history(created_at DESC);
 
 -- ============================================================
+-- RECURRING EVENTS  (auto-post signups on a repeating schedule)
+-- advance_minutes: how far before event_time to post the signup embed
+-- roles: JSONB array of {name, emoji, soft_cap, class_mode, choices}
+-- skip_dates: array of DATE values to skip a specific occurrence
+-- ============================================================
+CREATE TABLE IF NOT EXISTS recurring_events (
+  id                   UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+  title                TEXT        NOT NULL,
+  description          TEXT,
+  weekdays             INTEGER[]   NOT NULL,           -- 0=Mon … 6=Sun
+  event_time           TIME        NOT NULL,
+  event_timezone       TEXT        NOT NULL DEFAULT 'America/New_York',
+  total_cap            INTEGER                DEFAULT 25,
+  channel_id           TEXT,
+  advance_minutes      INTEGER     NOT NULL DEFAULT 2880,
+  roles                JSONB       NOT NULL DEFAULT '[]',
+  start_date           DATE        NOT NULL,
+  end_date             DATE,
+  cancelled_after      DATE,
+  skip_dates           DATE[]      NOT NULL DEFAULT '{}',
+  ping_role_ids        TEXT[]               DEFAULT '{}',
+  enable_ping          BOOLEAN              DEFAULT TRUE,
+  enable_reminder_ping BOOLEAN              DEFAULT TRUE,
+  reminder_minutes     INTEGER[]   NOT NULL DEFAULT '{60,30}',
+  created_by           UUID        REFERENCES users(id) ON DELETE SET NULL,
+  created_at           TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at           TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- ============================================================
 -- EVENTS  (node war / guild event signup system)
+-- recurring_id links an occurrence back to its recurring series.
 -- ============================================================
 CREATE TABLE IF NOT EXISTS events (
-  id                UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
-  title             TEXT        NOT NULL,
-  description       TEXT,
-  event_date        DATE        NOT NULL,
-  event_time        TIME        NOT NULL,
-  event_timezone    VARCHAR(50),
-  total_cap         INTEGER     NOT NULL DEFAULT 25,
-  channel_id        VARCHAR(20),
-  message_id        VARCHAR(20),
-  status            VARCHAR(20) NOT NULL DEFAULT 'draft'
-                    CHECK (status IN ('draft', 'active', 'closed')),
-  calendar_event_id UUID        REFERENCES calendar_events(id) ON DELETE SET NULL,
-  created_by        UUID        REFERENCES users(id) ON DELETE SET NULL,
-  created_at        TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  updated_at        TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  id                   UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+  title                TEXT        NOT NULL,
+  description          TEXT,
+  event_date           DATE        NOT NULL,
+  event_time           TIME        NOT NULL,
+  event_timezone       VARCHAR(50),
+  total_cap            INTEGER                DEFAULT 25,
+  channel_id           VARCHAR(20),
+  message_id           VARCHAR(20),
+  status               VARCHAR(20) NOT NULL DEFAULT 'draft'
+                       CHECK (status IN ('draft', 'active', 'closed')),
+  calendar_event_id    UUID        REFERENCES calendar_events(id) ON DELETE SET NULL,
+  recurring_id         UUID        REFERENCES recurring_events(id) ON DELETE SET NULL,
+  ping_role_ids        TEXT[]               DEFAULT '{}',
+  enable_ping          BOOLEAN              DEFAULT TRUE,
+  enable_reminder_ping BOOLEAN              DEFAULT TRUE,
+  reminder_minutes     INTEGER[]   NOT NULL DEFAULT '{60,30}',
+  created_by           UUID        REFERENCES users(id) ON DELETE SET NULL,
+  created_at           TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at           TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  UNIQUE (recurring_id, event_date)
 );
--- Migration for existing installs:
--- ALTER TABLE events ADD COLUMN IF NOT EXISTS calendar_event_id UUID REFERENCES calendar_events(id) ON DELETE SET NULL;
 CREATE INDEX IF NOT EXISTS idx_events_status ON events(status);
 CREATE INDEX IF NOT EXISTS idx_events_date   ON events(event_date DESC);
 
@@ -355,7 +390,15 @@ CREATE TABLE IF NOT EXISTS event_roles (
   name          VARCHAR(100) NOT NULL,
   emoji         VARCHAR(100),
   soft_cap      INTEGER,
-  display_order INTEGER      NOT NULL DEFAULT 0
+  display_order INTEGER      NOT NULL DEFAULT 0,
+  -- class_mode controls the secondary selection shown during Discord signup:
+  --   'bdo'    = show the standard BDO class dropdowns (default)
+  --   'custom' = show the role's own choices list
+  --   'none'   = skip secondary selection entirely
+  class_mode    VARCHAR(10)  NOT NULL DEFAULT 'bdo'
+                CHECK (class_mode IN ('bdo', 'custom', 'none')),
+  choices       JSONB        NOT NULL DEFAULT '[]'
+                -- format: [{"label": "Carrack", "emoji": "<:boat:123>"}, ...]
 );
 CREATE INDEX IF NOT EXISTS idx_event_roles_event ON event_roles(event_id);
 
@@ -366,7 +409,7 @@ CREATE TABLE IF NOT EXISTS event_signups (
   discord_name   VARCHAR(100) NOT NULL,
   role_id        UUID         REFERENCES event_roles(id) ON DELETE SET NULL,
   role_name      VARCHAR(100),
-  bdo_class      VARCHAR(50),
+  bdo_class      VARCHAR(50),  -- stores selected class or custom choice label
   signup_order   INTEGER      NOT NULL,
   status         VARCHAR(20)  NOT NULL DEFAULT 'accepted'
                  CHECK (status IN ('accepted', 'bench', 'tentative', 'absent', 'declined')),
@@ -379,17 +422,21 @@ CREATE TABLE IF NOT EXISTS event_signups (
 CREATE INDEX IF NOT EXISTS idx_event_signups_event ON event_signups(event_id);
 
 CREATE TABLE IF NOT EXISTS event_templates (
-  id          UUID         PRIMARY KEY DEFAULT gen_random_uuid(),
-  name        VARCHAR(100) NOT NULL,
-  description TEXT,
-  event_time     TIME,
-  event_timezone VARCHAR(50),
-  total_cap      INTEGER      NOT NULL DEFAULT 25,
-  channel_id  VARCHAR(20),
-  roles       JSONB        NOT NULL DEFAULT '[]',
-  created_by  UUID         REFERENCES users(id) ON DELETE SET NULL,
-  created_at  TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
-  updated_at  TIMESTAMPTZ  NOT NULL DEFAULT NOW()
+  id                   UUID         PRIMARY KEY DEFAULT gen_random_uuid(),
+  name                 VARCHAR(100) NOT NULL,
+  description          TEXT,
+  event_time           TIME,
+  event_timezone       VARCHAR(50),
+  total_cap            INTEGER               DEFAULT 25,
+  channel_id           VARCHAR(20),
+  roles                JSONB        NOT NULL DEFAULT '[]',
+  ping_role_ids        TEXT[]                DEFAULT '{}',
+  enable_ping          BOOLEAN               DEFAULT TRUE,
+  enable_reminder_ping BOOLEAN               DEFAULT TRUE,
+  reminder_minutes     INTEGER[]    NOT NULL DEFAULT '{60,30}',
+  created_by           UUID         REFERENCES users(id) ON DELETE SET NULL,
+  created_at           TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
+  updated_at           TIMESTAMPTZ  NOT NULL DEFAULT NOW()
 );
 
 CREATE TABLE IF NOT EXISTS class_emojis (

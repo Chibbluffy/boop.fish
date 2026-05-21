@@ -1794,6 +1794,8 @@ const server = serve({
         const user = await authenticate(req);
         if (!requireRole(user, "officer")) return err("Forbidden", 403);
         const { role_id, role_name, status } = await req.json();
+        const VALID_STATUSES = ["accepted", "bench", "tentative", "absent", "declined"];
+        if (!status || !VALID_STATUSES.includes(status)) return err("invalid or missing status");
         const [oldSignupMv] = await sql`SELECT discord_id, status, role_name FROM event_signups WHERE id = ${req.params.signupId}`;
         const [evForDmMv]   = await sql`SELECT title FROM events WHERE id = ${req.params.id}`;
         await sql`
