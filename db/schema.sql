@@ -440,13 +440,33 @@ CREATE TABLE IF NOT EXISTS event_templates (
 );
 
 CREATE TABLE IF NOT EXISTS class_emojis (
-  id          UUID         PRIMARY KEY DEFAULT gen_random_uuid(),
-  class_name  VARCHAR(50)  NOT NULL UNIQUE,
-  emoji_id    VARCHAR(20),
-  emoji_name  VARCHAR(100),
-  animated    BOOLEAN      NOT NULL DEFAULT false,
-  updated_at  TIMESTAMPTZ  NOT NULL DEFAULT NOW()
+  id            UUID         PRIMARY KEY DEFAULT gen_random_uuid(),
+  class_name    VARCHAR(50)  NOT NULL UNIQUE,
+  emoji_id      VARCHAR(20),
+  emoji_name    VARCHAR(100),
+  animated      BOOLEAN      NOT NULL DEFAULT false,
+  updated_at    TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
+  -- is_bdo: true = standard BDO playable class, false = custom entry (boats, specs, etc.)
+  -- display_order: used for wheel ordering; defaults to alphabetical via class_name sort
+  is_bdo        BOOLEAN      NOT NULL DEFAULT false,
+  display_order INTEGER      NOT NULL DEFAULT 0
 );
+-- Migrations for existing installs:
+-- ALTER TABLE class_emojis ADD COLUMN IF NOT EXISTS is_bdo BOOLEAN NOT NULL DEFAULT false;
+-- ALTER TABLE class_emojis ADD COLUMN IF NOT EXISTS display_order INTEGER NOT NULL DEFAULT 0;
+
+-- Seed all current BDO classes (run once after adding the columns above).
+-- ON CONFLICT ensures existing rows with emojis already assigned are preserved.
+-- INSERT INTO class_emojis (class_name, is_bdo, display_order) VALUES
+--   ('Archer',true,0),('Berserker',true,1),('Corsair',true,2),('Dark Knight',true,3),
+--   ('Deadeye',true,4),('Dosa',true,5),('Drakania',true,6),('Guardian',true,7),
+--   ('Hashashin',true,8),('Kunoichi',true,9),('Lahn',true,10),('Maegu',true,11),
+--   ('Maehwa',true,12),('Musa',true,13),('Mystic',true,14),('Ninja',true,15),
+--   ('Nova',true,16),('Ranger',true,17),('Sage',true,18),('Scholar',true,19),
+--   ('Seraph',true,20),('Shai',true,21),('Sorceress',true,22),('Striker',true,23),
+--   ('Tamer',true,24),('Valkyrie',true,25),('Warrior',true,26),('Witch',true,27),
+--   ('Wizard',true,28),('Woosa',true,29),('Wukong',true,30)
+-- ON CONFLICT (class_name) DO UPDATE SET is_bdo = true, display_order = EXCLUDED.display_order;
 
 -- ============================================================
 -- QUOTES  (imported from Nadeko bot export)

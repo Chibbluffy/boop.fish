@@ -59,12 +59,6 @@ function tzFull(value: string | null): string {
 }
 
 // All BDO classes from the project
-const BDO_CLASSES = [
-  "Archer","Berserker","Dark Knight","Guardian","Hashashin","Lahn","Maehwa",
-  "Musa","Mystic","Ninja","Nova","Ranger","Sage","Scholar","Sorceress",
-  "Striker","Tamer","Valkyrie","Warrior","Witch","Wizard","Woosa","Drakania",
-  "Maegu","Acher","Dosa",
-];
 
 export default function GuildDirectory() {
   const user = useAuth();

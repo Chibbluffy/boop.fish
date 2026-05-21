@@ -145,3 +145,18 @@ Requires `DISCORD_BOT_TOKEN`, `DISCORD_GUILD_ID`, and optionally `DISCORD_MEMBER
 | `member` | All member-facing pages |
 | `officer` | + Roster management, payout tracker, nodewar, wall of shame |
 | `admin` | Full access including role changes and member deletion |
+
+## Maintenance
+
+### Adding a new BDO class
+
+Go to **Settings → Class Emojis → BDO Classes → "+ Add BDO Class"**, type the class name, and click Add. Then assign it a Discord emoji in the same section and click "Save Emojis".
+
+That's it — **no code changes, no deploys needed**. The class will appear on the wheel and in Discord event signup dropdowns within 5 minutes (bot cache TTL).
+
+`boo-site/src/lib/bdo-classes.ts` and `BoopBot/cogs/events.py` still contain a static fallback list used if the DB is unreachable. Keep these in sync when adding a class as a belt-and-suspenders safety net, but it is not required for normal operation.
+
+### Adding custom signup options (boats, specs, etc.)
+
+Go to **Settings → Class Emojis → Custom Entries** and add the entry name with an optional emoji.
+It will immediately appear in the ClassPicker when editing a role's "Custom selection" list on any event, template, or recurring series.

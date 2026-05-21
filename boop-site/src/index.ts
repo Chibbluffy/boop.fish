@@ -12,7 +12,6 @@ import {
 } from "./lib/auth-server";
 
 const UPLOAD_DIR = join(import.meta.dir, "../../uploads");
-const CACHE_DIR  = join(import.meta.dir, "..", "cache");
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -2169,6 +2168,48 @@ const server = serve({
       },
     },
 
+    // ── BDO Class registry ───────────────────────────────────────────────────────
+    // Distinct from /api/class-emojis (which returns a flat emoji map).
+    // This endpoint is the authoritative ordered list of playable BDO classes.
+
+    "/api/bdo-classes": {
+      async GET(_req) {
+        const rows = await sql`
+          SELECT class_name, emoji_id, emoji_name, animated
+          FROM class_emojis
+          WHERE is_bdo = true
+          ORDER BY class_name ASC
+        `;
+        return json(rows);
+      },
+      async POST(req) {
+        const user = await authenticate(req);
+        if (!requireRole(user, "officer")) return err("Forbidden", 403);
+        const { name } = await req.json();
+        if (!name?.trim()) return err("name is required");
+        const [row] = await sql`
+          INSERT INTO class_emojis (class_name, is_bdo, display_order)
+          VALUES (
+            ${name.trim()},
+            true,
+            (SELECT COALESCE(MAX(display_order), -1) + 1 FROM class_emojis WHERE is_bdo = true)
+          )
+          ON CONFLICT (class_name) DO UPDATE SET is_bdo = true
+          RETURNING class_name, emoji_id, emoji_name, animated
+        `;
+        return json(row, 201);
+      },
+    },
+
+    "/api/bdo-classes/:name": {
+      async DELETE(req) {
+        const user = await authenticate(req);
+        if (!requireRole(user, "officer")) return err("Forbidden", 403);
+        await sql`DELETE FROM class_emojis WHERE class_name = ${req.params.name} AND is_bdo = true`;
+        return json({ ok: true });
+      },
+    },
+
     "/api/discord/channels": {
       async GET(req) {
         const user = await authenticate(req);
@@ -2414,15 +2455,6 @@ const server = serve({
       });
     },
 
-    // Serve cached static assets
-    "/assets/class-sprite.png": async _req => {
-      const file = Bun.file(join(CACHE_DIR, "class-sprite.png"));
-      if (!(await file.exists())) return new Response("Not found", { status: 404 });
-      return new Response(file, {
-        headers: { "Content-Type": "image/png", "Cache-Control": "public, max-age=86400" },
-      });
-    },
-
     // Fallback: serve the React app for all other routes
     "/*": index,
   },
@@ -2435,39 +2467,6 @@ const server = serve({
 
 // Ensure upload directories exist
 await Bun.write(join(UPLOAD_DIR, "nodewar", ".gitkeep"), "");
-
-// ── Cache class sprite ────────────────────────────────────────────────────────
-async function syncClassSprite() {
-  const SPRITE_REMOTE = "https://s1.pearlcdn.com/NAEU/contents/img/portal/gameinfo/classes_symbol_spr.png";
-  const spritePath = join(CACHE_DIR, "class-sprite.png");
-  const etagPath   = join(CACHE_DIR, "class-sprite.etag");
-
-  await Bun.write(join(CACHE_DIR, ".gitkeep"), ""); // ensure dir exists
-
-  const headers: Record<string, string> = {};
-  const etagFile = Bun.file(etagPath);
-  if (await etagFile.exists()) {
-    const stored = (await etagFile.text()).trim();
-    if (stored) headers["If-None-Match"] = stored;
-  }
-
-  try {
-    const res = await fetch(SPRITE_REMOTE, { headers });
-    if (res.status === 304) {
-      console.log("✅ Class sprite is up to date");
-    } else if (res.ok) {
-      await Bun.write(spritePath, await res.arrayBuffer());
-      const etag = res.headers.get("etag") ?? "";
-      if (etag) await Bun.write(etagPath, etag);
-      console.log("✅ Class sprite downloaded/updated");
-    } else {
-      console.warn(`⚠️  Could not fetch class sprite: HTTP ${res.status}`);
-    }
-  } catch (e) {
-    console.warn("⚠️  Could not fetch class sprite:", e);
-  }
-}
-await syncClassSprite();
 
 // ── Cleanup expired sessions on startup ──────────────────────────────────────
 await sql`DELETE FROM sessions WHERE expires_at < NOW()`;

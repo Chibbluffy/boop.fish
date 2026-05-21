@@ -708,13 +708,6 @@ function RosterSection() {
 
 // ── Class Emojis section ──────────────────────────────────────────────────────
 
-const BDO_CLASSES = [
-  "Warrior","Sorceress","Ranger","Berserker","Tamer","Musa","Maehwa",
-  "Valkyrie","Kunoichi","Ninja","Wizard","Witch","Dark Knight","Striker",
-  "Mystic","Lahn","Archer","Shai","Guardian","Hashashin","Nova","Sage",
-  "Corsair","Drakania","Woosa","Maegu","Scholar","Dosa","Deadeye",
-];
-
 type DiscordEmoji = { id: string; name: string; animated: boolean };
 
 function emojiUrl(e: DiscordEmoji) {
@@ -796,22 +789,28 @@ function EmojiSelectSettings({ value, emojis, onChange }: {
   );
 }
 
+type BdoClassRow = { class_name: string; emoji_id: string | null; emoji_name: string | null; animated: boolean };
+
 function ClassEmojisSection() {
-  const [emojis, setEmojis]           = useState<Record<string, string>>({});
-  const [guildEmojis, setGuildEmojis] = useState<DiscordEmoji[]>([]);
-  const [loading, setLoading]         = useState(true);
-  const [saving, setSaving]           = useState(false);
-  const [saved, setSaved]             = useState(false);
-  const [classSearch, setClassSearch] = useState("");
-  const [newName, setNewName]         = useState("");
-  const [newEmoji, setNewEmoji]       = useState("");
+  const [bdoClasses, setBdoClasses]     = useState<BdoClassRow[]>([]);
+  const [emojis, setEmojis]             = useState<Record<string, string>>({});
+  const [guildEmojis, setGuildEmojis]   = useState<DiscordEmoji[]>([]);
+  const [loading, setLoading]           = useState(true);
+  const [saving, setSaving]             = useState(false);
+  const [saved, setSaved]               = useState(false);
+  const [classSearch, setClassSearch]   = useState("");
+  const [newBdoName, setNewBdoName]     = useState("");
+  const [newCustName, setNewCustName]   = useState("");
+  const [newCustEmoji, setNewCustEmoji] = useState("");
 
   useEffect(() => {
     Promise.all([
-      fetch("/api/class-emojis", { headers: authH() }).then(r => r.json()),
+      fetch("/api/bdo-classes",    { headers: authH() }).then(r => r.json()),
+      fetch("/api/class-emojis",   { headers: authH() }).then(r => r.json()),
       fetch("/api/discord/emojis", { headers: authH() }).then(r => r.json()),
-    ]).then(([saved, guild]) => {
-      setEmojis(saved);
+    ]).then(([bdo, emojiMap, guild]) => {
+      setBdoClasses(Array.isArray(bdo) ? bdo : []);
+      setEmojis(emojiMap && typeof emojiMap === "object" ? emojiMap : {});
       setGuildEmojis(
         (Array.isArray(guild) ? guild : [])
           .filter((e: any) => e.id && e.name)
@@ -821,7 +820,7 @@ function ClassEmojisSection() {
     }).catch(() => setLoading(false));
   }, []);
 
-  async function saveAll() {
+  async function saveEmojis() {
     setSaving(true);
     const res = await fetch("/api/class-emojis", {
       method: "PUT",
@@ -833,41 +832,59 @@ function ClassEmojisSection() {
   }
 
   function setClassEmoji(cls: string, val: string) {
-    if (!val) {
-      setEmojis(prev => { const n = { ...prev }; delete n[cls]; return n; });
-    } else {
-      setEmojis(prev => ({ ...prev, [cls]: val }));
+    setEmojis(prev => val ? { ...prev, [cls]: val } : (({ [cls]: _removed, ...rest }) => rest)(prev));
+  }
+
+  async function addBdoClass() {
+    const name = newBdoName.trim();
+    if (!name) return;
+    const res = await fetch("/api/bdo-classes", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...authH() },
+      body: JSON.stringify({ name }),
+    });
+    if (res.ok) {
+      const row = await res.json();
+      setBdoClasses(prev => [...prev, row].sort((a, b) => a.class_name.localeCompare(b.class_name)));
+      setNewBdoName("");
     }
   }
 
+  async function removeBdoClass(name: string) {
+    if (!confirm(`Remove "${name}" from the BDO class list?`)) return;
+    await fetch(`/api/bdo-classes/${encodeURIComponent(name)}`, { method: "DELETE", headers: authH() });
+    setBdoClasses(prev => prev.filter(c => c.class_name !== name));
+    setEmojis(prev => (({ [name]: _removed, ...rest }) => rest)(prev));
+  }
+
   function addCustom() {
-    const name = newName.trim();
-    if (!name || (BDO_CLASSES as readonly string[]).includes(name)) return;
-    setEmojis(prev => ({ ...prev, [name]: newEmoji }));
-    setNewName(""); setNewEmoji("");
+    const name = newCustName.trim();
+    if (!name) return;
+    setEmojis(prev => ({ ...prev, [name]: newCustEmoji }));
+    setNewCustName(""); setNewCustEmoji("");
   }
 
   function removeCustom(cls: string) {
-    setEmojis(prev => { const n = { ...prev }; delete n[cls]; return n; });
+    setEmojis(prev => (({ [cls]: _removed, ...rest }) => rest)(prev));
   }
 
-  const bdoSet = new Set(BDO_CLASSES as readonly string[]);
-  const customEntries = Object.keys(emojis).filter(k => !bdoSet.has(k as any)).sort();
-
-  const filteredBdo = classSearch.trim()
-    ? (BDO_CLASSES as readonly string[]).filter(c => c.toLowerCase().includes(classSearch.toLowerCase()))
-    : BDO_CLASSES as readonly string[];
+  const bdoNames      = useMemo(() => new Set(bdoClasses.map(c => c.class_name)), [bdoClasses]);
+  const customEntries = useMemo(() => Object.keys(emojis).filter(k => !bdoNames.has(k)).sort(), [emojis, bdoNames]);
+  const filteredBdo   = useMemo(() => {
+    const q = classSearch.trim().toLowerCase();
+    return q ? bdoClasses.filter(c => c.class_name.toLowerCase().includes(q)) : bdoClasses;
+  }, [bdoClasses, classSearch]);
 
   return (
     <div>
       <div className="flex items-start justify-between mb-4">
         <div>
           <h2 className="text-2xl font-black text-white">Class Emojis</h2>
-          <p className="text-slate-500 text-sm mt-0.5">Map classes to Discord emojis for event signups. Add custom entries (boat types, roles, etc.) below.</p>
+          <p className="text-slate-500 text-sm mt-0.5">Assign Discord emojis to classes. Used on the wheel and in event signups.</p>
         </div>
-        <button onClick={saveAll} disabled={saving}
+        <button onClick={saveEmojis} disabled={saving}
           className={`px-4 py-2 rounded-lg font-bold text-sm transition-colors ${saved ? "bg-green-600/20 text-green-400 border border-green-500/30" : "bg-violet-600 hover:bg-violet-500 disabled:opacity-30 text-white"}`}>
-          {saving ? "Saving…" : saved ? "Saved ✓" : "Save All"}
+          {saving ? "Saving…" : saved ? "Saved ✓" : "Save Emojis"}
         </button>
       </div>
 
@@ -875,30 +892,44 @@ function ClassEmojisSection() {
         <>
           {/* BDO Classes */}
           <div className="mb-6">
-            <div className="flex items-center gap-3 mb-3">
+            <div className="flex items-center gap-3 mb-3 flex-wrap">
               <h3 className="text-sm font-bold text-slate-300 uppercase tracking-widest">BDO Classes</h3>
               <input value={classSearch} onChange={e => setClassSearch(e.target.value)}
-                placeholder="Filter classes…"
-                className="bg-slate-900 border border-slate-800 rounded-lg px-2.5 py-1 text-xs text-white placeholder-slate-600 focus:outline-none focus:border-violet-500 w-40" />
+                placeholder="Filter…"
+                className="bg-slate-900 border border-slate-800 rounded-lg px-2.5 py-1 text-xs text-white placeholder-slate-600 focus:outline-none focus:border-violet-500 w-32" />
+              <span className="text-xs text-slate-600">{bdoClasses.length} classes</span>
             </div>
-            <div className="grid grid-cols-2 gap-2">
+            <div className="grid grid-cols-2 gap-2 mb-3">
               {filteredBdo.map(cls => (
-                <div key={cls} className="flex items-center gap-3 bg-slate-900/40 rounded-lg px-3 py-2">
-                  <span className="text-sm text-slate-300 flex-1 min-w-0 truncate">{cls}</span>
-                  <EmojiSelectSettings value={emojis[cls] ?? ""} emojis={guildEmojis} onChange={v => setClassEmoji(cls, v)} />
+                <div key={cls.class_name} className="flex items-center gap-2 bg-slate-900/40 rounded-lg px-3 py-2">
+                  <span className="text-sm text-slate-300 flex-1 min-w-0 truncate">{cls.class_name}</span>
+                  <EmojiSelectSettings value={emojis[cls.class_name] ?? ""} emojis={guildEmojis} onChange={v => setClassEmoji(cls.class_name, v)} />
+                  <button onClick={() => removeBdoClass(cls.class_name)} title="Remove from BDO list"
+                    className="text-slate-700 hover:text-red-400 transition-colors text-xs px-1 shrink-0">✕</button>
                 </div>
               ))}
             </div>
+            <div className="flex items-center gap-2 bg-slate-900/40 border border-slate-700/50 rounded-xl p-3">
+              <input value={newBdoName} onChange={e => setNewBdoName(e.target.value)}
+                onKeyDown={e => e.key === "Enter" && addBdoClass()}
+                placeholder="New class name (e.g. NewClass)"
+                className="flex-1 bg-slate-800 border border-slate-700 text-white rounded-lg px-2.5 py-1.5 text-sm focus:outline-none focus:border-violet-500" />
+              <button onClick={addBdoClass} disabled={!newBdoName.trim()}
+                className="px-3 py-1.5 rounded-lg bg-violet-600 hover:bg-violet-500 disabled:opacity-30 text-white text-xs font-semibold transition-colors whitespace-nowrap">
+                + Add BDO Class
+              </button>
+            </div>
+            <p className="text-[11px] text-slate-600 mt-1.5">Adding a class here updates the wheel and Discord event signups instantly — no code changes needed.</p>
           </div>
 
           {/* Custom Entries */}
           <div>
-            <h3 className="text-sm font-bold text-slate-300 uppercase tracking-widest mb-3">Custom Entries</h3>
-            <p className="text-xs text-slate-500 mb-3">Add custom options like boat types, specs, or anything else you want members to select when signing up for a role.</p>
+            <h3 className="text-sm font-bold text-slate-300 uppercase tracking-widest mb-1">Custom Entries</h3>
+            <p className="text-xs text-slate-500 mb-3">Non-class options for event roles — boat types, specs, etc.</p>
             {customEntries.length > 0 && (
               <div className="grid grid-cols-2 gap-2 mb-3">
                 {customEntries.map(cls => (
-                  <div key={cls} className="flex items-center gap-3 bg-slate-900/40 rounded-lg px-3 py-2">
+                  <div key={cls} className="flex items-center gap-2 bg-slate-900/40 rounded-lg px-3 py-2">
                     <span className="text-sm text-slate-300 flex-1 min-w-0 truncate">{cls}</span>
                     <EmojiSelectSettings value={emojis[cls] ?? ""} emojis={guildEmojis} onChange={v => setClassEmoji(cls, v)} />
                     <button onClick={() => removeCustom(cls)} className="text-slate-600 hover:text-red-400 transition-colors text-xs px-1 shrink-0">✕</button>
@@ -907,14 +938,12 @@ function ClassEmojisSection() {
               </div>
             )}
             <div className="flex items-center gap-2 bg-slate-900/40 border border-slate-700/50 rounded-xl p-3">
-              <input
-                value={newName} onChange={e => setNewName(e.target.value)}
+              <input value={newCustName} onChange={e => setNewCustName(e.target.value)}
                 onKeyDown={e => e.key === "Enter" && addCustom()}
                 placeholder="Entry name (e.g. Carrack)"
-                className="flex-1 bg-slate-800 border border-slate-700 text-white rounded-lg px-2.5 py-1.5 text-sm focus:outline-none focus:border-violet-500"
-              />
-              <EmojiSelectSettings value={newEmoji} emojis={guildEmojis} onChange={setNewEmoji} />
-              <button onClick={addCustom} disabled={!newName.trim()}
+                className="flex-1 bg-slate-800 border border-slate-700 text-white rounded-lg px-2.5 py-1.5 text-sm focus:outline-none focus:border-violet-500" />
+              <EmojiSelectSettings value={newCustEmoji} emojis={guildEmojis} onChange={setNewCustEmoji} />
+              <button onClick={addCustom} disabled={!newCustName.trim()}
                 className="px-3 py-1.5 rounded-lg bg-violet-600 hover:bg-violet-500 disabled:opacity-30 text-white text-xs font-semibold transition-colors whitespace-nowrap">
                 + Add
               </button>

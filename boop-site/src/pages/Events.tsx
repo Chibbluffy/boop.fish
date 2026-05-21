@@ -198,20 +198,21 @@ function EmojiSelect({ value, emojis, onChange }: {
 }
 
 // ── Class picker (multi-select from class_emojis + BDO list) ─────────────────
-function ClassPicker({ selected, classEmojiMap, guildEmojis, onChange }: {
+function ClassPicker({ selected, classEmojiMap, bdoClasses, guildEmojis, onChange }: {
   selected: string[];
   classEmojiMap: Record<string, string>;
+  bdoClasses: string[];
   guildEmojis: GuildEmoji[];
   onChange: (names: string[]) => void;
 }) {
   const [search, setSearch] = useState("");
 
-  // Full selectable list: all BDO classes + any custom entries in class_emojis
+  // BDO classes from DB first, then any custom entries in class_emojis not already in the BDO list
   const allClasses = useMemo(() => {
-    const bdoSet = new Set(BDO_CLASSES as unknown as string[]);
+    const bdoSet = new Set(bdoClasses);
     const custom = Object.keys(classEmojiMap).filter(n => !bdoSet.has(n)).sort();
-    return [...(BDO_CLASSES as unknown as string[]), ...custom];
-  }, [classEmojiMap]);
+    return [...bdoClasses, ...custom];
+  }, [classEmojiMap, bdoClasses]);
 
   const filtered = search.trim()
     ? allClasses.filter(n => n.toLowerCase().includes(search.trim().toLowerCase()))
@@ -311,7 +312,7 @@ function blankForm() {
 
 // ── Event Form ────────────────────────────────────────────────────────────────
 function EventForm({
-  initial, templates, channels, guildEmojis, discordRoles, classEmojiMap, onSave, onPublish, onCancel,
+  initial, templates, channels, guildEmojis, discordRoles, classEmojiMap, bdoClasses, onSave, onPublish, onCancel,
 }: {
   initial?: EventDetail | EventItem;
   templates: EventTemplate[];
@@ -319,6 +320,7 @@ function EventForm({
   guildEmojis: GuildEmoji[];
   discordRoles: DiscordRole[];
   classEmojiMap: Record<string, string>;
+  bdoClasses: string[];
   onSave: (data: ReturnType<typeof blankForm>, publish: boolean) => Promise<void>;
   onPublish?: () => Promise<void>;
   onCancel: () => void;
@@ -585,6 +587,7 @@ function EventForm({
                     <ClassPicker
                       selected={r.choices}
                       classEmojiMap={classEmojiMap}
+                      bdoClasses={bdoClasses}
                       guildEmojis={guildEmojis}
                       onChange={choices => setRoleChoices(i, choices)}
                     />
@@ -1103,11 +1106,12 @@ function fmtAnnounce(mins: number, eventTime: string): string {
 
 type RecurringRoleEntry = { name: string; soft_cap: string; emoji: string; class_mode: ClassMode; choices: string[] };
 
-function RecurringSection({ channels, guildEmojis, discordRoles, classEmojiMap }: {
+function RecurringSection({ channels, guildEmojis, discordRoles, classEmojiMap, bdoClasses }: {
   channels: Channel[];
   guildEmojis: GuildEmoji[];
   discordRoles: DiscordRole[];
   classEmojiMap: Record<string, string>;
+  bdoClasses: string[];
 }) {
   const [series, setSeries]     = useState<RecurringSeries[]>([]);
   const [loading, setLoading]   = useState(true);
@@ -1561,6 +1565,7 @@ function RecurringSection({ channels, guildEmojis, discordRoles, classEmojiMap }
                         <ClassPicker
                           selected={r.choices}
                           classEmojiMap={classEmojiMap}
+                          bdoClasses={bdoClasses}
                           guildEmojis={guildEmojis}
                           onChange={choices => setForm(f => ({ ...f, roles: f.roles.map((x, j) => j === i ? { ...x, choices } : x) }))}
                         />
@@ -1680,13 +1685,14 @@ function RecurringSection({ channels, guildEmojis, discordRoles, classEmojiMap }
 // ── Templates Section ─────────────────────────────────────────────────────────
 type TplRoleEntry = { name: string; soft_cap: string; emoji: string; class_mode: ClassMode; choices: string[] };
 
-function TemplatesSection({ templates, setTemplates, channels, guildEmojis, discordRoles, classEmojiMap }: {
+function TemplatesSection({ templates, setTemplates, channels, guildEmojis, discordRoles, classEmojiMap, bdoClasses }: {
   templates: EventTemplate[];
   setTemplates: React.Dispatch<React.SetStateAction<EventTemplate[]>>;
   channels: Channel[];
   guildEmojis: GuildEmoji[];
   discordRoles: DiscordRole[];
   classEmojiMap: Record<string, string>;
+  bdoClasses: string[];
 }) {
   const [loading, setLoading] = useState(true);
   const [editId, setEditId]       = useState<string | null>(null);
@@ -1915,6 +1921,7 @@ function TemplatesSection({ templates, setTemplates, channels, guildEmojis, disc
                         <ClassPicker
                           selected={r.choices}
                           classEmojiMap={classEmojiMap}
+                          bdoClasses={bdoClasses}
                           guildEmojis={guildEmojis}
                           onChange={choices => setRoles(prev => prev.map((x, j) => j === i ? { ...x, choices } : x))}
                         />
@@ -1984,6 +1991,7 @@ export default function Events({ initialEventId }: { initialEventId?: string | n
   const [guildEmojis, setGuildEmojis] = useState<GuildEmoji[]>([]);
   const [discordRoles, setDiscordRoles] = useState<DiscordRole[]>([]);
   const [classEmojiMap, setClassEmojiMap] = useState<Record<string, string>>({});
+  const [bdoClasses, setBdoClasses]       = useState<string[]>([]);
   const [loading, setLoading]       = useState(true);
   const [filter, setFilter]       = useState<"upcoming" | "all" | "closed">("upcoming");
 
@@ -2009,6 +2017,9 @@ export default function Events({ initialEventId }: { initialEventId?: string | n
       apiFetch("/api/discord/roles").then(r => r.json()).then(setDiscordRoles).catch(() => {});
       apiFetch("/api/class-emojis").then(r => r.json()).then(d => {
         if (d && typeof d === "object") setClassEmojiMap(d);
+      }).catch(() => {});
+      apiFetch("/api/bdo-classes").then(r => r.json()).then(d => {
+        if (Array.isArray(d)) setBdoClasses(d.map((r: any) => r.class_name));
       }).catch(() => {});
     }
   }, [user, isOfficer, loadEvents]);
@@ -2123,12 +2134,12 @@ export default function Events({ initialEventId }: { initialEventId?: string | n
 
         {/* ── Templates tab ── */}
         {isOfficer && mainTab === "templates" && view === "list" && (
-          <TemplatesSection templates={templates} setTemplates={setTemplates} channels={channels} guildEmojis={guildEmojis} discordRoles={discordRoles} classEmojiMap={classEmojiMap} />
+          <TemplatesSection templates={templates} setTemplates={setTemplates} channels={channels} guildEmojis={guildEmojis} discordRoles={discordRoles} classEmojiMap={classEmojiMap} bdoClasses={bdoClasses} />
         )}
 
         {/* ── Recurring tab ── */}
         {isOfficer && mainTab === "recurring" && view === "list" && (
-          <RecurringSection channels={channels} guildEmojis={guildEmojis} discordRoles={discordRoles} classEmojiMap={classEmojiMap} />
+          <RecurringSection channels={channels} guildEmojis={guildEmojis} discordRoles={discordRoles} classEmojiMap={classEmojiMap} bdoClasses={bdoClasses} />
         )}
 
         {/* ── Events tab ── */}
@@ -2206,6 +2217,7 @@ export default function Events({ initialEventId }: { initialEventId?: string | n
                   guildEmojis={guildEmojis}
                   discordRoles={discordRoles}
                   classEmojiMap={classEmojiMap}
+                  bdoClasses={bdoClasses}
                   onSave={saveForm}
                   onCancel={() => { setView("list"); setEditing(null); }}
                 />
