@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback, useRef } from "react";
+import React, { useEffect, useState, useCallback, useRef, useMemo } from "react";
 import { useAuth, apiFetch, isOfficerOrAdmin } from "../lib/auth";
 import { BDO_CLASSES } from "../lib/bdo-classes";
 import { TIMEZONES } from "../lib/timezones";
@@ -6,12 +6,16 @@ import { TIMEZONES } from "../lib/timezones";
 // ── Types ─────────────────────────────────────────────────────────────────────
 type SignupStatus = "accepted" | "bench" | "tentative" | "absent" | "declined";
 
+type ClassMode = "bdo" | "custom" | "none";
+
 interface EventRole {
   id: string;
   name: string;
   emoji: string | null;
   soft_cap: number | null;
   display_order: number;
+  class_mode: ClassMode;
+  choices: string[];  // class names from class_emojis (used when class_mode = 'custom')
 }
 
 interface EventSignup {
@@ -63,6 +67,8 @@ interface RoleFormEntry {
   name: string;
   emoji: string;
   soft_cap: string;
+  class_mode: ClassMode;
+  choices: string[];  // class names selected for this role (class_mode = 'custom')
 }
 
 interface EventTemplate {
@@ -91,40 +97,178 @@ function emojiStr(e: GuildEmoji) {
   return `<${e.animated ? "a" : ""}:${e.name}:${e.id}>`;
 }
 
-function EmojiSelect({ value, emojis, onChange, className }: {
+function EmojiSelect({ value, emojis, onChange }: {
   value: string;
   emojis: GuildEmoji[];
   onChange: (val: string) => void;
-  className?: string;
 }) {
-  const curId = value.match(/:(\d+)>/)?.[1] ?? "";
-  const cur   = emojis.find(e => e.id === curId);
+  const [open, setOpen]     = useState(false);
+  const [search, setSearch] = useState("");
+  const ref = useRef<HTMLDivElement>(null);
 
+  useEffect(() => {
+    if (!open) return;
+    function handler(e: MouseEvent) {
+      if (ref.current && !ref.current.contains(e.target as Node)) {
+        setOpen(false);
+        setSearch("");
+      }
+    }
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [open]);
+
+  const curId   = value.match(/:(\d+)>/)?.[1] ?? "";
+  const cur     = emojis.find(e => e.id === curId);
+  const filtered = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    return q ? emojis.filter(e => e.name.toLowerCase().includes(q)) : emojis;
+  }, [emojis, search]);
+
+  // Fallback to text input when no guild emojis are loaded
   if (emojis.length === 0) {
     return (
       <input value={value} onChange={e => onChange(e.target.value)} placeholder="<:name:id>"
-        className={className ?? "bg-slate-800/60 border border-slate-700 text-white rounded-xl px-3 py-2 text-sm w-28 focus:outline-none focus:border-violet-500"} />
+        className="bg-slate-800/60 border border-slate-700 text-white rounded-xl px-3 py-2 text-sm w-28 focus:outline-none focus:border-violet-500" />
     );
   }
 
   return (
-    <div className="flex items-center gap-1">
-      {cur
-        ? <img src={emojiUrl(cur)} alt={cur.name} className="w-6 h-6 object-contain shrink-0 rounded" />
-        : <span className="w-6 h-6 flex items-center justify-center text-slate-700 shrink-0">—</span>
-      }
-      <select
-        value={curId}
-        onChange={e => {
-          if (!e.target.value) { onChange(""); return; }
-          const picked = emojis.find(em => em.id === e.target.value);
-          if (picked) onChange(emojiStr(picked));
-        }}
-        className="bg-slate-800/60 border border-slate-700 text-white rounded-xl px-2 py-2 text-sm w-32 focus:outline-none focus:border-violet-500"
+    <div ref={ref} className="relative shrink-0">
+      {/* Trigger */}
+      <button
+        type="button"
+        title={cur ? cur.name : "Pick emoji"}
+        onClick={() => setOpen(v => !v)}
+        className={`flex items-center gap-1.5 rounded-xl px-2.5 py-2 text-sm border transition-colors
+          ${open ? "bg-slate-700 border-violet-500" : "bg-slate-800/60 border-slate-700 hover:border-slate-500"}`}
       >
-        <option value="">— none —</option>
-        {emojis.map(e => <option key={e.id} value={e.id}>{e.animated ? "[GIF] " : ""}{e.name}</option>)}
-      </select>
+        {cur
+          ? <img src={emojiUrl(cur)} alt={cur.name} className="w-5 h-5 object-contain" />
+          : <span className="text-slate-500 text-xs px-0.5">emoji</span>
+        }
+        <span className="text-slate-500 text-[10px]">▾</span>
+      </button>
+
+      {/* Popover */}
+      {open && (
+        <div className="absolute z-50 top-full left-0 mt-1 w-72 bg-slate-900 border border-slate-700 rounded-xl shadow-2xl p-2.5">
+          <div className="flex items-center gap-1.5 mb-2">
+            <input
+              autoFocus
+              value={search}
+              onChange={e => setSearch(e.target.value)}
+              placeholder="Search…"
+              className="flex-1 bg-slate-800 border border-slate-700 text-white rounded-lg px-2.5 py-1.5 text-xs focus:outline-none focus:border-violet-500"
+            />
+            {cur && (
+              <button
+                type="button"
+                onClick={() => { onChange(""); setOpen(false); setSearch(""); }}
+                className="text-[10px] px-2 py-1.5 rounded-lg text-slate-500 hover:text-red-400 hover:bg-slate-800 transition-colors whitespace-nowrap"
+              >
+                Clear
+              </button>
+            )}
+          </div>
+          <div className="grid grid-cols-8 gap-0.5 max-h-52 overflow-y-auto">
+            {filtered.map(e => (
+              <button
+                key={e.id}
+                type="button"
+                title={e.name}
+                onClick={() => { onChange(emojiStr(e)); setOpen(false); setSearch(""); }}
+                className={`p-1 rounded-lg transition-colors ${
+                  e.id === curId
+                    ? "bg-violet-700/50 ring-1 ring-violet-500"
+                    : "hover:bg-slate-700"
+                }`}
+              >
+                <img src={emojiUrl(e)} alt={e.name} className="w-6 h-6 object-contain" />
+              </button>
+            ))}
+            {filtered.length === 0 && (
+              <p className="col-span-8 text-[11px] text-slate-500 text-center py-4">No emojis found</p>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Class picker (multi-select from class_emojis + BDO list) ─────────────────
+function ClassPicker({ selected, classEmojiMap, guildEmojis, onChange }: {
+  selected: string[];
+  classEmojiMap: Record<string, string>;
+  guildEmojis: GuildEmoji[];
+  onChange: (names: string[]) => void;
+}) {
+  const [search, setSearch] = useState("");
+
+  // Full selectable list: all BDO classes + any custom entries in class_emojis
+  const allClasses = useMemo(() => {
+    const bdoSet = new Set(BDO_CLASSES as unknown as string[]);
+    const custom = Object.keys(classEmojiMap).filter(n => !bdoSet.has(n)).sort();
+    return [...(BDO_CLASSES as unknown as string[]), ...custom];
+  }, [classEmojiMap]);
+
+  const filtered = search.trim()
+    ? allClasses.filter(n => n.toLowerCase().includes(search.trim().toLowerCase()))
+    : allClasses;
+
+  function emojiForName(name: string): GuildEmoji | null {
+    const val = classEmojiMap[name];
+    if (!val) return null;
+    const id = val.match(/:(\d+)>/)?.[1];
+    return id ? (guildEmojis.find(e => e.id === id) ?? null) : null;
+  }
+
+  function toggle(name: string) {
+    onChange(selected.includes(name) ? selected.filter(n => n !== name) : [...selected, name]);
+  }
+
+  return (
+    <div className="mt-2">
+      <div className="flex items-center justify-between mb-2">
+        <input
+          value={search}
+          onChange={e => setSearch(e.target.value)}
+          placeholder="Search classes…"
+          className="bg-slate-800/60 border border-slate-700 text-white rounded-lg px-2.5 py-1.5 text-xs w-48 focus:outline-none focus:border-violet-500"
+        />
+        {selected.length > 0 && (
+          <span className="text-[10px] text-violet-400 font-semibold">{selected.length} selected</span>
+        )}
+      </div>
+      <div className="grid grid-cols-5 sm:grid-cols-7 gap-1 max-h-48 overflow-y-auto pr-0.5">
+        {filtered.map(name => {
+          const sel   = selected.includes(name);
+          const emoji = emojiForName(name);
+          return (
+            <button
+              key={name}
+              type="button"
+              title={name}
+              onClick={() => toggle(name)}
+              className={`flex flex-col items-center gap-0.5 p-1.5 rounded-lg text-[10px] leading-tight transition-colors border ${
+                sel
+                  ? "bg-violet-600/30 border-violet-500 text-white"
+                  : "bg-slate-800/50 border-transparent hover:border-slate-600 text-slate-400 hover:text-slate-200"
+              }`}
+            >
+              {emoji
+                ? <img src={emojiUrl(emoji)} alt={name} className="w-6 h-6 object-contain" />
+                : <span className="w-6 h-6 flex items-center justify-center text-slate-600 text-base">?</span>
+              }
+              <span className="truncate w-full text-center">{name}</span>
+            </button>
+          );
+        })}
+        {filtered.length === 0 && (
+          <p className="col-span-7 text-[11px] text-slate-500 text-center py-3">No classes found</p>
+        )}
+      </div>
     </div>
   );
 }
@@ -148,6 +292,10 @@ const STATUS_BADGE: Record<string, string> = {
 
 const inp = "bg-slate-800/60 border border-slate-700 text-white rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-violet-500 w-full";
 
+function blankRole(): RoleFormEntry {
+  return { name: "", emoji: "", soft_cap: "", class_mode: "bdo", choices: [] };
+}
+
 // ── Blank form ────────────────────────────────────────────────────────────────
 function blankForm() {
   return {
@@ -163,13 +311,14 @@ function blankForm() {
 
 // ── Event Form ────────────────────────────────────────────────────────────────
 function EventForm({
-  initial, templates, channels, guildEmojis, discordRoles, onSave, onPublish, onCancel,
+  initial, templates, channels, guildEmojis, discordRoles, classEmojiMap, onSave, onPublish, onCancel,
 }: {
   initial?: EventDetail | EventItem;
   templates: EventTemplate[];
   channels: Channel[];
   guildEmojis: GuildEmoji[];
   discordRoles: DiscordRole[];
+  classEmojiMap: Record<string, string>;
   onSave: (data: ReturnType<typeof blankForm>, publish: boolean) => Promise<void>;
   onPublish?: () => Promise<void>;
   onCancel: () => void;
@@ -177,7 +326,13 @@ function EventForm({
   const [form, setForm] = useState(() => {
     if (initial) {
       const existingRoles = "roles" in initial && Array.isArray(initial.roles)
-        ? initial.roles.map(r => ({ name: r.name, emoji: r.emoji ?? "", soft_cap: r.soft_cap ? String(r.soft_cap) : "" }))
+        ? initial.roles.map(r => ({
+            name: r.name,
+            emoji: r.emoji ?? "",
+            soft_cap: r.soft_cap ? String(r.soft_cap) : "",
+            class_mode: (r.class_mode ?? "bdo") as ClassMode,
+            choices: Array.isArray(r.choices) ? r.choices.map((c: any) => typeof c === "string" ? c : (c.label ?? "")).filter(Boolean) : [],
+          }))
         : [] as RoleFormEntry[];
       return {
         title: initial.title, description: initial.description ?? "",
@@ -214,18 +369,25 @@ function EventForm({
       ping_role_ids: t.ping_role_ids ?? [],
       enable_reminder_ping: t.enable_reminder_ping ?? true,
       reminder_minutes: t.reminder_minutes ?? [60, 30],
-      roles: t.roles.map(r => ({ name: r.name, emoji: r.emoji ?? "", soft_cap: r.soft_cap ? String(r.soft_cap) : "" })),
+      roles: t.roles.map(r => ({
+        name: r.name, emoji: r.emoji ?? "", soft_cap: r.soft_cap ? String(r.soft_cap) : "",
+        class_mode: (r.class_mode ?? "bdo") as ClassMode,
+        choices: Array.isArray(r.choices) ? r.choices.map((c: any) => typeof c === "string" ? c : (c.label ?? "")).filter(Boolean) : [],
+      })),
     }));
   }
 
   function addRole() {
-    setForm(f => ({ ...f, roles: [...f.roles, { name: "", emoji: "", soft_cap: "" }] }));
+    setForm(f => ({ ...f, roles: [...f.roles, blankRole()] }));
   }
   function removeRole(i: number) {
     setForm(f => ({ ...f, roles: f.roles.filter((_, j) => j !== i) }));
   }
-  function updateRole(i: number, key: keyof RoleFormEntry, val: string) {
+  function updateRole(i: number, key: "name" | "emoji" | "soft_cap" | "class_mode", val: string) {
     setForm(f => ({ ...f, roles: f.roles.map((r, j) => j === i ? { ...r, [key]: val } : r) }));
+  }
+  function setRoleChoices(ri: number, choices: string[]) {
+    setForm(f => ({ ...f, roles: f.roles.map((r, j) => j === ri ? { ...r, choices } : r) }));
   }
 
   async function submit(publish: boolean) {
@@ -395,15 +557,42 @@ function EventForm({
           )}
           <div className="flex flex-col gap-2">
             {form.roles.map((r, i) => (
-              <div key={i} className="flex items-center gap-2">
-                <input className={`${inp} flex-1`} placeholder="Role name (e.g. Offense)" value={r.name} onChange={e => updateRole(i, "name", e.target.value)} />
-                <EmojiSelect value={r.emoji} emojis={guildEmojis} onChange={v => updateRole(i, "emoji", v)} />
-                <input type="number" min="0" className="bg-slate-800/60 border border-slate-700 text-white rounded-xl px-3 py-2 text-sm w-20 focus:outline-none focus:border-violet-500" placeholder="Cap" value={r.soft_cap} onChange={e => updateRole(i, "soft_cap", e.target.value)} />
-                <button onClick={() => removeRole(i)} className="text-slate-600 hover:text-red-400 transition-colors text-sm px-1">✕</button>
+              <div key={i} className="bg-slate-800/30 border border-slate-700/50 rounded-xl p-3">
+                {/* Role header row */}
+                <div className="flex items-center gap-2 flex-wrap">
+                  <input className={`${inp} flex-1 min-w-32`} placeholder="Role name (e.g. Offense)" value={r.name} onChange={e => updateRole(i, "name", e.target.value)} />
+                  <EmojiSelect value={r.emoji} emojis={guildEmojis} onChange={v => updateRole(i, "emoji", v)} />
+                  <input type="number" min="0" className="bg-slate-800/60 border border-slate-700 text-white rounded-xl px-3 py-2 text-sm w-20 focus:outline-none focus:border-violet-500" placeholder="Cap" value={r.soft_cap} onChange={e => updateRole(i, "soft_cap", e.target.value)} />
+                  {/* Class mode selector */}
+                  <select
+                    value={r.class_mode}
+                    onChange={e => updateRole(i, "class_mode", e.target.value)}
+                    className="bg-slate-800/60 border border-slate-700 text-white rounded-xl px-2.5 py-2 text-xs focus:outline-none focus:border-violet-500"
+                    title="What to ask members to pick when signing up"
+                  >
+                    <option value="bdo">BDO Classes</option>
+                    <option value="custom">Custom choices</option>
+                    <option value="none">No selection</option>
+                  </select>
+                  <button onClick={() => removeRole(i)} className="text-slate-600 hover:text-red-400 transition-colors text-sm px-1 ml-auto">✕</button>
+                </div>
+                {/* Class picker for custom selection mode */}
+                {r.class_mode === "custom" && (
+                  <div className="mt-3 pl-3 border-l-2 border-slate-700">
+                    <p className="text-[10px] text-slate-500 uppercase tracking-widest font-semibold mb-1">
+                      Available classes <span className="normal-case font-normal">(click to toggle — shown to members when signing up)</span>
+                    </p>
+                    <ClassPicker
+                      selected={r.choices}
+                      classEmojiMap={classEmojiMap}
+                      guildEmojis={guildEmojis}
+                      onChange={choices => setRoleChoices(i, choices)}
+                    />
+                  </div>
+                )}
               </div>
             ))}
           </div>
-          {form.roles.length > 0 && <p className="text-xs text-slate-600 mt-1">Emoji · Soft cap (optional)</p>}
         </div>
       </div>
 
@@ -912,12 +1101,13 @@ function fmtAnnounce(mins: number, eventTime: string): string {
   return `${daysBefore} day${daysBefore !== 1 ? 's' : ''} before at ${timeStr}`;
 }
 
-type RecurringRoleEntry = { name: string; soft_cap: string; emoji: string };
+type RecurringRoleEntry = { name: string; soft_cap: string; emoji: string; class_mode: ClassMode; choices: string[] };
 
-function RecurringSection({ channels, guildEmojis, discordRoles }: {
+function RecurringSection({ channels, guildEmojis, discordRoles, classEmojiMap }: {
   channels: Channel[];
   guildEmojis: GuildEmoji[];
   discordRoles: DiscordRole[];
+  classEmojiMap: Record<string, string>;
 }) {
   const [series, setSeries]     = useState<RecurringSeries[]>([]);
   const [loading, setLoading]   = useState(true);
@@ -1006,7 +1196,11 @@ function RecurringSection({ channels, guildEmojis, discordRoles }: {
       ping_role_ids: s.ping_role_ids ?? [],
       enable_reminder_ping: s.enable_reminder_ping ?? true,
       reminder_minutes: s.reminder_minutes ?? [60, 30],
-      roles: s.roles.map(r => ({ name: r.name, emoji: r.emoji ?? '', soft_cap: r.soft_cap != null ? String(r.soft_cap) : '' })),
+      roles: s.roles.map(r => ({
+        name: r.name, emoji: r.emoji ?? '', soft_cap: r.soft_cap != null ? String(r.soft_cap) : '',
+        class_mode: (r.class_mode ?? 'bdo') as ClassMode,
+        choices: Array.isArray(r.choices) ? r.choices.map((c: any) => typeof c === 'string' ? c : (c.label ?? '')).filter(Boolean) : [],
+      })),
       update_future: false,
     });
   }
@@ -1049,6 +1243,8 @@ function RecurringSection({ channels, guildEmojis, discordRoles }: {
         name: r.name.trim(),
         emoji: r.emoji.trim() || null,
         soft_cap: r.soft_cap ? parseInt(r.soft_cap) : null,
+        class_mode: r.class_mode,
+        choices: r.class_mode === 'custom' ? r.choices : [],
       })),
       start_date: form.start_date,
       end_date: form.end_date || null,
@@ -1334,21 +1530,45 @@ function RecurringSection({ channels, guildEmojis, discordRoles }: {
               <p className="text-xs font-semibold text-slate-400 uppercase tracking-widest mb-2">Roles</p>
               <div className="flex flex-col gap-2">
                 {form.roles.map((r, i) => (
-                  <div key={i} className="flex gap-2 items-center">
-                    <input value={r.name}
-                      onChange={e => setForm(f => ({ ...f, roles: f.roles.map((x, j) => j === i ? { ...x, name: e.target.value } : x) }))}
-                      placeholder="Role name" className="bg-slate-800/60 border border-slate-700 text-white rounded-xl px-3 py-2 text-sm flex-1 focus:outline-none focus:border-violet-500" />
-                    <input value={r.soft_cap}
-                      onChange={e => setForm(f => ({ ...f, roles: f.roles.map((x, j) => j === i ? { ...x, soft_cap: e.target.value } : x) }))}
-                      placeholder="Cap" type="number" min={0}
-                      className="bg-slate-800/60 border border-slate-700 text-white rounded-xl px-3 py-2 text-sm w-20 focus:outline-none focus:border-violet-500" />
-                    <EmojiSelect value={r.emoji} emojis={guildEmojis}
-                      onChange={v => setForm(f => ({ ...f, roles: f.roles.map((x, j) => j === i ? { ...x, emoji: v } : x) }))} />
-                    <button onClick={() => setForm(f => ({ ...f, roles: f.roles.filter((_, j) => j !== i) }))}
-                      className="shrink-0 text-slate-600 hover:text-red-400 transition-colors text-lg leading-none px-1">×</button>
+                  <div key={i} className="bg-slate-800/30 border border-slate-700/50 rounded-xl p-3">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <input value={r.name}
+                        onChange={e => setForm(f => ({ ...f, roles: f.roles.map((x, j) => j === i ? { ...x, name: e.target.value } : x) }))}
+                        placeholder="Role name" className="bg-slate-800/60 border border-slate-700 text-white rounded-xl px-3 py-2 text-sm flex-1 min-w-28 focus:outline-none focus:border-violet-500" />
+                      <EmojiSelect value={r.emoji} emojis={guildEmojis}
+                        onChange={v => setForm(f => ({ ...f, roles: f.roles.map((x, j) => j === i ? { ...x, emoji: v } : x) }))} />
+                      <input value={r.soft_cap}
+                        onChange={e => setForm(f => ({ ...f, roles: f.roles.map((x, j) => j === i ? { ...x, soft_cap: e.target.value } : x) }))}
+                        placeholder="Cap" type="number" min={0}
+                        className="bg-slate-800/60 border border-slate-700 text-white rounded-xl px-3 py-2 text-sm w-20 focus:outline-none focus:border-violet-500" />
+                      <select
+                        value={r.class_mode}
+                        onChange={e => setForm(f => ({ ...f, roles: f.roles.map((x, j) => j === i ? { ...x, class_mode: e.target.value as ClassMode } : x) }))}
+                        className="bg-slate-800/60 border border-slate-700 text-white rounded-xl px-2.5 py-2 text-xs focus:outline-none focus:border-violet-500"
+                      >
+                        <option value="bdo">BDO Classes</option>
+                        <option value="custom">Custom selection</option>
+                        <option value="none">No selection</option>
+                      </select>
+                      <button onClick={() => setForm(f => ({ ...f, roles: f.roles.filter((_, j) => j !== i) }))}
+                        className="shrink-0 text-slate-600 hover:text-red-400 transition-colors text-lg leading-none px-1 ml-auto">×</button>
+                    </div>
+                    {r.class_mode === 'custom' && (
+                      <div className="mt-3 pl-3 border-l-2 border-slate-700">
+                        <p className="text-[10px] text-slate-500 uppercase tracking-widest font-semibold mb-1">
+                          Available classes <span className="normal-case font-normal">(click to toggle)</span>
+                        </p>
+                        <ClassPicker
+                          selected={r.choices}
+                          classEmojiMap={classEmojiMap}
+                          guildEmojis={guildEmojis}
+                          onChange={choices => setForm(f => ({ ...f, roles: f.roles.map((x, j) => j === i ? { ...x, choices } : x) }))}
+                        />
+                      </div>
+                    )}
                   </div>
                 ))}
-                <button onClick={() => setForm(f => ({ ...f, roles: [...f.roles, { name: '', soft_cap: '', emoji: '' }] }))}
+                <button onClick={() => setForm(f => ({ ...f, roles: [...f.roles, blankRole()] }))}
                   className="self-start text-xs text-violet-400 hover:text-violet-300 transition-colors">+ Add role</button>
               </div>
             </div>
@@ -1458,14 +1678,15 @@ function RecurringSection({ channels, guildEmojis, discordRoles }: {
 }
 
 // ── Templates Section ─────────────────────────────────────────────────────────
-type TplRoleEntry = { name: string; soft_cap: string; emoji: string };
+type TplRoleEntry = { name: string; soft_cap: string; emoji: string; class_mode: ClassMode; choices: string[] };
 
-function TemplatesSection({ templates, setTemplates, channels, guildEmojis, discordRoles }: {
+function TemplatesSection({ templates, setTemplates, channels, guildEmojis, discordRoles, classEmojiMap }: {
   templates: EventTemplate[];
   setTemplates: React.Dispatch<React.SetStateAction<EventTemplate[]>>;
   channels: Channel[];
   guildEmojis: GuildEmoji[];
   discordRoles: DiscordRole[];
+  classEmojiMap: Record<string, string>;
 }) {
   const [loading, setLoading] = useState(true);
   const [editId, setEditId]       = useState<string | null>(null);
@@ -1478,17 +1699,21 @@ function TemplatesSection({ templates, setTemplates, channels, guildEmojis, disc
   function startNew() {
     setEditId("new");
     setForm({ name: "", description: "", event_time: "", event_timezone: "America/New_York", channel_id: "", enable_ping: true, ping_role_ids: [], enable_reminder_ping: true, reminder_minutes: [60, 30] });
-    setRoles([{ name: "Main", soft_cap: "", emoji: "" }]);
+    setRoles([{ name: "Main", soft_cap: "", emoji: "", class_mode: "bdo", choices: [] }]);
   }
 
   function startEdit(t: EventTemplate) {
     setEditId(t.id);
     setForm({ name: t.name, description: t.description ?? "", event_time: t.event_time ?? "", event_timezone: t.event_timezone ?? "America/New_York", channel_id: t.channel_id ?? "", enable_ping: t.enable_ping ?? true, ping_role_ids: t.ping_role_ids ?? [], enable_reminder_ping: t.enable_reminder_ping ?? true, reminder_minutes: t.reminder_minutes ?? [60, 30] });
     const safe = Array.isArray(t.roles) ? t.roles : [];
-    setRoles(safe.map(r => ({ name: r.name, soft_cap: r.soft_cap != null ? String(r.soft_cap) : "", emoji: r.emoji ?? "" })));
+    setRoles(safe.map(r => ({
+      name: r.name, soft_cap: r.soft_cap != null ? String(r.soft_cap) : "", emoji: r.emoji ?? "",
+      class_mode: (r.class_mode ?? "bdo") as ClassMode,
+      choices: Array.isArray(r.choices) ? r.choices.map((c: any) => typeof c === "string" ? c : (c.label ?? "")).filter(Boolean) : [],
+    })));
   }
 
-  function addRole() { setRoles(prev => [...prev, { name: "", soft_cap: "", emoji: "" }]); }
+  function addRole() { setRoles(prev => [...prev, { name: "", soft_cap: "", emoji: "", class_mode: "bdo" as ClassMode, choices: [] }]); }
   function removeRole(i: number) { setRoles(prev => prev.filter((_, idx) => idx !== i)); }
   function patchRole(i: number, field: string, val: string) {
     setRoles(prev => prev.map((r, idx) => idx === i ? { ...r, [field]: val } : r));
@@ -1506,6 +1731,7 @@ function TemplatesSection({ templates, setTemplates, channels, guildEmojis, disc
       reminder_minutes: form.reminder_minutes,
       roles: roles.filter(r => r.name.trim()).map(r => ({
         name: r.name.trim(), soft_cap: r.soft_cap ? parseInt(r.soft_cap) : null, emoji: r.emoji.trim() || null,
+        class_mode: r.class_mode, choices: r.class_mode === "custom" ? r.choices : [],
       })),
     };
     const isNew = editId === "new";
@@ -1665,11 +1891,35 @@ function TemplatesSection({ templates, setTemplates, channels, guildEmojis, disc
               <p className="text-xs font-semibold text-slate-400 uppercase tracking-widest mb-2">Roles</p>
               <div className="flex flex-col gap-2">
                 {roles.map((r, i) => (
-                  <div key={i} className="flex gap-2 items-center">
-                    <input value={r.name} onChange={e => patchRole(i, "name", e.target.value)} placeholder="Role name" className={`${rinp} flex-1 min-w-0`} />
-                    <input value={r.soft_cap} onChange={e => patchRole(i, "soft_cap", e.target.value)} placeholder="Cap" type="number" min={0} className={`${rinp} w-20`} />
-                    <EmojiSelect value={r.emoji} emojis={guildEmojis} onChange={v => patchRole(i, "emoji", v)} />
-                    <button onClick={() => removeRole(i)} className="shrink-0 text-slate-600 hover:text-red-400 transition-colors text-lg leading-none px-1">×</button>
+                  <div key={i} className="bg-slate-800/30 border border-slate-700/50 rounded-xl p-3">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <input value={r.name} onChange={e => patchRole(i, "name", e.target.value)} placeholder="Role name" className={`${rinp} flex-1 min-w-28`} />
+                      <EmojiSelect value={r.emoji} emojis={guildEmojis} onChange={v => patchRole(i, "emoji", v)} />
+                      <input value={r.soft_cap} onChange={e => patchRole(i, "soft_cap", e.target.value)} placeholder="Cap" type="number" min={0} className={`${rinp} w-20`} />
+                      <select
+                        value={r.class_mode}
+                        onChange={e => patchRole(i, "class_mode", e.target.value)}
+                        className="bg-slate-800/60 border border-slate-700 text-white rounded-xl px-2.5 py-2 text-xs focus:outline-none focus:border-violet-500"
+                      >
+                        <option value="bdo">BDO Classes</option>
+                        <option value="custom">Custom selection</option>
+                        <option value="none">No selection</option>
+                      </select>
+                      <button onClick={() => removeRole(i)} className="shrink-0 text-slate-600 hover:text-red-400 transition-colors text-lg leading-none px-1 ml-auto">×</button>
+                    </div>
+                    {r.class_mode === "custom" && (
+                      <div className="mt-3 pl-3 border-l-2 border-slate-700">
+                        <p className="text-[10px] text-slate-500 uppercase tracking-widest font-semibold mb-1">
+                          Available classes <span className="normal-case font-normal">(click to toggle)</span>
+                        </p>
+                        <ClassPicker
+                          selected={r.choices}
+                          classEmojiMap={classEmojiMap}
+                          guildEmojis={guildEmojis}
+                          onChange={choices => setRoles(prev => prev.map((x, j) => j === i ? { ...x, choices } : x))}
+                        />
+                      </div>
+                    )}
                   </div>
                 ))}
                 <button onClick={addRole} className="self-start text-xs text-violet-400 hover:text-violet-300 transition-colors">+ Add role</button>
@@ -1733,6 +1983,7 @@ export default function Events({ initialEventId }: { initialEventId?: string | n
   const [channels, setChannels]     = useState<Channel[]>([]);
   const [guildEmojis, setGuildEmojis] = useState<GuildEmoji[]>([]);
   const [discordRoles, setDiscordRoles] = useState<DiscordRole[]>([]);
+  const [classEmojiMap, setClassEmojiMap] = useState<Record<string, string>>({});
   const [loading, setLoading]       = useState(true);
   const [filter, setFilter]       = useState<"upcoming" | "all" | "closed">("upcoming");
 
@@ -1756,6 +2007,9 @@ export default function Events({ initialEventId }: { initialEventId?: string | n
         setGuildEmojis((Array.isArray(d) ? d : []).filter((e: any) => e.id && e.name).sort((a: GuildEmoji, b: GuildEmoji) => a.name.localeCompare(b.name)));
       }).catch(() => {});
       apiFetch("/api/discord/roles").then(r => r.json()).then(setDiscordRoles).catch(() => {});
+      apiFetch("/api/class-emojis").then(r => r.json()).then(d => {
+        if (d && typeof d === "object") setClassEmojiMap(d);
+      }).catch(() => {});
     }
   }, [user, isOfficer, loadEvents]);
 
@@ -1782,6 +2036,8 @@ export default function Events({ initialEventId }: { initialEventId?: string | n
       roles: form.roles.filter(r => r.name.trim()).map((r, i) => ({
         name: r.name.trim(), emoji: r.emoji || null,
         soft_cap: r.soft_cap ? parseInt(r.soft_cap) : null, display_order: i,
+        class_mode: r.class_mode,
+        choices: r.class_mode === "custom" ? r.choices : [],
       })),
     };
     if (editing) {
@@ -1867,12 +2123,12 @@ export default function Events({ initialEventId }: { initialEventId?: string | n
 
         {/* ── Templates tab ── */}
         {isOfficer && mainTab === "templates" && view === "list" && (
-          <TemplatesSection templates={templates} setTemplates={setTemplates} channels={channels} guildEmojis={guildEmojis} discordRoles={discordRoles} />
+          <TemplatesSection templates={templates} setTemplates={setTemplates} channels={channels} guildEmojis={guildEmojis} discordRoles={discordRoles} classEmojiMap={classEmojiMap} />
         )}
 
         {/* ── Recurring tab ── */}
         {isOfficer && mainTab === "recurring" && view === "list" && (
-          <RecurringSection channels={channels} guildEmojis={guildEmojis} discordRoles={discordRoles} />
+          <RecurringSection channels={channels} guildEmojis={guildEmojis} discordRoles={discordRoles} classEmojiMap={classEmojiMap} />
         )}
 
         {/* ── Events tab ── */}
@@ -1949,6 +2205,7 @@ export default function Events({ initialEventId }: { initialEventId?: string | n
                   channels={channels}
                   guildEmojis={guildEmojis}
                   discordRoles={discordRoles}
+                  classEmojiMap={classEmojiMap}
                   onSave={saveForm}
                   onCancel={() => { setView("list"); setEditing(null); }}
                 />

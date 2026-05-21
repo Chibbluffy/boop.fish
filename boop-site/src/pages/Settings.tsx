@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useRef, useMemo } from "react";
 import { useAuth, isOfficerOrAdmin, AuthUser } from "../lib/auth";
 import ShrineSection from "./ShrineSection";
 import GuildDirectory from "./GuildDirectory";
@@ -724,13 +724,87 @@ function emojiStr(e: DiscordEmoji) {
   return `<${e.animated ? "a" : ""}:${e.name}:${e.id}>`;
 }
 
+// Visual emoji grid picker — same design as in Events.tsx
+function EmojiSelectSettings({ value, emojis, onChange }: {
+  value: string;
+  emojis: DiscordEmoji[];
+  onChange: (val: string) => void;
+}) {
+  const [open, setOpen]     = useState(false);
+  const [search, setSearch] = useState("");
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    function handler(e: MouseEvent) {
+      if (ref.current && !ref.current.contains(e.target as Node)) { setOpen(false); setSearch(""); }
+    }
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [open]);
+
+  const curId   = value.match(/:(\d+)>/)?.[1] ?? "";
+  const cur     = emojis.find(e => e.id === curId);
+  const filtered = search.trim()
+    ? emojis.filter(e => e.name.toLowerCase().includes(search.trim().toLowerCase()))
+    : emojis;
+
+  if (emojis.length === 0) {
+    return <input value={value} onChange={e => onChange(e.target.value)} placeholder="<:name:id>"
+      className="bg-slate-800 border border-slate-700 text-white rounded-lg px-2.5 py-1.5 text-sm w-36 focus:outline-none focus:border-violet-500 font-mono" />;
+  }
+
+  return (
+    <div ref={ref} className="relative shrink-0">
+      <button type="button" title={cur ? cur.name : "Pick emoji"}
+        onClick={() => setOpen(v => !v)}
+        className={`flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-sm border transition-colors
+          ${open ? "bg-slate-700 border-violet-500" : "bg-slate-800 border-slate-700 hover:border-slate-500"}`}
+      >
+        {cur
+          ? <img src={emojiUrl(cur)} alt={cur.name} className="w-5 h-5 object-contain" />
+          : <span className="text-slate-500 text-xs px-0.5">emoji</span>
+        }
+        <span className="text-slate-500 text-[10px]">▾</span>
+      </button>
+      {open && (
+        <div className="absolute z-50 top-full left-0 mt-1 w-72 bg-slate-900 border border-slate-700 rounded-xl shadow-2xl p-2.5">
+          <div className="flex items-center gap-1.5 mb-2">
+            <input autoFocus value={search} onChange={e => setSearch(e.target.value)} placeholder="Search…"
+              className="flex-1 bg-slate-800 border border-slate-700 text-white rounded-lg px-2.5 py-1.5 text-xs focus:outline-none focus:border-violet-500" />
+            {cur && (
+              <button type="button" onClick={() => { onChange(""); setOpen(false); setSearch(""); }}
+                className="text-[10px] px-2 py-1.5 rounded-lg text-slate-500 hover:text-red-400 hover:bg-slate-800 transition-colors whitespace-nowrap">
+                Clear
+              </button>
+            )}
+          </div>
+          <div className="grid grid-cols-8 gap-0.5 max-h-52 overflow-y-auto">
+            {filtered.map(e => (
+              <button key={e.id} type="button" title={e.name}
+                onClick={() => { onChange(emojiStr(e)); setOpen(false); setSearch(""); }}
+                className={`p-1 rounded-lg transition-colors ${e.id === curId ? "bg-violet-700/50 ring-1 ring-violet-500" : "hover:bg-slate-700"}`}
+              >
+                <img src={emojiUrl(e)} alt={e.name} className="w-6 h-6 object-contain" />
+              </button>
+            ))}
+            {filtered.length === 0 && <p className="col-span-8 text-[11px] text-slate-500 text-center py-4">No emojis found</p>}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function ClassEmojisSection() {
   const [emojis, setEmojis]           = useState<Record<string, string>>({});
   const [guildEmojis, setGuildEmojis] = useState<DiscordEmoji[]>([]);
   const [loading, setLoading]         = useState(true);
   const [saving, setSaving]           = useState(false);
   const [saved, setSaved]             = useState(false);
-  const [search, setSearch]           = useState("");
+  const [classSearch, setClassSearch] = useState("");
+  const [newName, setNewName]         = useState("");
+  const [newEmoji, setNewEmoji]       = useState("");
 
   useEffect(() => {
     Promise.all([
@@ -758,34 +832,38 @@ function ClassEmojisSection() {
     setSaving(false);
   }
 
-  function assign(cls: string, emojiId: string) {
-    if (!emojiId) {
+  function setClassEmoji(cls: string, val: string) {
+    if (!val) {
       setEmojis(prev => { const n = { ...prev }; delete n[cls]; return n; });
-      return;
+    } else {
+      setEmojis(prev => ({ ...prev, [cls]: val }));
     }
-    const e = guildEmojis.find(e => e.id === emojiId);
-    if (e) setEmojis(prev => ({ ...prev, [cls]: emojiStr(e) }));
   }
 
-  // Find which emoji is currently assigned to a class
-  function assignedId(cls: string): string {
-    const val = emojis[cls] ?? "";
-    const m = val.match(/:(\d+)>/);
-    return m ? m[1] : "";
+  function addCustom() {
+    const name = newName.trim();
+    if (!name || (BDO_CLASSES as readonly string[]).includes(name)) return;
+    setEmojis(prev => ({ ...prev, [name]: newEmoji }));
+    setNewName(""); setNewEmoji("");
   }
 
-  const filtered = search.trim()
-    ? guildEmojis.filter(e => e.name.toLowerCase().includes(search.toLowerCase()))
-    : guildEmojis;
+  function removeCustom(cls: string) {
+    setEmojis(prev => { const n = { ...prev }; delete n[cls]; return n; });
+  }
 
-  const sel = "w-full bg-slate-800 border border-slate-700 rounded-lg px-2 py-1.5 text-sm text-white focus:outline-none focus:border-violet-500 transition-colors";
+  const bdoSet = new Set(BDO_CLASSES as readonly string[]);
+  const customEntries = Object.keys(emojis).filter(k => !bdoSet.has(k as any)).sort();
+
+  const filteredBdo = classSearch.trim()
+    ? (BDO_CLASSES as readonly string[]).filter(c => c.toLowerCase().includes(classSearch.toLowerCase()))
+    : BDO_CLASSES as readonly string[];
 
   return (
     <div>
       <div className="flex items-start justify-between mb-4">
         <div>
           <h2 className="text-2xl font-black text-white">Class Emojis</h2>
-          <p className="text-slate-500 text-sm mt-0.5">Map BDO classes to Discord custom emojis for event embeds.</p>
+          <p className="text-slate-500 text-sm mt-0.5">Map classes to Discord emojis for event signups. Add custom entries (boat types, roles, etc.) below.</p>
         </div>
         <button onClick={saveAll} disabled={saving}
           className={`px-4 py-2 rounded-lg font-bold text-sm transition-colors ${saved ? "bg-green-600/20 text-green-400 border border-green-500/30" : "bg-violet-600 hover:bg-violet-500 disabled:opacity-30 text-white"}`}>
@@ -793,49 +871,56 @@ function ClassEmojisSection() {
         </button>
       </div>
 
-      {guildEmojis.length > 8 && (
-        <input
-          value={search} onChange={e => setSearch(e.target.value)}
-          placeholder="Filter emojis by name…"
-          className="mb-4 w-full bg-slate-900 border border-slate-800 rounded-lg px-3 py-2 text-sm text-white placeholder-slate-600 focus:outline-none focus:border-violet-500"
-        />
-      )}
-
       {loading ? <p className="text-slate-500 text-center py-12">Loading…</p> : (
-        <div className="grid grid-cols-2 gap-3">
-          {BDO_CLASSES.map(cls => {
-            const curId = assignedId(cls);
-            const curEmoji = guildEmojis.find(e => e.id === curId);
-            return (
-              <div key={cls} className="flex items-center gap-3">
-                <span className="text-sm text-slate-300 w-32 shrink-0">{cls}</span>
-                {/* Preview */}
-                <div className="w-8 h-8 shrink-0 flex items-center justify-center">
-                  {curEmoji ? (
-                    <img src={emojiUrl(curEmoji)} alt={curEmoji.name} className="w-7 h-7 object-contain rounded" />
-                  ) : (
-                    <span className="text-slate-700 text-lg">—</span>
-                  )}
+        <>
+          {/* BDO Classes */}
+          <div className="mb-6">
+            <div className="flex items-center gap-3 mb-3">
+              <h3 className="text-sm font-bold text-slate-300 uppercase tracking-widest">BDO Classes</h3>
+              <input value={classSearch} onChange={e => setClassSearch(e.target.value)}
+                placeholder="Filter classes…"
+                className="bg-slate-900 border border-slate-800 rounded-lg px-2.5 py-1 text-xs text-white placeholder-slate-600 focus:outline-none focus:border-violet-500 w-40" />
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              {filteredBdo.map(cls => (
+                <div key={cls} className="flex items-center gap-3 bg-slate-900/40 rounded-lg px-3 py-2">
+                  <span className="text-sm text-slate-300 flex-1 min-w-0 truncate">{cls}</span>
+                  <EmojiSelectSettings value={emojis[cls] ?? ""} emojis={guildEmojis} onChange={v => setClassEmoji(cls, v)} />
                 </div>
-                {guildEmojis.length > 0 ? (
-                  <select value={curId} onChange={e => assign(cls, e.target.value)} className={sel}>
-                    <option value="">— none —</option>
-                    {filtered.map(e => (
-                      <option key={e.id} value={e.id}>{e.animated ? "[GIF] " : ""}{e.name}</option>
-                    ))}
-                  </select>
-                ) : (
-                  <input
-                    value={emojis[cls] ?? ""}
-                    onChange={e => setEmojis(prev => ({ ...prev, [cls]: e.target.value }))}
-                    placeholder="<:name:id>"
-                    className="flex-1 bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white font-mono focus:outline-none focus:border-violet-500"
-                  />
-                )}
+              ))}
+            </div>
+          </div>
+
+          {/* Custom Entries */}
+          <div>
+            <h3 className="text-sm font-bold text-slate-300 uppercase tracking-widest mb-3">Custom Entries</h3>
+            <p className="text-xs text-slate-500 mb-3">Add custom options like boat types, specs, or anything else you want members to select when signing up for a role.</p>
+            {customEntries.length > 0 && (
+              <div className="grid grid-cols-2 gap-2 mb-3">
+                {customEntries.map(cls => (
+                  <div key={cls} className="flex items-center gap-3 bg-slate-900/40 rounded-lg px-3 py-2">
+                    <span className="text-sm text-slate-300 flex-1 min-w-0 truncate">{cls}</span>
+                    <EmojiSelectSettings value={emojis[cls] ?? ""} emojis={guildEmojis} onChange={v => setClassEmoji(cls, v)} />
+                    <button onClick={() => removeCustom(cls)} className="text-slate-600 hover:text-red-400 transition-colors text-xs px-1 shrink-0">✕</button>
+                  </div>
+                ))}
               </div>
-            );
-          })}
-        </div>
+            )}
+            <div className="flex items-center gap-2 bg-slate-900/40 border border-slate-700/50 rounded-xl p-3">
+              <input
+                value={newName} onChange={e => setNewName(e.target.value)}
+                onKeyDown={e => e.key === "Enter" && addCustom()}
+                placeholder="Entry name (e.g. Carrack)"
+                className="flex-1 bg-slate-800 border border-slate-700 text-white rounded-lg px-2.5 py-1.5 text-sm focus:outline-none focus:border-violet-500"
+              />
+              <EmojiSelectSettings value={newEmoji} emojis={guildEmojis} onChange={setNewEmoji} />
+              <button onClick={addCustom} disabled={!newName.trim()}
+                className="px-3 py-1.5 rounded-lg bg-violet-600 hover:bg-violet-500 disabled:opacity-30 text-white text-xs font-semibold transition-colors whitespace-nowrap">
+                + Add
+              </button>
+            </div>
+          </div>
+        </>
       )}
 
       {guildEmojis.length === 0 && !loading && (

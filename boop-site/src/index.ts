@@ -1472,8 +1472,9 @@ const server = serve({
           for (let i = 0; i < roles.length; i++) {
             const r = roles[i];
             await sql`
-              INSERT INTO event_roles (event_id, name, emoji, soft_cap, display_order)
-              VALUES (${event.id}, ${r.name}, ${r.emoji ?? null}, ${r.soft_cap ?? null}, ${i})
+              INSERT INTO event_roles (event_id, name, emoji, soft_cap, display_order, class_mode, choices)
+              VALUES (${event.id}, ${r.name}, ${r.emoji ?? null}, ${r.soft_cap ?? null}, ${i},
+                      ${r.class_mode ?? 'bdo'}, ${sql.json(r.choices ?? [])})
             `;
           }
         }
@@ -1498,7 +1499,8 @@ const server = serve({
           SELECT e.*,
             COALESCE(json_agg(json_build_object(
               'id', er.id, 'name', er.name, 'emoji', er.emoji,
-              'soft_cap', er.soft_cap, 'display_order', er.display_order
+              'soft_cap', er.soft_cap, 'display_order', er.display_order,
+              'class_mode', er.class_mode, 'choices', er.choices
             ) ORDER BY er.display_order) FILTER (WHERE er.id IS NOT NULL), '[]') AS roles
           FROM events e
           LEFT JOIN event_roles er ON er.event_id = e.id
@@ -1563,8 +1565,9 @@ const server = serve({
               const r = roles[i];
               if (!r.name) continue;
               await sql`
-                INSERT INTO event_roles (event_id, name, emoji, soft_cap, display_order)
-                VALUES (${req.params.id}, ${r.name}, ${r.emoji ?? null}, ${r.soft_cap ?? null}, ${i})
+                INSERT INTO event_roles (event_id, name, emoji, soft_cap, display_order, class_mode, choices)
+                VALUES (${req.params.id}, ${r.name}, ${r.emoji ?? null}, ${r.soft_cap ?? null}, ${i},
+                        ${r.class_mode ?? 'bdo'}, ${sql.json(r.choices ?? [])})
               `;
             }
           });
@@ -2037,8 +2040,9 @@ const server = serve({
                   const r = roles[i];
                   if (!r.name) continue;
                   await sql`
-                    INSERT INTO event_roles (event_id, name, emoji, soft_cap, display_order)
-                    VALUES (${ev.id}, ${r.name}, ${r.emoji ?? null}, ${r.soft_cap ?? null}, ${i})
+                    INSERT INTO event_roles (event_id, name, emoji, soft_cap, display_order, class_mode, choices)
+                    VALUES (${ev.id}, ${r.name}, ${r.emoji ?? null}, ${r.soft_cap ?? null}, ${i},
+                            ${r.class_mode ?? 'bdo'}, ${sql.json(r.choices ?? [])})
                   `;
                 }
               });
