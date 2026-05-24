@@ -15,14 +15,14 @@ Guild website for **boop** — a Black Desert Online guild. Built with Bun, Reac
 - **Wall of Shame** — guild highlight reel of disasters and funny moments
 - **Black Shrine Sign-ups** — sign up for Black Shrine runs with your saved gear stats
 - **Employee of the Day/Month** — officer-awarded recognition
-- **Quote Archive** — search old Nadeko bot quotes by keyword
+- **Quote Archive** — search bot quotes by keyword. Essentially Nadekobot's quote system, but in BoopBot instead and way easier to manage
 
 **Tools**
 - **Class Roller** — randomly roll a BDO class
 - **Party Shuffler** — split a list of names into balanced groups
 - **Random Chooser** — pick a random winner from a list of entries
-- **Dice Roller** — 3D dice roller
-- **Frogs** — click frogs to earn ribbits (100 ribbits = +1 payout tier bonus, up to +5)
+- **Dice Roller** — 3D dice roller with sound
+- **Frogs** — click frogs to earn ribbits (minigame to auto increase payout tier bonus)
 
 **Officer / Admin only**
 - **Manage** — member roster with inline rank/status editing, member approval, ribbit resets
@@ -40,7 +40,11 @@ Most of the site is gated behind Discord OAuth — here's what logged-in members
 
 <table>
   <tr>
-    <td align="center"><b>Events</b><br><img src="screenshots/events.png" alt="Events" width="420"></td>
+    <td align="center"><b>Calendar</b><br><img src="screenshots/calendar.png" alt="Calendar" width="420"></td>
+    <td align="center"><b>Availability</b><br><img src="screenshots/availability.png" alt="Availability" width="420"></td>
+  </tr>
+  <tr>
+    <td align="center"><b>Event</b><br><img src="screenshots/event.png" alt="Event" width="420"></td>
     <td align="center"><b>Event Sign-up</b><br><img src="screenshots/event-signup.png" alt="Event sign-up" width="420"></td>
   </tr>
   <tr>
@@ -48,21 +52,16 @@ Most of the site is gated behind Discord OAuth — here's what logged-in members
     <td align="center"><b>Guild Directory</b><br><img src="screenshots/guild-directory.png" alt="Guild Directory" width="420"></td>
   </tr>
   <tr>
-    <td align="center"><b>Availability Scheduler</b><br><img src="screenshots/availability.png" alt="Availability" width="420"></td>
     <td align="center"><b>Black Shrine Sign-ups</b><br><img src="screenshots/black-shrine.png" alt="Black Shrine" width="420"></td>
+    <td align="center"><b>Black Shrine Team Manager</b><br><img src="screenshots/shrine-teams.png" alt="Black Shrine Teams" width="420"></td>
   </tr>
-</table>
-
-### Officer / Admin views
-
-<table>
   <tr>
     <td align="center"><b>Payout Tracker</b><br><img src="screenshots/payout-tracker.png" alt="Payout Tracker" width="420"></td>
-    <td align="center"><b>Shrine Team Builder</b><br><img src="screenshots/shrine-teams.png" alt="Shrine Team Builder" width="420"></td>
+    <td align="center"><b>Member Management</b><br><img src="screenshots/manage.png" alt="Member Management" width="420"></td>
   </tr>
   <tr>
-    <td align="center"><b>Member Management</b><br><img src="screenshots/manage.png" alt="Member Management" width="420"></td>
-    <td align="center"><b>Event Creation</b><br><img src="screenshots/event-create.png" alt="Event Creation" width="420"></td>
+    <td align="center"><b>Nodewar</b><br><img src="screenshots/nodewar.png" alt="Nodewar" width="420"></td>
+    <td align="center"><b>Archive</b><br><img src="screenshots/archive.png" alt="Archive" width="420"></td>
   </tr>
 </table>
 
