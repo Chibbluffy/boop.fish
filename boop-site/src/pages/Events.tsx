@@ -83,7 +83,7 @@ interface EventTemplate {
   channel_id: string | null;
   event_time: string | null;
   event_timezone: string | null;
-  roles: Array<{ name: string; emoji: string | null; soft_cap: number | null }>;
+  roles: Array<{ name: string; emoji: string | null; soft_cap: number | null; class_mode?: ClassMode; choices?: string[] }>;
 }
 
 interface Channel { id: string; name: string; }
@@ -881,20 +881,28 @@ function EventDetail({
               value={addForm.role_id}
               onChange={e => {
                 const r = event.roles.find(r => r.id === e.target.value);
-                setAddForm(f => ({ ...f, role_id: e.target.value, role_name: r?.name ?? "" }));
+                setAddForm(f => ({ ...f, role_id: e.target.value, role_name: r?.name ?? "", bdo_class: "" }));
               }}
             >
               <option value="">No role</option>
               {event.roles.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
             </select>
-            <select
-              className="bg-slate-800/60 border border-slate-700 text-white rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-violet-500"
-              value={addForm.bdo_class}
-              onChange={e => setAddForm(f => ({ ...f, bdo_class: e.target.value }))}
-            >
-              <option value="">Class (optional)</option>
-              {BDO_CLASSES.map(c => <option key={c} value={c}>{c}</option>)}
-            </select>
+            {(() => {
+              const selRole = event.roles.find(r => r.id === addForm.role_id);
+              const classMode = selRole?.class_mode ?? "bdo";
+              if (classMode === "none") return null;
+              const classList = classMode === "custom" ? (selRole?.choices ?? []) : [...BDO_CLASSES];
+              return (
+                <select
+                  className="bg-slate-800/60 border border-slate-700 text-white rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-violet-500"
+                  value={addForm.bdo_class}
+                  onChange={e => setAddForm(f => ({ ...f, bdo_class: e.target.value }))}
+                >
+                  <option value="">Class (optional)</option>
+                  {classList.map(c => <option key={c} value={c}>{c}</option>)}
+                </select>
+              );
+            })()}
             <select
               className="bg-slate-800/60 border border-slate-700 text-white rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-violet-500"
               value={addForm.status}
@@ -1075,7 +1083,7 @@ type RecurringSeries = {
   reminder_minutes: number[];
   channel_id: string | null;
   advance_minutes: number;
-  roles: Array<{ name: string; emoji: string | null; soft_cap: number | null }>;
+  roles: Array<{ name: string; emoji: string | null; soft_cap: number | null; class_mode?: ClassMode; choices?: string[] }>;
   start_date: string;
   end_date: string | null;
   skip_dates: string[];
