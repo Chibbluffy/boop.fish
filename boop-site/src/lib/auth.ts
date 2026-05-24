@@ -82,10 +82,13 @@ export function useAuth() {
     const token = getToken();
     if (!token) return;
     fetch("/api/auth/me", { headers: { Authorization: `Bearer ${token}` } })
-      .then(r => {
+      .then(async r => {
         if (r.status === 401) {
           clearSession();
           location.hash = "#/auth";
+        } else if (r.ok) {
+          const fresh = await r.json();
+          updateUser(fresh); // fires AUTH_EVENT → initRibbitsFromServer with current server count
         }
       })
       .catch(() => {}); // network error — leave session alone, may be transient

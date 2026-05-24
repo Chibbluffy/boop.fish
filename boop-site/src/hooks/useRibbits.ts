@@ -56,7 +56,7 @@ async function syncToServer(keepalive = false) {
   if (!token) return;
 
   const delta = _localDelta;
-  _localDelta = 0; // optimistic — restore on failure
+  _localDelta = 0;
 
   try {
     const res = await fetch("/api/ribbits", {
@@ -73,17 +73,20 @@ async function syncToServer(keepalive = false) {
       localStorage.setItem(BASE_KEY, String(_serverBase));
       notify();
     } else {
-      _localDelta += delta; // put it back
+      // Server rejected the delta (cheat detected) — snap back to last confirmed value.
+      _count = _serverBase;
+      localStorage.setItem(KEY, String(_count));
+      notify();
     }
   } catch {
-    _localDelta += delta; // put it back
+    _localDelta += delta; // network error — restore and retry next interval
   }
 }
 
-// ── Auto-sync every 15 seconds if there's unsaved delta ──────────────────────
+// ── Auto-sync every 10 seconds if there's unsaved delta ──────────────────────
 setInterval(() => {
   if (_localDelta > 0 && getToken()) syncToServer();
-}, 15_000);
+}, 10_000);
 
 // ── Flush on tab close ────────────────────────────────────────────────────────
 window.addEventListener("beforeunload", () => {
@@ -101,6 +104,14 @@ window.addEventListener(AUTH_EVENT, () => {
   const u = getUser();
   if (u && typeof u.ribbit_count === "number") {
     initRibbitsFromServer(u.ribbit_count);
+  } else {
+    // User logged out — wipe local state so it doesn't bleed into the next session.
+    _serverBase = 0;
+    _localDelta = 0;
+    _count = 0;
+    localStorage.removeItem(KEY);
+    localStorage.removeItem(BASE_KEY);
+    notify();
   }
 });
 
