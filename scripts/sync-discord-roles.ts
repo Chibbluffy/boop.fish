@@ -20,7 +20,7 @@ import postgres from "postgres";
 const BOT_TOKEN    = process.env.DISCORD_BOT_TOKEN;
 const DB_URL       = process.env.DATABASE_URL;
 const GUILD_ID     = process.env.DISCORD_GUILD_ID;
-const MEMBER_ROLE  = process.env.DISCORD_MEMBER_ROLE_ID;
+const MEMBER_ROLE  = process.env.GUILD_MEMBER_ROLE_ID;
 
 if (!BOT_TOKEN) { console.error("DISCORD_BOT_TOKEN not set"); process.exit(1); }
 if (!DB_URL)    { console.error("DATABASE_URL not set");      process.exit(1); }

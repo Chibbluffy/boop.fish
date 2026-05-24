@@ -6,24 +6,65 @@ Guild website for **boop** — a Black Desert Online guild. Built with Bun, Reac
 
 **For all members**
 - **Home** — guild announcements and news
+- **Calendar / Events** — browse and sign up for upcoming guild events; each event has named roles with per-role class restrictions (BDO classes, custom subset, or open); recurring event series supported
+- **Attendance** — confirms who showed up to past events; officers can mark presence
+- **Availability** — drag-and-drop weekly grid showing when you're generally free; overlaps with other members shown as a heatmap
 - **Guild Directory** — browse all members with gear, class, timezone, and frog count
-- **Calendar** — upcoming guild events with per-timezone time conversion
 - **Gear Leaderboard** — sortable gear score rankings across the guild
 - **Ribbit Leaderboard** — top frog clickers
 - **Wall of Shame** — guild highlight reel of disasters and funny moments
-- **Black Shrine Sign-ups** — sign up for Black Shrine runs with your gear stats
+- **Black Shrine Sign-ups** — sign up for Black Shrine runs with your saved gear stats
 - **Employee of the Day/Month** — officer-awarded recognition
+- **Quote Archive** — search old Nadeko bot quotes by keyword
 
 **Tools**
 - **Class Roller** — randomly roll a BDO class
 - **Party Shuffler** — split a list of names into balanced groups
+- **Random Chooser** — pick a random winner from a list of entries
+- **Dice Roller** — 3D dice roller
 - **Frogs** — click frogs to earn ribbits (100 ribbits = +1 payout tier bonus, up to +5)
 
 **Officer / Admin only**
 - **Manage** — member roster with inline rank/status editing, member approval, ribbit resets
-- **Nodewar** — upload screenshots and track win/loss history
+- **Nodewar** — syncs war score screenshots from a configured Discord channel; displays history by date
 - **Payout Tracker** — track guild payout tiers (T1–T10) per member with bulk actions and full history log
+- **Black Shrine team builder** — drag-and-drop sign-up list into teams of 5
 - **Submit Wall of Shame** — post new wall entries
+- **Event templates** — create reusable event structures for quick scheduling
+
+## Showcase
+
+Most of the site is gated behind Discord OAuth — here's what logged-in members and officers actually see.
+
+### Member views
+
+<table>
+  <tr>
+    <td align="center"><b>Events</b><br><img src="screenshots/events.png" alt="Events" width="420"></td>
+    <td align="center"><b>Event Sign-up</b><br><img src="screenshots/event-signup.png" alt="Event sign-up" width="420"></td>
+  </tr>
+  <tr>
+    <td align="center"><b>Gear Leaderboard</b><br><img src="screenshots/gear-leaderboard.png" alt="Gear Leaderboard" width="420"></td>
+    <td align="center"><b>Guild Directory</b><br><img src="screenshots/guild-directory.png" alt="Guild Directory" width="420"></td>
+  </tr>
+  <tr>
+    <td align="center"><b>Availability Scheduler</b><br><img src="screenshots/availability.png" alt="Availability" width="420"></td>
+    <td align="center"><b>Black Shrine Sign-ups</b><br><img src="screenshots/black-shrine.png" alt="Black Shrine" width="420"></td>
+  </tr>
+</table>
+
+### Officer / Admin views
+
+<table>
+  <tr>
+    <td align="center"><b>Payout Tracker</b><br><img src="screenshots/payout-tracker.png" alt="Payout Tracker" width="420"></td>
+    <td align="center"><b>Shrine Team Builder</b><br><img src="screenshots/shrine-teams.png" alt="Shrine Team Builder" width="420"></td>
+  </tr>
+  <tr>
+    <td align="center"><b>Member Management</b><br><img src="screenshots/manage.png" alt="Member Management" width="420"></td>
+    <td align="center"><b>Event Creation</b><br><img src="screenshots/event-create.png" alt="Event Creation" width="420"></td>
+  </tr>
+</table>
 
 ## Stack
 
@@ -33,7 +74,7 @@ Guild website for **boop** — a Black Desert Online guild. Built with Bun, Reac
 | Frontend | React 19, Tailwind CSS v4 |
 | Backend | Bun HTTP server (`src/index.ts`) |
 | Database | PostgreSQL (`postgres` driver) |
-| Auth | Server-side sessions, bcrypt passwords |
+| Auth | Discord OAuth 2.0, server-side sessions |
 | Process manager | pm2 |
 
 ## Project structure
@@ -50,6 +91,8 @@ boop-site/
   build.ts            # Bundles frontend assets
 db/
   schema.sql          # Full PostgreSQL schema + migration comments
+scripts/
+  sync-discord-roles.ts   # Daily cron: syncs Discord roles → site roles
 ```
 
 ## Setup
@@ -83,6 +126,16 @@ DISCORD_CLIENT_ID=your_client_id
 DISCORD_CLIENT_SECRET=your_client_secret
 DISCORD_GUILD_ID=your_server_id
 DISCORD_BOT_TOKEN=your_bot_token
+
+# Optional — if set, only users with this Discord role ID are promoted to "member";
+# others in the server are assigned "friend" (same access but excluded from Guild Directory)
+GUILD_MEMBER_ROLE_ID=your_member_role_id
+
+# Optional — Discord channel ID to sync war score screenshots from (enables Nodewar page)
+WAR_SCORES_CHANNEL_ID=your_channel_id
+
+# Optional — guild to pull emoji list from in Class Emojis settings (defaults to DISCORD_GUILD_ID)
+DISCORD_CLASS_EMOJI_GUILD_ID=your_emoji_guild_id
 ```
 
 `ADMIN_USERNAME` / `ADMIN_PASSWORD` seed an admin account on startup if it doesn't exist yet. `SITE_URL` can optionally be set (defaults to `https://boop.fish`).
@@ -90,7 +143,7 @@ DISCORD_BOT_TOKEN=your_bot_token
 Discord OAuth setup:
 1. Create an app at [discord.com/developers/applications](https://discord.com/developers/applications)
 2. Under **OAuth2** → copy Client ID and Client Secret; add redirect URI `https://boop.fish/auth/discord/callback`
-3. No bot required — membership is verified using the user's own OAuth token
+3. Create a bot in the same app and copy the Bot Token — required for guild membership verification, role syncing, and Nodewar channel access
 
 ### 3. Install and run
 
@@ -135,16 +188,19 @@ To run it manually:
 cd boop-site && bun run ../scripts/sync-discord-roles.ts
 ```
 
-Requires `DISCORD_BOT_TOKEN`, `DISCORD_GUILD_ID`, and optionally `DISCORD_MEMBER_ROLE_ID` in your `.env`.
+Requires `DISCORD_BOT_TOKEN`, `DISCORD_GUILD_ID`, and optionally `GUILD_MEMBER_ROLE_ID` in your `.env`.
 
 ## Roles
 
 | Role | Access |
 |---|---|
 | `pending` | No access until approved by an officer |
+| `friend` | All member-facing pages except Guild Directory; ribbit earnings are capped |
 | `member` | All member-facing pages |
-| `officer` | + Roster management, payout tracker, nodewar, wall of shame |
-| `admin` | Full access including role changes and member deletion |
+| `officer` | + Roster management, payout tracker, nodewar, wall of shame, shrine team builder |
+| `admin` | Full access including role assignment and member deletion |
+
+`friend` is assigned automatically to Discord users in the server who don't hold the `GUILD_MEMBER_ROLE_ID` role (or if that env var isn't set, all guild members are promoted to `member`).
 
 ## Maintenance
 
@@ -154,7 +210,7 @@ Go to **Settings → Class Emojis → BDO Classes → "+ Add BDO Class"**, type 
 
 That's it — **no code changes, no deploys needed**. The class will appear on the wheel and in Discord event signup dropdowns within 5 minutes (bot cache TTL).
 
-`boo-site/src/lib/bdo-classes.ts` and `BoopBot/cogs/events.py` still contain a static fallback list used if the DB is unreachable. Keep these in sync when adding a class as a belt-and-suspenders safety net, but it is not required for normal operation.
+`boop-site/src/lib/bdo-classes.ts` and `BoopBot/cogs/events.py` still contain a static fallback list used if the DB is unreachable. Keep these in sync when adding a class as a belt-and-suspenders safety net, but it is not required for normal operation.
 
 ### Adding custom signup options (boats, specs, etc.)
 
