@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { useAuth } from "../lib/auth";
+import { useAuth, apiFetch } from "../lib/auth";
 
 type GearRow = {
   id: string;
@@ -15,9 +15,6 @@ type GearRow = {
 
 type SortKey = "gs" | "gear_ap" | "gear_aap" | "gear_dp" | "gear_eap";
 type SortDir = "asc" | "desc";
-
-function token() { return localStorage.getItem("boop_session") ?? ""; }
-function authH() { return { Authorization: `Bearer ${token()}` }; }
 
 function EditGearModal({
   row,
@@ -37,9 +34,9 @@ function EditGearModal({
   async function save() {
     setSaving(true);
     setError("");
-    const res = await fetch(`/api/roster/${row.id}`, {
+    const res = await apiFetch(`/api/roster/${row.id}`, {
       method: "PATCH",
-      headers: { "Content-Type": "application/json", ...authH() },
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         gear_ap:  ap.trim()  ? parseInt(ap)  : null,
         gear_aap: aap.trim() ? parseInt(aap) : null,
@@ -132,9 +129,9 @@ export default function GearLeaderboard() {
     if (!user || user.role === "pending") return;
     setLoading(true);
     const url = showNonMembers ? "/api/leaderboard?all=true" : "/api/leaderboard";
-    fetch(url, { headers: authH() })
-      .then(r => r.json())
-      .then(d => setGear(d.gear ?? []))
+    apiFetch(url)
+      .then(r => r.ok ? r.json() : null)
+      .then(d => setGear(d?.gear ?? []))
       .finally(() => setLoading(false));
   }, [user, showNonMembers]);
 

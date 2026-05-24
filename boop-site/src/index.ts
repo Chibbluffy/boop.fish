@@ -260,7 +260,7 @@ const server = serve({
             return Response.redirect(`${siteUrl}/#/auth?discord_error=not_in_guild`, 302);
           }
           const memberData = await memberRes.json() as { roles: string[] };
-          const memberRoleId = process.env.DISCORD_MEMBER_ROLE_ID;
+          const memberRoleId = process.env.GUILD_MEMBER_ROLE_ID;
           // If no member role configured, everyone in the guild is a member
           discordRole = (!memberRoleId || memberData.roles.includes(memberRoleId)) ? "member" : "friend";
         }

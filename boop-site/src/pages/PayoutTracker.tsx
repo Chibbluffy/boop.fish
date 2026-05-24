@@ -1,5 +1,5 @@
 import { useEffect, useState, useRef } from "react";
-import { useAuth, isOfficerOrAdmin } from "../lib/auth";
+import { useAuth, isOfficerOrAdmin, apiFetch } from "../lib/auth";
 
 type PayoutMember = {
   id: string;
@@ -62,9 +62,6 @@ function timeAgo(iso: string): string {
   return new Date(iso).toLocaleDateString();
 }
 
-function token() { return localStorage.getItem("boop_session") ?? ""; }
-function authH() { return { Authorization: `Bearer ${token()}` }; }
-
 // ── History modal ─────────────────────────────────────────────────────────────
 
 function HistoryModal({ member, onClose }: { member: PayoutMember; onClose: () => void }) {
@@ -72,8 +69,8 @@ function HistoryModal({ member, onClose }: { member: PayoutMember; onClose: () =
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    fetch(`/api/payout/history/${member.id}`, { headers: authH() })
-      .then(r => r.json())
+    apiFetch(`/api/payout/history/${member.id}`)
+      .then(r => r.ok ? r.json() : [])
       .then(d => { setHistory(d); setLoading(false); });
   }, [member.id]);
 
@@ -136,8 +133,8 @@ export default function PayoutTracker() {
 
   useEffect(() => {
     if (!user || !isOfficerOrAdmin(user)) return;
-    fetch("/api/payout", { headers: authH() })
-      .then(r => r.json())
+    apiFetch("/api/payout")
+      .then(r => r.ok ? r.json() : [])
       .then(d => { setMembers(d); setLoading(false); });
   }, [user]);
 
@@ -157,9 +154,9 @@ export default function PayoutTracker() {
     else body.delta = opts.delta;
 
     setSaving(prev => new Set([...prev, ...ids]));
-    const res = await fetch("/api/payout", {
+    const res = await apiFetch("/api/payout", {
       method: "PATCH",
-      headers: { "Content-Type": "application/json", ...authH() },
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),
     });
     if (res.ok) {

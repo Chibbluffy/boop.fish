@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { useAuth } from "../lib/auth";
+import { useAuth, apiFetch } from "../lib/auth";
 
 type AttendanceEvent = {
   id: string;
@@ -40,8 +40,6 @@ type SortKey = "pct" | "name" | "attended";
 type SortDir = "asc" | "desc";
 type Tip = { x: number; y: number; content: React.ReactNode } | null;
 
-function token() { return localStorage.getItem("boop_session") ?? ""; }
-function authH() { return { Authorization: `Bearer ${token()}` }; }
 
 function pctColor(pct: number) {
   return pct >= 75 ? "#4ade80" : pct >= 50 ? "#facc15" : pct >= 25 ? "#fb923c" : "#f87171";
@@ -79,9 +77,13 @@ export default function Attendance() {
 
   useEffect(() => {
     if (!user || user.role === "pending") return;
-    fetch("/api/attendance", { headers: authH() })
-      .then(r => r.json())
-      .then(d => { setEvents(d.events ?? []); setSignups(d.signups ?? []); })
+    apiFetch("/api/attendance")
+      .then(async r => {
+        if (!r.ok) { setError("Failed to load attendance data"); return; }
+        const d = await r.json();
+        setEvents(d.events ?? []);
+        setSignups(d.signups ?? []);
+      })
       .catch(() => setError("Failed to load attendance data"))
       .finally(() => setLoading(false));
   }, [user]);

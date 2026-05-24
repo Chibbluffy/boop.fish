@@ -136,6 +136,7 @@ export default function Availability() {
   const [members, setMembers]   = useState<Member[]>([]);
   const [enabled, setEnabled]   = useState<Set<string>>(new Set());
   const [saving, setSaving]     = useState(false);
+  const [saveError, setSaveError] = useState("");
   const [tab, setTab]           = useState<"schedule" | "member">("schedule");
   const [selectedId, setSelectedId] = useState<string>("");
 
@@ -161,11 +162,17 @@ export default function Availability() {
     if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
     saveTimerRef.current = setTimeout(async () => {
       setSaving(true);
-      await apiFetch("/api/shrine/availability", {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ slots: [...slots] }),
-      }).catch(() => {});
+      setSaveError("");
+      try {
+        const res = await apiFetch("/api/shrine/availability", {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ slots: [...slots] }),
+        });
+        if (!res.ok) setSaveError("Failed to save availability. Try again.");
+      } catch {
+        setSaveError("Network error — availability may not have saved.");
+      }
       setSaving(false);
     }, 600);
   }, []);
@@ -338,7 +345,10 @@ export default function Availability() {
                   <span>You and at least one other member are both free here</span>
                 </div>
               </div>
-              <p className="text-xs text-slate-400 self-end">Changes save automatically</p>
+              {saveError
+                ? <p className="text-xs text-red-400 self-end">{saveError}</p>
+                : <p className="text-xs text-slate-400 self-end">Changes save automatically</p>
+              }
             </div>
 
             <AvailGrid

@@ -1160,7 +1160,7 @@ function RecurringSection({ channels, guildEmojis, discordRoles, classEmojiMap, 
       advance_h: '2', advance_m: '0',
       announce_days: '2', announce_time: '12:00',
       start_date: new Date().toISOString().slice(0, 10),
-      end_date: '', cancelled_after: '',
+      end_date: '',
       enable_ping: true, ping_role_ids: [] as string[],
       enable_reminder_ping: true,
       reminder_minutes: [60, 30] as number[],
@@ -1240,7 +1240,7 @@ function RecurringSection({ channels, guildEmojis, discordRoles, classEmojiMap, 
     }
     const payload = {
       title: form.title.trim(),
-      description: form.description.trim() || null,
+      description: form.description.trim() || "",
       weekdays: form.weekdays,
       event_time: form.event_time,
       event_timezone: form.event_timezone,
@@ -2039,7 +2039,7 @@ export default function Events({ initialEventId }: { initialEventId?: string | n
 
   async function saveForm(form: ReturnType<typeof blankForm>, publish: boolean) {
     const body = {
-      title: form.title, description: form.description || null,
+      title: form.title, description: form.description.trim() || "",
       event_date: form.event_date, event_time: form.event_time,
       event_timezone: form.event_timezone || "UTC",
       total_cap: form.total_cap ? parseInt(form.total_cap) : null,

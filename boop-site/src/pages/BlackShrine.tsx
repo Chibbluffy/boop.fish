@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { useAuth, isOfficerOrAdmin } from "../lib/auth";
+import { useAuth, isOfficerOrAdmin, apiFetch } from "../lib/auth";
 import type { ShrineTeam } from "./ShrineSection";
 
 type Signup = {
@@ -15,9 +15,6 @@ type Signup = {
   signed_up_at: string;
 };
 
-function token() { return localStorage.getItem("boop_session") ?? ""; }
-function authH() { return { Authorization: `Bearer ${token()}` }; }
-
 export default function BlackShrine() {
   const user      = useAuth();
   const isOfficer = isOfficerOrAdmin(user);
@@ -27,6 +24,7 @@ export default function BlackShrine() {
   const [loading,    setLoading]    = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [clearing,   setClearing]   = useState(false);
+  const [error,      setError]      = useState("");
 
   const mySignup = signups.find(s => s.user_id === user?.id) ?? null;
 
@@ -34,8 +32,8 @@ export default function BlackShrine() {
   useEffect(() => {
     if (!user || user.role === "pending") return;
     Promise.all([
-      fetch("/api/shrine",       { headers: authH() }).then(r => r.json()),
-      fetch("/api/shrine/teams", { headers: authH() }).then(r => r.json()),
+      apiFetch("/api/shrine").then(r => r.ok ? r.json() : []),
+      apiFetch("/api/shrine/teams").then(r => r.ok ? r.json() : []),
     ]).then(([sups, tms]) => {
       setSignups(Array.isArray(sups) ? sups : []);
       setTeams(Array.isArray(tms) ? tms : []);
@@ -71,9 +69,10 @@ export default function BlackShrine() {
 
   async function signUp() {
     setSubmitting(true);
-    const res = await fetch("/api/shrine", {
+    setError("");
+    const res = await apiFetch("/api/shrine", {
       method: "POST",
-      headers: { "Content-Type": "application/json", ...authH() },
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         bdo_class: user!.bdo_class  || undefined,
         ap:        user!.gear_ap   ?? undefined,
@@ -82,15 +81,24 @@ export default function BlackShrine() {
       }),
     });
     if (res.ok) {
-      const fresh = await fetch("/api/shrine", { headers: authH() }).then(r => r.json());
+      const fresh = await apiFetch("/api/shrine").then(r => r.ok ? r.json() : []);
       setSignups(Array.isArray(fresh) ? fresh : []);
+    } else {
+      const d = await res.json().catch(() => ({}));
+      setError(d.error ?? "Failed to sign up.");
     }
     setSubmitting(false);
   }
 
   async function withdraw() {
     const signupId = mySignup?.id;
-    await fetch("/api/shrine/me", { method: "DELETE", headers: authH() });
+    setError("");
+    const res = await apiFetch("/api/shrine/me", { method: "DELETE" });
+    if (!res.ok) {
+      const d = await res.json().catch(() => ({}));
+      setError(d.error ?? "Failed to withdraw.");
+      return;
+    }
     setSignups(prev => prev.filter(s => s.user_id !== user!.id));
     if (signupId) {
       setTeams(prev => prev.map(t => ({
@@ -101,7 +109,13 @@ export default function BlackShrine() {
   }
 
   async function removeSignup(id: string) {
-    await fetch(`/api/shrine/${id}`, { method: "DELETE", headers: authH() });
+    setError("");
+    const res = await apiFetch(`/api/shrine/${id}`, { method: "DELETE" });
+    if (!res.ok) {
+      const d = await res.json().catch(() => ({}));
+      setError(d.error ?? "Failed to remove sign-up.");
+      return;
+    }
     setSignups(prev => prev.filter(s => s.id !== id));
     setTeams(prev => prev.map(t => ({
       ...t,
@@ -112,9 +126,16 @@ export default function BlackShrine() {
   async function clearAll() {
     if (!confirm("Clear all sign-ups?")) return;
     setClearing(true);
-    await fetch("/api/shrine/clear", { method: "POST", headers: authH() });
+    setError("");
+    const res = await apiFetch("/api/shrine/clear", { method: "POST" });
+    if (!res.ok) {
+      const d = await res.json().catch(() => ({}));
+      setError(d.error ?? "Failed to clear sign-ups.");
+      setClearing(false);
+      return;
+    }
     setSignups([]);
-    const tms = await fetch("/api/shrine/teams", { headers: authH() }).then(r => r.json()).catch(() => []);
+    const tms = await apiFetch("/api/shrine/teams").then(r => r.ok ? r.json() : []).catch(() => []);
     setTeams(Array.isArray(tms) ? tms : []);
     setClearing(false);
   }
@@ -138,6 +159,10 @@ export default function BlackShrine() {
             </button>
           )}
         </div>
+
+        {error && (
+          <p className="text-red-400 text-sm mb-4 bg-red-400/10 border border-red-400/20 rounded-lg px-4 py-2">{error}</p>
+        )}
 
         {/* ── Sign-up card ── */}
         {mySignup ? (

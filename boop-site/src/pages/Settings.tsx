@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useRef, useMemo } from "react";
-import { useAuth, isOfficerOrAdmin, AuthUser } from "../lib/auth";
+import { useAuth, isOfficerOrAdmin, AuthUser, apiFetch } from "../lib/auth";
 import ShrineSection from "./ShrineSection";
 import GuildDirectory from "./GuildDirectory";
 import PayoutTracker from "./PayoutTracker";
@@ -40,9 +40,6 @@ const SIDEBAR = [
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-function token() { return localStorage.getItem("boop_session") ?? ""; }
-function authH() { return { Authorization: `Bearer ${token()}` }; }
-
 const ROLE_STYLE: Record<string, string> = {
   admin:   "bg-red-500/20 text-red-400 border border-red-500/30",
   officer: "bg-amber-500/20 text-amber-400 border border-amber-500/30",
@@ -69,17 +66,17 @@ function MembersSection({ me }: { me: AuthUser }) {
   const [error, setError]           = useState<string | null>(null);
 
   useEffect(() => {
-    fetch("/api/members", { headers: authH() })
-      .then(r => r.json())
-      .then(d => { setMembers(d); setLoading(false); })
+    apiFetch("/api/members")
+      .then(r => r.ok ? r.json() : null)
+      .then(d => { if (d) setMembers(d); setLoading(false); })
       .catch(() => { setError("Failed to load members."); setLoading(false); });
   }, []);
 
   async function changeRole(id: string, role: string) {
     setUpdating(id);
-    const res = await fetch(`/api/members/${id}/role`, {
+    const res = await apiFetch(`/api/members/${id}/role`, {
       method: "PATCH",
-      headers: { "Content-Type": "application/json", ...authH() },
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ role }),
     });
     if (res.ok) {
@@ -97,7 +94,7 @@ function MembersSection({ me }: { me: AuthUser }) {
 
   async function resetRibbits(id: string) {
     setResetting(id);
-    const res = await fetch(`/api/members/${id}/ribbits/reset`, { method: "POST", headers: authH() });
+    const res = await apiFetch(`/api/members/${id}/ribbits/reset`, { method: "POST" });
     if (res.ok) setMembers(prev => prev.map(m => m.id === id ? { ...m, ribbit_count: 0 } : m));
     setResetting(null);
   }
@@ -105,7 +102,7 @@ function MembersSection({ me }: { me: AuthUser }) {
   async function resetAllRibbits() {
     if (!confirm("Reset ALL members' ribbit counts to 0?")) return;
     setResettingAll(true);
-    const res = await fetch("/api/members/ribbits/reset-all", { method: "POST", headers: authH() });
+    const res = await apiFetch("/api/members/ribbits/reset-all", { method: "POST" });
     if (res.ok) setMembers(prev => prev.map(m => ({ ...m, ribbit_count: 0 })));
     setResettingAll(false);
   }
@@ -113,7 +110,7 @@ function MembersSection({ me }: { me: AuthUser }) {
   async function deleteAccount(id: string, username: string) {
     if (!confirm(`Delete account "${username}"? This cannot be undone.`)) return;
     setDeleting(id);
-    const res = await fetch(`/api/members/${id}`, { method: "DELETE", headers: authH() });
+    const res = await apiFetch(`/api/members/${id}`, { method: "DELETE" });
     if (res.ok) setMembers(prev => prev.filter(m => m.id !== id));
     setDeleting(null);
   }
@@ -268,15 +265,15 @@ function AnnouncementsSection() {
   const [editSaving, setEditSaving] = useState(false);
 
   useEffect(() => {
-    fetch("/api/announcements").then(r => r.json()).then(d => { setItems(d); setLoading(false); }).catch(() => setLoading(false));
+    apiFetch("/api/announcements").then(r => r.ok ? r.json() : []).then(d => { setItems(d); setLoading(false); }).catch(() => setLoading(false));
   }, []);
 
   async function add() {
     if (!title.trim()) return;
     setSaving(true);
-    const res = await fetch("/api/announcements", {
+    const res = await apiFetch("/api/announcements", {
       method: "POST",
-      headers: { "Content-Type": "application/json", ...authH() },
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ title: title.trim(), body: body.trim() || undefined, pinned }),
     });
     if (res.ok) { const row = await res.json(); setItems(prev => [{ ...row, author: null }, ...prev]); setTitle(""); setBody(""); setPinned(false); }
@@ -284,7 +281,7 @@ function AnnouncementsSection() {
   }
 
   async function remove(id: string) {
-    await fetch(`/api/announcements/${id}`, { method: "DELETE", headers: authH() });
+    await apiFetch(`/api/announcements/${id}`, { method: "DELETE" });
     setItems(prev => prev.filter(a => a.id !== id));
     if (editId === id) setEditId(null);
   }
@@ -294,9 +291,9 @@ function AnnouncementsSection() {
   async function saveEdit() {
     if (!editId || !editTitle.trim()) return;
     setEditSaving(true);
-    const res = await fetch(`/api/announcements/${editId}`, {
+    const res = await apiFetch(`/api/announcements/${editId}`, {
       method: "PATCH",
-      headers: { "Content-Type": "application/json", ...authH() },
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ title: editTitle.trim(), body: editBody.trim() || null, pinned: editPinned }),
     });
     if (res.ok) { const row = await res.json(); setItems(prev => prev.map(a => a.id === editId ? { ...a, ...row } : a)); setEditId(null); }
@@ -381,11 +378,11 @@ function WallSection() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    fetch("/api/wall").then(r => r.json()).then(d => { setItems(d); setLoading(false); }).catch(() => setLoading(false));
+    apiFetch("/api/wall").then(r => r.ok ? r.json() : []).then(d => { setItems(d); setLoading(false); }).catch(() => setLoading(false));
   }, []);
 
   async function remove(id: string) {
-    await fetch(`/api/wall/${id}`, { method: "DELETE", headers: authH() });
+    await apiFetch(`/api/wall/${id}`, { method: "DELETE" });
     setItems(prev => prev.filter(w => w.id !== id));
   }
 
@@ -478,17 +475,17 @@ function RosterSection() {
   const [mSaving,   setMSaving]   = useState(false);
 
   useEffect(() => {
-    fetch("/api/roster", { headers: authH() })
-      .then(r => r.json())
+    apiFetch("/api/roster")
+      .then(r => r.ok ? r.json() : [])
       .then(d => { setMembers(d); setLoading(false); })
       .catch(() => setLoading(false));
   }, []);
 
   async function patchField(id: string, field: string, value: string | null) {
     setSavingField(`${id}:${field}`);
-    const res = await fetch(`/api/roster/${id}`, {
+    const res = await apiFetch(`/api/roster/${id}`, {
       method: "PATCH",
-      headers: { "Content-Type": "application/json", ...authH() },
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ [field]: value }),
     });
     if (res.ok) {
@@ -508,9 +505,9 @@ function RosterSection() {
   async function saveNoteModal() {
     if (!noteModal) return;
     setMSaving(true);
-    const res = await fetch(`/api/roster/${noteModal.id}`, {
+    const res = await apiFetch(`/api/roster/${noteModal.id}`, {
       method: "PATCH",
-      headers: { "Content-Type": "application/json", ...authH() },
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         family_name:  mFamName.trim()  || null,
         discord_name: mDiscord.trim()  || null,
@@ -805,9 +802,9 @@ function ClassEmojisSection() {
 
   useEffect(() => {
     Promise.all([
-      fetch("/api/bdo-classes",    { headers: authH() }).then(r => r.json()),
-      fetch("/api/class-emojis",   { headers: authH() }).then(r => r.json()),
-      fetch("/api/discord/emojis", { headers: authH() }).then(r => r.json()),
+      apiFetch("/api/bdo-classes").then(r => r.ok ? r.json() : []),
+      apiFetch("/api/class-emojis").then(r => r.ok ? r.json() : {}),
+      apiFetch("/api/discord/emojis").then(r => r.ok ? r.json() : []),
     ]).then(([bdo, emojiMap, guild]) => {
       setBdoClasses(Array.isArray(bdo) ? bdo : []);
       setEmojis(emojiMap && typeof emojiMap === "object" ? emojiMap : {});
@@ -822,9 +819,9 @@ function ClassEmojisSection() {
 
   async function saveEmojis() {
     setSaving(true);
-    const res = await fetch("/api/class-emojis", {
+    const res = await apiFetch("/api/class-emojis", {
       method: "PUT",
-      headers: { "Content-Type": "application/json", ...authH() },
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify(emojis),
     });
     if (res.ok) { setSaved(true); setTimeout(() => setSaved(false), 1500); }
@@ -838,9 +835,9 @@ function ClassEmojisSection() {
   async function addBdoClass() {
     const name = newBdoName.trim();
     if (!name) return;
-    const res = await fetch("/api/bdo-classes", {
+    const res = await apiFetch("/api/bdo-classes", {
       method: "POST",
-      headers: { "Content-Type": "application/json", ...authH() },
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ name }),
     });
     if (res.ok) {
@@ -852,7 +849,7 @@ function ClassEmojisSection() {
 
   async function removeBdoClass(name: string) {
     if (!confirm(`Remove "${name}" from the BDO class list?`)) return;
-    await fetch(`/api/bdo-classes/${encodeURIComponent(name)}`, { method: "DELETE", headers: authH() });
+    await apiFetch(`/api/bdo-classes/${encodeURIComponent(name)}`, { method: "DELETE" });
     setBdoClasses(prev => prev.filter(c => c.class_name !== name));
     setEmojis(prev => (({ [name]: _removed, ...rest }) => rest)(prev));
   }

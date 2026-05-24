@@ -1,8 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { useAuth } from "../lib/auth";
-
-function token() { return localStorage.getItem("boop_session") ?? ""; }
-function authH() { return { Authorization: `Bearer ${token()}` }; }
+import { useAuth, apiFetch } from "../lib/auth";
 
 const MAX_PER_TEAM = 5;
 
@@ -88,8 +85,8 @@ export default function ShrineSection() {
 
   useEffect(() => {
     Promise.all([
-      fetch("/api/shrine", { headers: authH() }).then(r => r.json()),
-      fetch("/api/shrine/teams", { headers: authH() }).then(r => r.json()),
+      apiFetch("/api/shrine").then(r => r.ok ? r.json() : []),
+      apiFetch("/api/shrine/teams").then(r => r.ok ? r.json() : []),
     ]).then(([sups, tms]) => {
       setSignups(Array.isArray(sups) ? sups : []);
       setTeams(Array.isArray(tms) ? tms : []);
@@ -98,7 +95,7 @@ export default function ShrineSection() {
   }, []);
 
   async function refreshTeams() {
-    const tms = await fetch("/api/shrine/teams", { headers: authH() }).then(r => r.json());
+    const tms = await apiFetch("/api/shrine/teams").then(r => r.ok ? r.json() : []);
     setTeams(Array.isArray(tms) ? tms : []);
   }
 
@@ -106,9 +103,9 @@ export default function ShrineSection() {
   const unassigned  = signups.filter(s => !assignedIds.has(s.id));
 
   async function assign(signupId: string, teamId: string | null) {
-    await fetch("/api/shrine/teams/assignments", {
+    await apiFetch("/api/shrine/teams/assignments", {
       method: "PATCH",
-      headers: { "Content-Type": "application/json", ...authH() },
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ signup_id: signupId, team_id: teamId }),
     });
     await refreshTeams();
@@ -132,9 +129,9 @@ export default function ShrineSection() {
 
   async function createTeam() {
     setSaving(true);
-    const res = await fetch("/api/shrine/teams", {
+    const res = await apiFetch("/api/shrine/teams", {
       method: "POST",
-      headers: { "Content-Type": "application/json", ...authH() },
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ name: `Team ${teams.length + 1}` }),
     });
     if (res.ok) {
@@ -145,7 +142,7 @@ export default function ShrineSection() {
   }
 
   async function deleteTeam(id: string) {
-    await fetch(`/api/shrine/teams/${id}`, { method: "DELETE", headers: authH() });
+    await apiFetch(`/api/shrine/teams/${id}`, { method: "DELETE" });
     setTeams(prev => prev.filter(t => t.id !== id));
   }
 
@@ -156,9 +153,9 @@ export default function ShrineSection() {
 
   async function saveRename() {
     if (!renamingId || !renameVal.trim()) { setRenamingId(null); return; }
-    await fetch(`/api/shrine/teams/${renamingId}`, {
+    await apiFetch(`/api/shrine/teams/${renamingId}`, {
       method: "PATCH",
-      headers: { "Content-Type": "application/json", ...authH() },
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ name: renameVal.trim() }),
     });
     setTeams(prev => prev.map(t => t.id === renamingId ? { ...t, name: renameVal.trim() } : t));

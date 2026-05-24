@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from "react";
 import { BDO_CLASSES } from "../lib/bdo-classes";
+import { getToken } from "../lib/auth";
 
 export default function ClassSelect({
   value,
@@ -12,11 +13,26 @@ export default function ClassSelect({
 }) {
   const [query, setQuery] = useState(value);
   const [open, setOpen]   = useState(false);
+  const [options, setOptions] = useState<string[]>([...BDO_CLASSES]);
   const inputRef          = useRef<HTMLInputElement>(null);
 
   useEffect(() => { setQuery(value); }, [value]);
 
-  const filtered = BDO_CLASSES.filter(c =>
+  // Fetch DB class list on mount so custom/updated classes show up
+  useEffect(() => {
+    const token = getToken();
+    if (!token) return;
+    fetch("/api/bdo-classes", { headers: { Authorization: `Bearer ${token}` } })
+      .then(r => r.ok ? r.json() : null)
+      .then(d => {
+        if (Array.isArray(d) && d.length > 0) {
+          setOptions(d.map((r: any) => r.class_name).filter(Boolean));
+        }
+      })
+      .catch(() => {});
+  }, []);
+
+  const filtered = options.filter(c =>
     c.toLowerCase().includes(query.toLowerCase())
   );
 

@@ -24,6 +24,7 @@ CREATE TABLE IF NOT EXISTS users (
   character_name VARCHAR(100),                 -- in-game name
   ribbit_count  INTEGER     NOT NULL DEFAULT 0, -- 🐸 activity marker
   boops         INTEGER     NOT NULL DEFAULT 0, -- economy currency
+  daily_last    TIMESTAMPTZ,                    -- last time user claimed daily boops (bot economy)
   bdo_class     VARCHAR(50),                    -- saved BDO class (main)
   alt_class     VARCHAR(50),                    -- tagged / alt class
   gear_ap       INTEGER,                        -- saved AP
@@ -59,6 +60,7 @@ CREATE TABLE IF NOT EXISTS users (
 -- ALTER TABLE users ADD COLUMN IF NOT EXISTS discord_avatar  TEXT;
 -- ALTER TABLE users ADD COLUMN IF NOT EXISTS gear_image_url  TEXT;
 -- ALTER TABLE users ADD COLUMN IF NOT EXISTS boops           INTEGER NOT NULL DEFAULT 0;
+-- ALTER TABLE users ADD COLUMN IF NOT EXISTS daily_last      TIMESTAMPTZ;
 -- ALTER TABLE users ALTER COLUMN password_hash DROP NOT NULL;
 -- ALTER TABLE users DROP CONSTRAINT IF EXISTS users_role_check;
 -- ALTER TABLE users ADD CONSTRAINT users_role_check CHECK (role IN ('pending', 'friend', 'member', 'officer', 'admin'));
@@ -137,11 +139,7 @@ CREATE INDEX IF NOT EXISTS idx_employee_awards_type ON employee_awards(award_typ
 
 -- ============================================================
 -- NODEWAR ENTRIES
--- Images are stored on the server filesystem under
---   /uploads/nodewar/<filename>
--- and served by Bun at /uploads/*.  Only the path is kept
--- here.  To migrate to R2/MinIO later, just change image_path
--- to a full URL — nothing else needs to change.
+-- Images are stored in nodewar_images (multiple per entry).
 -- ============================================================
 CREATE TABLE IF NOT EXISTS nodewar_entries (
   id          UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -149,11 +147,12 @@ CREATE TABLE IF NOT EXISTS nodewar_entries (
   node_name   VARCHAR(255),
   event_date  DATE        NOT NULL,
   result      VARCHAR(5)  CHECK (result IN ('win', 'loss', 'draw')),
-  image_path  TEXT,                             -- e.g. /uploads/nodewar/abc123.png
   notes       TEXT,
   uploaded_by UUID        REFERENCES users(id) ON DELETE SET NULL,
   created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+-- Migration for existing installs:
+-- ALTER TABLE nodewar_entries DROP COLUMN IF EXISTS image_path;
 CREATE INDEX IF NOT EXISTS idx_nodewar_date ON nodewar_entries(event_date);
 
 -- ============================================================
@@ -329,6 +328,9 @@ CREATE INDEX IF NOT EXISTS idx_payout_history_date ON payout_history(created_at 
 -- advance_minutes: how far before event_time to post the signup embed
 -- roles: JSONB array of {name, emoji, soft_cap, class_mode, choices}
 -- skip_dates: array of DATE values to skip a specific occurrence
+-- cancelled_after was removed — use end_date to stop a series early
+-- Migration for existing installs:
+-- ALTER TABLE recurring_events DROP COLUMN IF EXISTS cancelled_after;
 -- ============================================================
 CREATE TABLE IF NOT EXISTS recurring_events (
   id                   UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -343,7 +345,6 @@ CREATE TABLE IF NOT EXISTS recurring_events (
   roles                JSONB       NOT NULL DEFAULT '[]',
   start_date           DATE        NOT NULL,
   end_date             DATE,
-  cancelled_after      DATE,
   skip_dates           DATE[]      NOT NULL DEFAULT '{}',
   ping_role_ids        TEXT[]               DEFAULT '{}',
   enable_ping          BOOLEAN              DEFAULT TRUE,

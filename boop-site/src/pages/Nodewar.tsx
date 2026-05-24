@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { useAuth } from "../lib/auth";
+import { useAuth, apiFetch } from "../lib/auth";
 
 type WarDate    = { date: string; count: number };
 type WarMessage = {
@@ -10,14 +10,11 @@ type WarMessage = {
   links:       string[];
 };
 
-function token() { return localStorage.getItem("boop_session") ?? ""; }
-function authH() { return { Authorization: `Bearer ${token()}` }; }
-
 async function refreshUrls(urls: string[]): Promise<Record<string, string>> {
   if (!urls.length) return {};
-  const res = await fetch("/api/quotes/refresh-urls", {
+  const res = await apiFetch("/api/quotes/refresh-urls", {
     method: "POST",
-    headers: { "Content-Type": "application/json", ...authH() },
+    headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ urls }),
   });
   return res.ok ? res.json() : {};
@@ -53,9 +50,10 @@ export default function Nodewar() {
   // Load date list on mount
   useEffect(() => {
     if (!user || user.role === "pending") return;
-    fetch(`/api/war-scores/dates?tz=${encodeURIComponent(browserTz)}`, { headers: authH() })
-      .then(r => r.json())
+    apiFetch(`/api/war-scores/dates?tz=${encodeURIComponent(browserTz)}`)
+      .then(r => r.ok ? r.json() : null)
       .then(d => {
+        if (!d) return;
         setDates(d.dates ?? []);
         setSyncing(d.syncing ?? false);
         setConfigured(d.configured ?? true);
@@ -69,9 +67,10 @@ export default function Nodewar() {
   useEffect(() => {
     if (!syncing || dates.length > 0) return;
     const id = setInterval(() => {
-      fetch(`/api/war-scores/dates?tz=${encodeURIComponent(browserTz)}`, { headers: authH() })
-        .then(r => r.json())
+      apiFetch(`/api/war-scores/dates?tz=${encodeURIComponent(browserTz)}`)
+        .then(r => r.ok ? r.json() : null)
         .then(d => {
+          if (!d) return;
           setSyncing(d.syncing ?? false);
           if (d.dates?.length) {
             setDates(d.dates);
@@ -91,8 +90,8 @@ export default function Nodewar() {
     setMessages([]);
     setUrlMap({});
 
-    fetch(`/api/war-scores/date/${dateKey(selectedDate)}?tz=${encodeURIComponent(browserTz)}`, { headers: authH() })
-      .then(r => r.json())
+    apiFetch(`/api/war-scores/date/${dateKey(selectedDate)}?tz=${encodeURIComponent(browserTz)}`)
+      .then(r => r.ok ? r.json() : [])
       .then(async (data: WarMessage[]) => {
         if (cancelled) return;
         setMessages(data);
