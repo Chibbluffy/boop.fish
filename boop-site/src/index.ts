@@ -2567,6 +2567,10 @@ const server = serve({
     "/*": index,
   },
 
+  // Bun's default idle timeout (10s) is too short for the BoopBot Lore duplicate
+  // scan, which can involve many sequential Ollama calls on boop-brain's side.
+  idleTimeout: 120,
+
   development: process.env.NODE_ENV !== "production" && {
     hmr: true,
     console: true,
