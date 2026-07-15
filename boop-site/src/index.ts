@@ -685,7 +685,8 @@ const server = serve({
         if (!guildId) return err("DISCORD_GUILD_ID not configured", 500);
         try {
           return json(await brainLoreGuildList(guildId));
-        } catch {
+        } catch (e) {
+          console.error("[brain-lore] guild list failed:", e);
           return err("Brain service unavailable", 502);
         }
       },
@@ -699,7 +700,8 @@ const server = serve({
         try {
           const result = await brainLoreAdd(guildId, text.trim(), user!.discord_id ?? "0", user!.username);
           return json(result, 201);
-        } catch {
+        } catch (e) {
+          console.error("[brain-lore] guild add failed:", e);
           return err("Brain service unavailable", 502);
         }
       },
@@ -711,7 +713,8 @@ const server = serve({
         if (!requireRole(user, "admin")) return err("Forbidden", 403);
         try {
           return json(await brainLoreUserList(req.params.discordId));
-        } catch {
+        } catch (e) {
+          console.error("[brain-lore] user list failed:", e);
           return err("Brain service unavailable", 502);
         }
       },
@@ -723,7 +726,8 @@ const server = serve({
         try {
           const result = await brainLoreAddMe(req.params.discordId, text.trim());
           return json(result, 201);
-        } catch {
+        } catch (e) {
+          console.error("[brain-lore] user add failed:", e);
           return err("Brain service unavailable", 502);
         }
       },
@@ -737,7 +741,8 @@ const server = serve({
         if (!text?.trim()) return err("text required");
         try {
           return json(await brainLoreUpdate(req.params.memoryId, text.trim()));
-        } catch {
+        } catch (e) {
+          console.error("[brain-lore] update failed:", e);
           return err("Brain service unavailable", 502);
         }
       },
@@ -746,7 +751,8 @@ const server = serve({
         if (!requireRole(user, "admin")) return err("Forbidden", 403);
         try {
           return json(await brainLoreDelete(req.params.memoryId));
-        } catch {
+        } catch (e) {
+          console.error("[brain-lore] delete failed:", e);
           return err("Brain service unavailable", 502);
         }
       },
