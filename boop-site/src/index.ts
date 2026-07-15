@@ -10,6 +10,14 @@ import {
   authenticate,
   requireRole,
 } from "./lib/auth-server";
+import {
+  brainLoreGuildList,
+  brainLoreUserList,
+  brainLoreAdd,
+  brainLoreAddMe,
+  brainLoreUpdate,
+  brainLoreDelete,
+} from "./lib/brain";
 
 const UPLOAD_DIR = join(import.meta.dir, "../../uploads");
 
@@ -523,7 +531,8 @@ const server = serve({
         if (!requireRole(user, "officer")) return err("Forbidden", 403);
 
         const members = await sql`
-          SELECT id, username, email, role, character_name, family_name, ribbit_count, created_at
+          SELECT id, username, email, role, character_name, family_name, ribbit_count, created_at,
+                 discord_id, discord_username
           FROM users
           ORDER BY
             CASE role WHEN 'admin' THEN 0 WHEN 'officer' THEN 1 ELSE 2 END,
@@ -663,6 +672,83 @@ const server = serve({
         }
 
         return json(updated);
+      },
+    },
+
+    // ── BoopBot Lore ─────────────────────────────────────────────────────────
+
+    "/api/brain-lore/guild": {
+      async GET(req) {
+        const user = await authenticate(req);
+        if (!requireRole(user, "admin")) return err("Forbidden", 403);
+        const guildId = process.env.DISCORD_GUILD_ID;
+        if (!guildId) return err("DISCORD_GUILD_ID not configured", 500);
+        try {
+          return json(await brainLoreGuildList(guildId));
+        } catch {
+          return err("Brain service unavailable", 502);
+        }
+      },
+      async POST(req) {
+        const user = await authenticate(req);
+        if (!requireRole(user, "admin")) return err("Forbidden", 403);
+        const { text } = await req.json();
+        if (!text?.trim()) return err("text required");
+        const guildId = process.env.DISCORD_GUILD_ID;
+        if (!guildId) return err("DISCORD_GUILD_ID not configured", 500);
+        try {
+          const result = await brainLoreAdd(guildId, text.trim(), user!.discord_id ?? "0", user!.username);
+          return json(result, 201);
+        } catch {
+          return err("Brain service unavailable", 502);
+        }
+      },
+    },
+
+    "/api/brain-lore/user/:discordId": {
+      async GET(req) {
+        const user = await authenticate(req);
+        if (!requireRole(user, "admin")) return err("Forbidden", 403);
+        try {
+          return json(await brainLoreUserList(req.params.discordId));
+        } catch {
+          return err("Brain service unavailable", 502);
+        }
+      },
+      async POST(req) {
+        const user = await authenticate(req);
+        if (!requireRole(user, "admin")) return err("Forbidden", 403);
+        const { text } = await req.json();
+        if (!text?.trim()) return err("text required");
+        try {
+          const result = await brainLoreAddMe(req.params.discordId, text.trim());
+          return json(result, 201);
+        } catch {
+          return err("Brain service unavailable", 502);
+        }
+      },
+    },
+
+    "/api/brain-lore/:memoryId": {
+      async PATCH(req) {
+        const user = await authenticate(req);
+        if (!requireRole(user, "admin")) return err("Forbidden", 403);
+        const { text } = await req.json();
+        if (!text?.trim()) return err("text required");
+        try {
+          return json(await brainLoreUpdate(req.params.memoryId, text.trim()));
+        } catch {
+          return err("Brain service unavailable", 502);
+        }
+      },
+      async DELETE(req) {
+        const user = await authenticate(req);
+        if (!requireRole(user, "admin")) return err("Forbidden", 403);
+        try {
+          return json(await brainLoreDelete(req.params.memoryId));
+        } catch {
+          return err("Brain service unavailable", 502);
+        }
       },
     },
 

@@ -5,7 +5,7 @@ import GuildDirectory from "./GuildDirectory";
 import PayoutTracker from "./PayoutTracker";
 import { TIMEZONES } from "../lib/timezones";
 
-type SectionId = "members" | "roster" | "announcements" | "wall" | "shrine" | "directory" | "payout" | "class-emojis";
+type SectionId = "members" | "roster" | "announcements" | "wall" | "shrine" | "directory" | "payout" | "class-emojis" | "lore";
 
 const SIDEBAR = [
   {
@@ -28,6 +28,7 @@ const SIDEBAR = [
     items: [
       { id: "shrine" as SectionId, label: "Black Shrine",    icon: "⛩️", desc: "Team builder" },
       { id: "payout" as SectionId, label: "Payout Tracker",  icon: "💰", desc: "Tier management" },
+      { id: "lore"   as SectionId, label: "BoopBot Lore",    icon: "🧠", desc: "Guild & personal memory", adminOnly: true },
     ],
   },
   {
@@ -958,9 +959,319 @@ function ClassEmojisSection() {
   );
 }
 
+// ── BoopBot Lore section ───────────────────────────────────────────────────────
+
+type BrainLoreEntry = { id: string; text: string };
+type LoreMember = {
+  id: string; username: string;
+  discord_id: string | null; discord_username: string | null;
+  family_name: string | null;
+};
+
+function LoreList({
+  entries, loading, error, filter, setFilter, onAdd, newText, setNewText, adding,
+  editingId, editText, setEditText, savingEdit, onStartEdit, onSaveEdit, onCancelEdit, onDelete, busyId,
+  emptyLabel,
+}: {
+  entries: BrainLoreEntry[];
+  loading: boolean;
+  error: string | null;
+  filter: string;
+  setFilter: (v: string) => void;
+  onAdd: () => void;
+  newText: string;
+  setNewText: (v: string) => void;
+  adding: boolean;
+  editingId: string | null;
+  editText: string;
+  setEditText: (v: string) => void;
+  savingEdit: boolean;
+  onStartEdit: (entry: BrainLoreEntry) => void;
+  onSaveEdit: () => void;
+  onCancelEdit: () => void;
+  onDelete: (id: string) => void;
+  busyId: string | null;
+  emptyLabel: string;
+}) {
+  const filtered = useMemo(() => {
+    const q = filter.trim().toLowerCase();
+    return q ? entries.filter(e => e.text.toLowerCase().includes(q)) : entries;
+  }, [entries, filter]);
+
+  if (loading) return <p className="text-slate-500 text-center py-8">Loading…</p>;
+  if (error) return <p className="text-red-400 text-sm py-4">{error}</p>;
+
+  return (
+    <div>
+      <div className="flex items-center gap-3 mb-3 flex-wrap">
+        <input value={filter} onChange={e => setFilter(e.target.value)}
+          placeholder="Filter…"
+          className="bg-slate-900 border border-slate-800 rounded-lg px-2.5 py-1 text-xs text-white placeholder-slate-600 focus:outline-none focus:border-violet-500 w-40" />
+        <span className="text-xs text-slate-600">{filtered.length} of {entries.length}</span>
+      </div>
+
+      <div className="flex flex-col gap-2 mb-3">
+        {filtered.map(entry => (
+          <div key={entry.id} className="bg-slate-900/40 border border-slate-800 rounded-lg px-3 py-2">
+            {editingId === entry.id ? (
+              <div className="flex flex-col gap-2">
+                <textarea value={editText} onChange={e => setEditText(e.target.value)} rows={2}
+                  className="bg-slate-800 border border-slate-700 text-white rounded-lg px-2.5 py-1.5 text-sm focus:outline-none focus:border-violet-500 resize-y" />
+                <div className="flex gap-2 justify-end">
+                  <button onClick={onCancelEdit} className="text-xs text-slate-400 hover:text-white px-2 py-1">Cancel</button>
+                  <button onClick={onSaveEdit} disabled={savingEdit || !editText.trim()}
+                    className="px-3 py-1 rounded-lg bg-violet-600 hover:bg-violet-500 disabled:opacity-30 text-white text-xs font-semibold">
+                    {savingEdit ? "Saving…" : "Save"}
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <div className="flex items-start gap-2">
+                <p className="text-sm text-slate-300 flex-1 min-w-0 whitespace-pre-wrap">{entry.text}</p>
+                <button onClick={() => onStartEdit(entry)} disabled={busyId === entry.id}
+                  className="text-slate-600 hover:text-violet-400 transition-colors text-xs px-1 shrink-0">✎</button>
+                <button onClick={() => onDelete(entry.id)} disabled={busyId === entry.id}
+                  className="text-slate-600 hover:text-red-400 transition-colors text-xs px-1 shrink-0">✕</button>
+              </div>
+            )}
+          </div>
+        ))}
+        {filtered.length === 0 && <p className="text-slate-600 text-xs py-2">{emptyLabel}</p>}
+      </div>
+
+      <div className="flex items-start gap-2 bg-slate-900/40 border border-slate-700/50 rounded-xl p-3">
+        <textarea value={newText} onChange={e => setNewText(e.target.value)} rows={2}
+          placeholder="Add new lore…"
+          className="flex-1 bg-slate-800 border border-slate-700 text-white rounded-lg px-2.5 py-1.5 text-sm focus:outline-none focus:border-violet-500 resize-y" />
+        <button onClick={onAdd} disabled={adding || !newText.trim()}
+          className="px-3 py-1.5 rounded-lg bg-violet-600 hover:bg-violet-500 disabled:opacity-30 text-white text-xs font-semibold transition-colors whitespace-nowrap self-end">
+          {adding ? "Adding…" : "+ Add"}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function LoreSection({ me }: { me: AuthUser }) {
+  const isAdmin = me.role === "admin";
+  const [tab, setTab] = useState<"guild" | "personal">("guild");
+
+  // guild tab state
+  const [guildLore, setGuildLore]       = useState<BrainLoreEntry[]>([]);
+  const [guildLoading, setGuildLoading] = useState(true);
+  const [guildError, setGuildError]     = useState<string | null>(null);
+  const [guildFilter, setGuildFilter]   = useState("");
+  const [newGuildText, setNewGuildText] = useState("");
+  const [addingGuild, setAddingGuild]   = useState(false);
+
+  // shared edit/delete state (one active edit at a time, across both tabs)
+  const [editingId, setEditingId]   = useState<string | null>(null);
+  const [editText, setEditText]     = useState("");
+  const [savingEdit, setSavingEdit] = useState(false);
+  const [busyId, setBusyId]         = useState<string | null>(null);
+
+  // personal tab state
+  const [members, setMembers]                 = useState<LoreMember[]>([]);
+  const [membersLoading, setMembersLoading]    = useState(true);
+  const [memberFilter, setMemberFilter]        = useState("");
+  const [selectedMember, setSelectedMember]    = useState<LoreMember | null>(null);
+  const [personalLore, setPersonalLore]        = useState<BrainLoreEntry[]>([]);
+  const [personalLoading, setPersonalLoading]  = useState(false);
+  const [personalError, setPersonalError]      = useState<string | null>(null);
+  const [personalFilter, setPersonalFilter]    = useState("");
+  const [newPersonalText, setNewPersonalText]  = useState("");
+  const [addingPersonal, setAddingPersonal]    = useState(false);
+
+  useEffect(() => {
+    if (!isAdmin) return;
+    setGuildLoading(true);
+    setGuildError(null);
+    apiFetch("/api/brain-lore/guild")
+      .then(r => r.ok ? r.json() : Promise.reject())
+      .then(setGuildLore)
+      .catch(() => setGuildError("Could not reach BoopBot's brain — check that the AI server / WireGuard tunnel is up."))
+      .finally(() => setGuildLoading(false));
+
+    setMembersLoading(true);
+    apiFetch("/api/members")
+      .then(r => r.ok ? r.json() : [])
+      .then((rows: LoreMember[]) => setMembers(rows.filter(m => m.discord_id)))
+      .catch(() => setMembers([]))
+      .finally(() => setMembersLoading(false));
+  }, [isAdmin]);
+
+  function loadPersonalLore(discordId: string) {
+    setPersonalLoading(true);
+    setPersonalError(null);
+    apiFetch(`/api/brain-lore/user/${discordId}`)
+      .then(r => r.ok ? r.json() : Promise.reject())
+      .then(setPersonalLore)
+      .catch(() => setPersonalError("Could not reach BoopBot's brain — check that the AI server / WireGuard tunnel is up."))
+      .finally(() => setPersonalLoading(false));
+  }
+
+  function selectMember(m: LoreMember) {
+    setSelectedMember(m);
+    setPersonalLore([]);
+    setPersonalError(null);
+    if (m.discord_id) loadPersonalLore(m.discord_id);
+  }
+
+  async function addGuildLore() {
+    const text = newGuildText.trim();
+    if (!text) return;
+    setAddingGuild(true);
+    const res = await apiFetch("/api/brain-lore/guild", {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text }),
+    });
+    if (res.ok) {
+      const { id } = await res.json();
+      setGuildLore(prev => [...prev, { id, text }]);
+      setNewGuildText("");
+    }
+    setAddingGuild(false);
+  }
+
+  async function addPersonalLore() {
+    const text = newPersonalText.trim();
+    if (!text || !selectedMember?.discord_id) return;
+    setAddingPersonal(true);
+    const res = await apiFetch(`/api/brain-lore/user/${selectedMember.discord_id}`, {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text }),
+    });
+    if (res.ok) {
+      const { id } = await res.json();
+      setPersonalLore(prev => [...prev, { id, text }]);
+      setNewPersonalText("");
+    }
+    setAddingPersonal(false);
+  }
+
+  function startEdit(entry: BrainLoreEntry) {
+    setEditingId(entry.id);
+    setEditText(entry.text);
+  }
+
+  function cancelEdit() {
+    setEditingId(null);
+    setEditText("");
+  }
+
+  async function saveEdit() {
+    if (!editingId || !editText.trim()) return;
+    const text = editText.trim();
+    setSavingEdit(true);
+    const res = await apiFetch(`/api/brain-lore/${editingId}`, {
+      method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text }),
+    });
+    if (res.ok) {
+      const patch = (list: BrainLoreEntry[]) => list.map(e => e.id === editingId ? { ...e, text } : e);
+      setGuildLore(patch);
+      setPersonalLore(patch);
+      cancelEdit();
+    }
+    setSavingEdit(false);
+  }
+
+  async function deleteEntry(id: string) {
+    if (!confirm("Delete this lore entry?")) return;
+    setBusyId(id);
+    const res = await apiFetch(`/api/brain-lore/${id}`, { method: "DELETE" });
+    if (res.ok) {
+      setGuildLore(prev => prev.filter(e => e.id !== id));
+      setPersonalLore(prev => prev.filter(e => e.id !== id));
+    }
+    setBusyId(null);
+  }
+
+  const filteredMembers = useMemo(() => {
+    const q = memberFilter.trim().toLowerCase();
+    if (!q) return members;
+    return members.filter(m =>
+      m.username.toLowerCase().includes(q) ||
+      (m.discord_username ?? "").toLowerCase().includes(q) ||
+      (m.family_name ?? "").toLowerCase().includes(q)
+    );
+  }, [members, memberFilter]);
+
+  if (!isAdmin) {
+    return (
+      <div className="text-center py-12">
+        <p className="text-4xl mb-4">🔒</p>
+        <p className="text-white font-bold text-lg">Admins only</p>
+        <p className="text-slate-500 mt-2 text-sm">BoopBot lore management requires the admin role.</p>
+      </div>
+    );
+  }
+
+  return (
+    <div>
+      <div className="mb-4">
+        <h2 className="text-2xl font-black text-white">BoopBot Lore</h2>
+        <p className="text-slate-500 text-sm mt-0.5">Long-term memory the bot draws on when chatting — guild-wide knowledge and per-member facts.</p>
+      </div>
+
+      <div className="flex gap-2 mb-5 border-b border-slate-800">
+        <button onClick={() => setTab("guild")}
+          className={`px-3 py-2 text-sm font-semibold border-b-2 -mb-px transition-colors ${tab === "guild" ? "border-violet-500 text-white" : "border-transparent text-slate-500 hover:text-slate-300"}`}>
+          Guild Lore
+        </button>
+        <button onClick={() => setTab("personal")}
+          className={`px-3 py-2 text-sm font-semibold border-b-2 -mb-px transition-colors ${tab === "personal" ? "border-violet-500 text-white" : "border-transparent text-slate-500 hover:text-slate-300"}`}>
+          Personal Facts
+        </button>
+      </div>
+
+      {tab === "guild" ? (
+        <LoreList
+          entries={guildLore} loading={guildLoading} error={guildError}
+          filter={guildFilter} setFilter={setGuildFilter}
+          onAdd={addGuildLore} newText={newGuildText} setNewText={setNewGuildText} adding={addingGuild}
+          editingId={editingId} editText={editText} setEditText={setEditText} savingEdit={savingEdit}
+          onStartEdit={startEdit} onSaveEdit={saveEdit} onCancelEdit={cancelEdit} onDelete={deleteEntry} busyId={busyId}
+          emptyLabel="No guild lore yet."
+        />
+      ) : (
+        <div>
+          <div className="flex items-center gap-3 mb-3 flex-wrap">
+            <input value={memberFilter} onChange={e => setMemberFilter(e.target.value)}
+              placeholder="Search members…"
+              className="bg-slate-900 border border-slate-800 rounded-lg px-2.5 py-1 text-xs text-white placeholder-slate-600 focus:outline-none focus:border-violet-500 w-48" />
+            <span className="text-xs text-slate-600">{membersLoading ? "Loading…" : `${filteredMembers.length} members`}</span>
+          </div>
+
+          <div className="flex flex-wrap gap-1.5 mb-5 max-h-32 overflow-y-auto">
+            {filteredMembers.map(m => (
+              <button key={m.id} onClick={() => selectMember(m)}
+                className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition-colors ${
+                  selectedMember?.id === m.id ? "bg-violet-600 text-white" : "bg-slate-800/80 text-slate-400 hover:text-white hover:bg-slate-800"
+                }`}>
+                {m.discord_username ?? m.username}
+              </button>
+            ))}
+          </div>
+
+          {selectedMember ? (
+            <LoreList
+              entries={personalLore} loading={personalLoading} error={personalError}
+              filter={personalFilter} setFilter={setPersonalFilter}
+              onAdd={addPersonalLore} newText={newPersonalText} setNewText={setNewPersonalText} adding={addingPersonal}
+              editingId={editingId} editText={editText} setEditText={setEditText} savingEdit={savingEdit}
+              onStartEdit={startEdit} onSaveEdit={saveEdit} onCancelEdit={cancelEdit} onDelete={deleteEntry} busyId={busyId}
+              emptyLabel={`No personal facts for ${selectedMember.discord_username ?? selectedMember.username} yet.`}
+            />
+          ) : (
+            <p className="text-slate-600 text-sm py-8 text-center">Select a member above to view/edit their personal facts.</p>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── Main Settings page ────────────────────────────────────────────────────────
 
-const VALID_SECTIONS: SectionId[] = ["members", "roster", "announcements", "wall", "shrine", "directory", "payout", "class-emojis"];
+const VALID_SECTIONS: SectionId[] = ["members", "roster", "announcements", "wall", "shrine", "directory", "payout", "class-emojis", "lore"];
 
 function getSectionFromHash(): SectionId {
   const sub = location.hash.replace(/^#\/?/, "").split("/")[1] ?? "";
@@ -1009,7 +1320,9 @@ export default function Settings() {
             <p className="px-4 text-[10px] font-black text-slate-600 uppercase tracking-widest mb-1">
               {group.group}
             </p>
-            {group.items.map(item => (
+            {group.items
+              .filter(item => !("adminOnly" in item && item.adminOnly) || user.role === "admin")
+              .map(item => (
               <button
                 key={item.id}
                 onClick={() => navigate(item.id)}
@@ -1040,6 +1353,7 @@ export default function Settings() {
         {section === "directory"     && <GuildDirectory />}
         {section === "payout"        && <PayoutTracker />}
         {section === "class-emojis"  && <ClassEmojisSection />}
+        {section === "lore"          && <LoreSection me={user} />}
       </div>
     </div>
   );
