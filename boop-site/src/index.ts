@@ -2569,7 +2569,10 @@ const server = serve({
 
   // Bun's default idle timeout (10s) is too short for the BoopBot Lore duplicate
   // scan, which can involve many sequential Ollama calls on boop-brain's side.
-  idleTimeout: 120,
+  // 255 is Bun's hard maximum for this option, applied server-wide (there's no
+  // per-route override in use here — Bun's server.timeout(req, seconds) could
+  // raise it further for just one route if ever needed).
+  idleTimeout: 255,
 
   development: process.env.NODE_ENV !== "production" && {
     hmr: true,
