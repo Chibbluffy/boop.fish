@@ -962,6 +962,7 @@ function ClassEmojisSection() {
 // ── BoopBot Lore section ───────────────────────────────────────────────────────
 
 type BrainLoreEntry = { id: string; text: string };
+type DuplicatePair = { a: BrainLoreEntry; b: BrainLoreEntry };
 type LoreMember = {
   id: string; username: string;
   discord_id: string | null; discord_username: string | null;
@@ -1063,6 +1064,11 @@ function LoreSection({ me }: { me: AuthUser }) {
   const [guildFilter, setGuildFilter]   = useState("");
   const [newGuildText, setNewGuildText] = useState("");
   const [addingGuild, setAddingGuild]   = useState(false);
+
+  // duplicate scan (guild lore only)
+  const [duplicatePairs, setDuplicatePairs]   = useState<DuplicatePair[]>([]);
+  const [scanningDuplicates, setScanningDuplicates] = useState(false);
+  const [scanError, setScanError]             = useState<string | null>(null);
 
   // shared edit/delete state (one active edit at a time, across both tabs)
   const [editingId, setEditingId]   = useState<string | null>(null);
@@ -1173,8 +1179,8 @@ function LoreSection({ me }: { me: AuthUser }) {
     setSavingEdit(false);
   }
 
-  async function deleteEntry(id: string) {
-    if (!confirm("Delete this lore entry?")) return;
+  async function deleteEntry(id: string, skipConfirm = false) {
+    if (!skipConfirm && !confirm("Delete this lore entry?")) return;
     setBusyId(id);
     const res = await apiFetch(`/api/brain-lore/${id}`, { method: "DELETE" });
     if (res.ok) {
@@ -1182,6 +1188,32 @@ function LoreSection({ me }: { me: AuthUser }) {
       setPersonalLore(prev => prev.filter(e => e.id !== id));
     }
     setBusyId(null);
+    return res.ok;
+  }
+
+  async function scanForDuplicates() {
+    setScanningDuplicates(true);
+    setScanError(null);
+    const res = await apiFetch("/api/brain-lore/guild/scan-duplicates");
+    if (res.ok) {
+      const { pairs } = await res.json();
+      setDuplicatePairs(pairs ?? []);
+    } else {
+      setScanError("Could not reach BoopBot's brain — check that the AI server / WireGuard tunnel is up.");
+    }
+    setScanningDuplicates(false);
+  }
+
+  function dismissPair(index: number) {
+    setDuplicatePairs(prev => prev.filter((_, i) => i !== index));
+  }
+
+  async function resolveDuplicatePair(index: number, keepSide: "a" | "b") {
+    const pair = duplicatePairs[index];
+    if (!pair) return;
+    const dropId = keepSide === "a" ? pair.b.id : pair.a.id;
+    const ok = await deleteEntry(dropId, true);
+    if (ok) dismissPair(index);
   }
 
   const filteredMembers = useMemo(() => {
@@ -1223,14 +1255,53 @@ function LoreSection({ me }: { me: AuthUser }) {
       </div>
 
       {tab === "guild" ? (
-        <LoreList
-          entries={guildLore} loading={guildLoading} error={guildError}
-          filter={guildFilter} setFilter={setGuildFilter}
-          onAdd={addGuildLore} newText={newGuildText} setNewText={setNewGuildText} adding={addingGuild}
-          editingId={editingId} editText={editText} setEditText={setEditText} savingEdit={savingEdit}
-          onStartEdit={startEdit} onSaveEdit={saveEdit} onCancelEdit={cancelEdit} onDelete={deleteEntry} busyId={busyId}
-          emptyLabel="No guild lore yet."
-        />
+        <div>
+          <div className="flex items-center justify-between mb-3">
+            <button onClick={scanForDuplicates} disabled={scanningDuplicates || guildLoading}
+              className="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 disabled:opacity-30 text-slate-200 text-xs font-semibold transition-colors">
+              {scanningDuplicates ? "Scanning…" : "🔎 Scan for Duplicates"}
+            </button>
+          </div>
+
+          {scanError && <p className="text-red-400 text-sm mb-3">{scanError}</p>}
+
+          {duplicatePairs.length > 0 && (
+            <div className="mb-5 flex flex-col gap-2">
+              <p className="text-xs font-bold text-slate-400 uppercase tracking-widest">
+                {duplicatePairs.length} likely duplicate{duplicatePairs.length === 1 ? "" : "s"} found
+              </p>
+              {duplicatePairs.map((pair, i) => (
+                <div key={`${pair.a.id}-${pair.b.id}`} className="bg-amber-500/10 border border-amber-500/30 rounded-xl p-3">
+                  <div className="flex flex-col gap-2 mb-2">
+                    <p className="text-sm text-slate-300"><span className="text-slate-500">A:</span> {pair.a.text}</p>
+                    <p className="text-sm text-slate-300"><span className="text-slate-500">B:</span> {pair.b.text}</p>
+                  </div>
+                  <div className="flex gap-2 justify-end">
+                    <button onClick={() => dismissPair(i)}
+                      className="text-xs text-slate-400 hover:text-white px-2 py-1">Keep Both</button>
+                    <button onClick={() => resolveDuplicatePair(i, "a")} disabled={busyId === pair.b.id}
+                      className="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 disabled:opacity-30 text-slate-200 text-xs font-semibold">
+                      Keep A, Delete B
+                    </button>
+                    <button onClick={() => resolveDuplicatePair(i, "b")} disabled={busyId === pair.a.id}
+                      className="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 disabled:opacity-30 text-slate-200 text-xs font-semibold">
+                      Keep B, Delete A
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+
+          <LoreList
+            entries={guildLore} loading={guildLoading} error={guildError}
+            filter={guildFilter} setFilter={setGuildFilter}
+            onAdd={addGuildLore} newText={newGuildText} setNewText={setNewGuildText} adding={addingGuild}
+            editingId={editingId} editText={editText} setEditText={setEditText} savingEdit={savingEdit}
+            onStartEdit={startEdit} onSaveEdit={saveEdit} onCancelEdit={cancelEdit} onDelete={deleteEntry} busyId={busyId}
+            emptyLabel="No guild lore yet."
+          />
+        </div>
       ) : (
         <div>
           <div className="flex items-center gap-3 mb-3 flex-wrap">

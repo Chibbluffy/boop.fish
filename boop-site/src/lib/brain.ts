@@ -38,3 +38,8 @@ export const brainLoreUpdate = (memoryId: string, text: string) =>
 
 export const brainLoreDelete = (memoryId: string) =>
   brainPost<{ deleted: boolean }>("/lore/delete", { memory_id: memoryId });
+
+export type BrainDuplicatePair = { a: BrainLoreEntry; b: BrainLoreEntry };
+
+export const brainLoreScanDuplicates = (guildId: string) =>
+  brainPost<{ pairs: BrainDuplicatePair[] }>("/lore/guild/scan_duplicates", { guild_id: guildId });

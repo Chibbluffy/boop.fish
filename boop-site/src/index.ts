@@ -17,6 +17,7 @@ import {
   brainLoreAddMe,
   brainLoreUpdate,
   brainLoreDelete,
+  brainLoreScanDuplicates,
 } from "./lib/brain";
 
 const UPLOAD_DIR = join(import.meta.dir, "../../uploads");
@@ -702,6 +703,21 @@ const server = serve({
           return json(result, 201);
         } catch (e) {
           console.error("[brain-lore] guild add failed:", e);
+          return err("Brain service unavailable", 502);
+        }
+      },
+    },
+
+    "/api/brain-lore/guild/scan-duplicates": {
+      async GET(req) {
+        const user = await authenticate(req);
+        if (!requireRole(user, "admin")) return err("Forbidden", 403);
+        const guildId = process.env.DISCORD_GUILD_ID;
+        if (!guildId) return err("DISCORD_GUILD_ID not configured", 500);
+        try {
+          return json(await brainLoreScanDuplicates(guildId));
+        } catch (e) {
+          console.error("[brain-lore] scan duplicates failed:", e);
           return err("Brain service unavailable", 502);
         }
       },
